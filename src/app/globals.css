@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  --background: #020202;
+  --foreground: #f6f4ea;
+  --panel: #080806;
+  --panel-strong: #11110e;
+  --muted: #8f8e83;
+  --line: #24231c;
+  --accent: #ffcf00;
+  --accent-2: #d7ff32;
+  --danger: #ff5d4d;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-panel-strong: var(--panel-strong);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-danger: var(--danger);
+  --font-sans: "Aptos", "Segoe UI Variable", "Segoe UI", Arial, Helvetica, sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-synthesis-weight: none;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 207, 0, 0.07), transparent 34rem),
+    radial-gradient(circle at 20% 60%, rgba(215, 255, 50, 0.04), transparent 28rem);
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+}
+
+::selection {
+  background: rgba(255, 207, 0, 0.28);
+}
