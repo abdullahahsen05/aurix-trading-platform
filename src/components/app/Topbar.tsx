@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, Bell, CheckCircle2, ChevronDown, Info, LogOut, Menu, X } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, Info, Menu, X } from "lucide-react";
 import { tradingAccounts } from "@/lib/data/mockData";
 import { navItems } from "@/components/app/navigation";
 import type { UserRole } from "@/lib/domain/types";
@@ -90,19 +90,19 @@ export function Topbar({
   }, [notificationsOpen]);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-line bg-background/95 px-4 py-4 backdrop-blur lg:px-7">
+    <header className="sticky top-0 z-20 border-b border-line bg-panel/95 px-4 py-3 backdrop-blur-lg lg:px-7">
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
             onClick={onOpenMobileNav}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-line text-muted lg:hidden"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong text-muted lg:hidden"
             aria-label="Open navigation"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-4 w-4" />
           </button>
           <div className="hidden md:block">
-            <p className="text-xl font-bold text-foreground">{activeItem?.label ?? "Workspace"}</p>
-            <p className="mt-1 text-xs font-medium text-muted">{subtitle}</p>
+            <p className="text-lg font-bold text-foreground">{activeItem?.label ?? "Workspace"}</p>
+            <p className="mt-0.5 text-xs font-medium text-muted">{subtitle}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -110,7 +110,7 @@ export function Topbar({
             <button
               type="button"
               onClick={() => setNotificationsOpen((current) => !current)}
-              className="relative grid h-11 w-11 place-items-center rounded-full border border-line bg-panel text-muted transition hover:text-accent"
+              className="relative grid h-9 w-9 place-items-center rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong text-muted transition hover:border-accent/40 hover:text-accent"
               aria-label="Show notifications"
               aria-expanded={notificationsOpen}
             >
@@ -121,7 +121,7 @@ export function Topbar({
             </button>
 
             <div
-              className={`absolute right-0 top-full z-30 mt-3 w-[min(92vw,340px)] rounded-3xl border border-line bg-panel shadow-[0_22px_80px_rgba(0,0,0,0.45)] transition duration-150 ${
+              className={`absolute right-0 top-full z-30 mt-3 w-[min(92vw,340px)] rounded-[20px] border border-line bg-panel shadow-[0_12px_30px_rgba(0,0,0,0.28)] transition duration-150 ${
                 notificationsOpen ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none -translate-y-2 opacity-0"
               }`}
             >
@@ -152,7 +152,7 @@ export function Topbar({
                   return (
                     <div
                       key={notification.title}
-                      className="flex items-start gap-3 rounded-2xl border border-line/80 bg-background px-4 py-3"
+                      className="flex items-start gap-3 rounded-[16px] border border-line bg-background/70 px-4 py-3"
                     >
                       <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl border ${toneClass}`}>
                         <Icon className="h-4 w-4" />
@@ -175,58 +175,34 @@ export function Topbar({
           <div className="hidden rounded-full border border-line bg-panel p-1 sm:flex">
             <Link
               href="/dashboard"
-              className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
-                role === "TRADER"
-                  ? "bg-accent text-background"
-                  : "text-muted hover:text-foreground"
-              }`}
+              className={`btn-dark rounded-full text-xs ${role === "TRADER" ? "btn-active" : ""}`}
             >
               User
             </Link>
             <Link
               href="/admin"
-              className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
-                role === "ADMIN"
-                  ? "bg-accent-2 text-background"
-                  : "text-muted hover:text-foreground"
-              }`}
+              className={`btn-dark rounded-full text-xs ${role === "ADMIN" ? "btn-active" : ""}`}
             >
               Admin
             </Link>
           </div>
-          <select className="h-11 rounded-full border border-line bg-panel px-5 text-sm font-semibold text-foreground outline-none">
+          <select className="h-10 rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong px-4 text-sm font-semibold text-foreground outline-none">
             {tradingAccounts.map((account) => (
               <option key={account.accountId}>{account.accountName}</option>
             ))}
           </select>
-          <Link
-            href="/login"
-            className="hidden h-11 items-center gap-2 rounded-full border border-line bg-panel px-5 text-sm font-semibold text-muted transition hover:border-accent/40 hover:text-accent sm:inline-flex"
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </Link>
-          <button className="hidden h-11 items-center gap-2 rounded-full border border-line bg-panel px-5 text-sm font-bold text-accent sm:inline-flex">
-            <span className="h-2 w-2 rounded-full bg-accent" />
-            Account Status
-            <ChevronDown className="h-4 w-4 text-muted" />
-          </button>
         </div>
       </div>
       <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">
         <Link
           href="/dashboard"
-          className={`shrink-0 rounded-md border border-line px-3 py-2 text-xs font-semibold ${
-            role === "TRADER" ? "bg-accent text-background" : "text-muted"
-          }`}
+          className={`btn-dark h-9 shrink-0 px-4 text-xs ${role === "TRADER" ? "btn-active" : ""}`}
         >
           User
         </Link>
         <Link
           href="/admin"
-          className={`shrink-0 rounded-md border border-line px-3 py-2 text-xs font-semibold ${
-            role === "ADMIN" ? "bg-accent-2 text-background" : "text-muted"
-          }`}
+          className={`btn-dark h-9 shrink-0 px-4 text-xs ${role === "ADMIN" ? "btn-active" : ""}`}
         >
           Admin
         </Link>
@@ -234,7 +210,7 @@ export function Topbar({
           <Link
             key={item.href}
             href={item.href}
-            className="shrink-0 rounded-md border border-line px-3 py-2 text-xs text-muted"
+            className="btn-dark h-9 shrink-0 px-4 text-xs text-muted"
           >
             {item.label}
           </Link>

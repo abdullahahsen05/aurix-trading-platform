@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { itemMotion } from "@/components/app/WorkspaceUI";
 
-type KpiTone = "accent" | "lime" | "danger";
+type KpiTone = "accent" | "lime" | "danger" | "muted";
 
 export type DashboardKpiItem = {
   label: string;
@@ -26,18 +26,21 @@ const toneColor: Record<KpiTone, string> = {
   accent: "#ffcf00",
   lime: "#d7ff32",
   danger: "#ff5d4d",
+  muted: "#8f8e83",
 };
 
 function CompactPill({ children, tone }: { children: string; tone: KpiTone }) {
   const pillClass =
     tone === "lime"
-      ? "border-[#3c4820] bg-[#171b0f] text-accent-2"
+      ? "status-pill status-pill-green"
       : tone === "danger"
-        ? "border-[#4b2520] bg-[#1b1110] text-danger"
-        : "border-[#3d3410] bg-[#18150a] text-accent";
+        ? "status-pill border-danger/20 bg-danger/10 text-danger"
+        : tone === "muted"
+          ? "status-pill border-line bg-panel-strong text-muted"
+          : "status-pill";
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${pillClass}`}>
+    <span className={pillClass}>
       {children}
     </span>
   );
@@ -85,15 +88,15 @@ function KpiCard({ item }: { item: DashboardKpiItem }) {
     <motion.article
       variants={itemMotion}
       whileHover={{ y: -2 }}
-      className="rounded-[20px] border border-line bg-panel px-5 py-4 shadow-[0_1px_0_rgba(255,255,255,0.02)]"
+      className="card-surface min-h-[116px] px-5 py-4"
     >
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-5">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">{item.label}</p>
-          <p className="mt-3 text-[28px] font-semibold leading-none text-foreground">{item.value}</p>
-          <p className="mt-2 text-sm leading-6 text-muted">{item.helper}</p>
+          <p className="mt-3 text-[30px] font-semibold leading-none text-foreground">{item.value}</p>
+          <p className="mt-2 max-w-[20rem] text-sm leading-6 text-muted">{item.helper}</p>
         </div>
-        <div className="shrink-0 pt-1">
+        <div className="shrink-0 pt-0.5">
           <MiniSparkline points={item.sparkline} tone={item.tone} />
         </div>
       </div>
@@ -108,7 +111,7 @@ function KpiCard({ item }: { item: DashboardKpiItem }) {
 
 export function DashboardKpiStrip({ items }: { items: DashboardKpiItem[] }) {
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid gap-4 xl:grid-cols-3">
       {items.map((item) => (
         <KpiCard key={item.label} item={item} />
       ))}
@@ -120,13 +123,15 @@ export function MarketSentimentStrip({ items }: { items: SentimentItem[] }) {
   return (
     <motion.section
       variants={itemMotion}
-      className="rounded-[20px] border border-line bg-panel p-3 shadow-[0_1px_0_rgba(255,255,255,0.02)]"
+      className="section-surface p-3"
     >
-      <div className="grid gap-3 xl:grid-cols-5">
-        {items.map((item) => (
+      <div className="grid gap-0 xl:grid-cols-5">
+        {items.map((item, index) => (
           <div
             key={item.label}
-            className="flex items-center justify-between gap-4 rounded-[16px] border border-line/80 bg-background px-4 py-3"
+            className={`flex items-center justify-between gap-4 bg-background/55 px-4 py-4 xl:border-r xl:border-[rgba(255,255,255,0.08)] ${
+              index === items.length - 1 ? "xl:border-r-0" : ""
+            }`}
           >
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted">{item.label}</p>
@@ -134,12 +139,12 @@ export function MarketSentimentStrip({ items }: { items: SentimentItem[] }) {
               <p className="mt-1 text-xs text-muted">{item.helper}</p>
             </div>
             <span
-              className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+              className={`status-pill shrink-0 ${
                 item.tone === "lime"
-                  ? "border-[#3c4820] bg-[#171b0f] text-accent-2"
+                  ? "status-pill-green"
                   : item.tone === "danger"
-                    ? "border-[#4b2520] bg-[#1b1110] text-danger"
-                    : "border-[#3d3410] bg-[#18150a] text-accent"
+                    ? "border-danger/20 bg-danger/10 text-danger"
+                    : ""
               }`}
             >
               {item.label}

@@ -271,11 +271,7 @@ export function DashboardModeOverlay({
                           key={period}
                           type="button"
                           onClick={() => onPeriodChange(period)}
-                          className={`rounded-full border px-4 py-2 text-xs font-semibold transition ${
-                            selectedPeriod === period
-                              ? "border-accent bg-accent text-background"
-                              : "border-line bg-background text-muted hover:text-foreground"
-                          }`}
+                          className={`btn-dark h-9 px-4 text-xs ${selectedPeriod === period ? "btn-active" : ""}`}
                         >
                           {period}
                         </button>

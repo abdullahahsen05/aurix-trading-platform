@@ -17,11 +17,7 @@ const crmTabs: Array<{ key: CrmTab; label: string }> = [
 ];
 
 function tabButtonClass(active: boolean) {
-  return `h-11 rounded-full border px-5 text-sm font-semibold transition ${
-    active
-      ? "border-[#2f2610] bg-[#14120d] text-accent shadow-[inset_0_0_0_1px_rgba(255,207,0,0.12)]"
-      : "border-line bg-background text-muted hover:border-accent/40 hover:text-foreground"
-  }`;
+  return `btn-dark h-9 px-4 text-xs ${active ? "btn-active" : ""}`;
 }
 
 function buildContacts(): Contact[] {

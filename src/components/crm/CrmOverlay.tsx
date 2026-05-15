@@ -65,10 +65,10 @@ const tabOptions: Array<{ key: CrmTab; label: string }> = [
 ];
 
 function tabButtonClass(active: boolean) {
-  return `h-11 rounded-full border px-5 text-sm font-semibold transition ${
+  return `btn-dark h-9 px-4 text-xs transition ${
     active
-      ? "border-[#2f2610] bg-[#14120d] text-accent shadow-[inset_0_0_0_1px_rgba(255,207,0,0.12)]"
-      : "border-line bg-background text-muted hover:border-accent/40 hover:text-foreground"
+      ? "btn-active"
+      : ""
   }`;
 }
 
@@ -425,10 +425,10 @@ export function CrmOverlay({
                             <p className="mt-1 text-xs text-muted">Communication and notes history for this profile.</p>
                           </div>
                           <div className="flex flex-wrap gap-3">
-                            <GhostButton type="button" onClick={onOpenNoteEditor}>
+                            <PrimaryButton type="button" onClick={onOpenNoteEditor}>
                               <Plus className="mr-2 inline-block h-4 w-4" />
                               New note
-                            </GhostButton>
+                            </PrimaryButton>
                             <GhostButton type="button" onClick={() => onTabChange("BILLING")}>
                               Open billing
                             </GhostButton>

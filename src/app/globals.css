@@ -1,15 +1,30 @@
 @import "tailwindcss";
 
 :root {
-  --background: #020202;
+  --background: #050606;
   --foreground: #f6f4ea;
-  --panel: #080806;
-  --panel-strong: #11110e;
-  --muted: #8f8e83;
-  --line: #24231c;
+
+  --panel: #0b0c0d;
+  --panel-strong: #121416;
+  --panel-soft: #17191b;
+
+  --muted: #9a998f;
+  --muted-2: #6f706a;
+
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.13);
+
   --accent: #ffcf00;
   --accent-2: #d7ff32;
   --danger: #ff5d4d;
+
+  --card-radius: 16px;
+  --section-radius: 20px;
+
+  --shadow-soft: 0 12px 30px rgba(0, 0, 0, 0.28);
+  --shadow-card: 0 8px 22px rgba(0, 0, 0, 0.22);
+
+  --card-gradient: linear-gradient(180deg, rgba(20, 22, 24, 0.96), rgba(12, 13, 14, 0.98));
 }
 
 @theme inline {
@@ -17,8 +32,11 @@
   --color-foreground: var(--foreground);
   --color-panel: var(--panel);
   --color-panel-strong: var(--panel-strong);
+  --color-panel-soft: var(--panel-soft);
   --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
   --color-danger: var(--danger);
@@ -28,10 +46,25 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+html {
+  background: var(--background);
 }
 
 body {
-  background: var(--background);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(255, 207, 0, 0.045), transparent 32rem),
+    linear-gradient(180deg, #070808 0%, var(--background) 42%, #030303 100%);
   color: var(--foreground);
   font-family: var(--font-sans);
   font-synthesis-weight: none;
@@ -41,15 +74,137 @@ body {
 }
 
 body::before {
-  background:
-    radial-gradient(circle at 50% 0%, rgba(255, 207, 0, 0.07), transparent 34rem),
-    radial-gradient(circle at 20% 60%, rgba(215, 255, 50, 0.04), transparent 28rem);
   content: "";
+  position: fixed;
   inset: 0;
   pointer-events: none;
-  position: fixed;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.28), transparent 70%);
 }
 
 ::selection {
   background: rgba(255, 207, 0, 0.28);
+  color: #050505;
+}
+
+.card-surface {
+  background: var(--card-gradient);
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-card);
+}
+
+.section-surface {
+  background: linear-gradient(180deg, rgba(15, 17, 18, 0.96), rgba(7, 8, 8, 0.98));
+  border: 1px solid var(--line);
+  border-radius: var(--section-radius);
+  box-shadow: var(--shadow-soft);
+}
+
+.inner-surface {
+  background: rgba(3, 4, 4, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.label-text {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.75rem;
+  min-height: 1.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 207, 0, 0.28);
+  background: rgba(255, 207, 0, 0.08);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.status-pill-green {
+  border-color: rgba(215, 255, 50, 0.26);
+  background: rgba(215, 255, 50, 0.08);
+  color: var(--accent-2);
+}
+
+.btn-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem !important;
+  min-height: 2.25rem !important;
+  height: 2.25rem !important;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--foreground);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.btn-dark:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--line-strong);
+}
+
+.btn-active {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.85rem !important;
+  min-height: 2.25rem !important;
+  height: 2.25rem !important;
+  background: var(--accent);
+  color: #050505;
+  border-color: var(--accent);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+:where(
+    .rounded-full.border.border-line.bg-panel,
+    .rounded-full.border.border-line.bg-panel-strong,
+    .rounded-full.border.border-line.bg-background,
+    .rounded-full.border.border-line.bg-panel\/95,
+    .rounded-full.border.border-line.bg-panel-strong\/95
+  ) {
+  border-radius: 999px;
+}
+
+:where(
+    .rounded-full.border.border-line.bg-panel.px-3.py-1.text-xs.font-semibold,
+    .rounded-full.border.border-line.bg-panel-strong.px-3.py-1.text-xs.font-semibold,
+    .rounded-full.border.border-line.bg-background.px-3.py-1.text-xs.font-semibold,
+    .rounded-full.border.border-line.bg-panel.px-4.py-2.text-xs.font-semibold,
+    .rounded-full.border.border-line.bg-panel-strong.px-4.py-2.text-xs.font-semibold,
+    .rounded-full.border.border-line.bg-background.px-4.py-2.text-xs.font-semibold
+  ) {
+  padding: 0.35rem 0.75rem;
+  min-height: 1.85rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  border-radius: 999px;
+}
+
+.text-muted {
+  color: var(--muted);
 }

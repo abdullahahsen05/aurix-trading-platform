@@ -38,42 +38,48 @@ const platformRings = [
   {
     label: "Active Traders",
     value: `${adminSummary.activeTraders}`,
-    caption: "Across all programs",
+    status: "Excellent",
+    statusTone: "lime" as const,
     progress: Math.min(adminSummary.activeTraders / 150, 1),
     tone: "yellow" as const,
   },
   {
     label: "Connected Accounts",
     value: `${adminSummary.connectedAccounts}`,
-    caption: "Broker-linked",
+    status: "Good",
+    statusTone: "accent" as const,
     progress: Math.min(adminSummary.connectedAccounts / 250, 1),
     tone: "lime" as const,
   },
   {
     label: "Open Risk Events",
     value: `${adminSummary.openRiskEvents}`,
-    caption: "Needs admin review",
+    status: adminSummary.openRiskEvents > 0 ? "Watch" : "Stable",
+    statusTone: adminSummary.openRiskEvents > 0 ? ("danger" as const) : ("lime" as const),
     progress: Math.max(0.08, 1 - adminSummary.openRiskEvents / 10),
     tone: "yellow" as const,
   },
   {
     label: "MRR",
     value: formatMoney(adminSummary.monthlyRecurringRevenue),
-    caption: "Subscription records",
+    status: "Good",
+    statusTone: "accent" as const,
     progress: Math.min(adminSummary.monthlyRecurringRevenue.amount / 20000, 1),
     tone: "lime" as const,
   },
   {
     label: "Accounts Under Supervision",
     value: `${tradingAccounts.length}`,
-    caption: "Current scope",
+    status: "Stable",
+    statusTone: "lime" as const,
     progress: Math.min(tradingAccounts.length / 10, 1),
     tone: "yellow" as const,
   },
 ] satisfies Array<{
   label: string;
   value: string;
-  caption: string;
+  status: string;
+  statusTone: "accent" | "lime" | "muted" | "danger";
   progress: number;
   tone?: "yellow" | "lime";
 }>;
@@ -102,11 +108,7 @@ export default function AdminOverviewPage() {
                 key={tab.key}
                 type="button"
                 onClick={() => openView(tab.key)}
-                className={`h-11 rounded-full border px-5 text-sm font-semibold transition ${
-                  active
-                    ? "border-[#2f2610] bg-[#14120d] text-accent shadow-[inset_0_0_0_1px_rgba(255,207,0,0.12)]"
-                    : "border-line bg-background text-muted hover:border-accent/40 hover:text-foreground"
-                }`}
+                className={`btn-dark h-9 px-4 text-xs ${active ? "btn-active" : ""}`}
               >
                 {tab.label}
               </button>

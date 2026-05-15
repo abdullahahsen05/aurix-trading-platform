@@ -89,11 +89,7 @@ export function FilterChipRow({
           type="button"
           onClick={chip.onClick}
           aria-pressed={chip.active}
-          className={`h-10 rounded-full border px-4 text-sm font-semibold transition ${
-            chip.active
-              ? "border-[#2f2610] bg-[#14120d] text-accent shadow-[inset_0_0_0_1px_rgba(255,207,0,0.12)]"
-              : "border-line bg-background text-muted hover:border-accent/40 hover:text-foreground"
-          }`}
+          className={`btn-dark ${chip.active ? "btn-active" : ""}`}
         >
           {chip.label}
         </button>
@@ -112,7 +108,7 @@ export function Panel({
   return (
     <motion.div
       variants={itemMotion}
-      className={`rounded-2xl border border-line bg-panel p-5 ${className}`}
+      className={`card-surface p-5 ${className}`}
     >
       {children}
     </motion.div>
@@ -143,7 +139,7 @@ export function StatTile({
     <motion.div
       variants={itemMotion}
       whileHover={{ y: -2, borderColor: "rgba(255,207,0,0.35)" }}
-      className="rounded-2xl border border-line bg-panel p-5 transition-colors"
+      className="card-surface p-5 transition-colors"
     >
       <p className="text-sm font-semibold text-muted">{label}</p>
       <p className={`mt-3 text-2xl font-semibold ${toneClass}`}>{value}</p>
@@ -163,7 +159,7 @@ export function InlineStatusStrip({
   }>;
   }) {
   return (
-    <div className="rounded-2xl border border-line bg-panel p-2">
+    <div className="section-surface p-2">
       <div className="flex flex-wrap gap-2">
         {items.map((item) => {
           const toneClass =
@@ -178,7 +174,7 @@ export function InlineStatusStrip({
           return (
             <div
               key={item.label}
-              className="flex min-w-[220px] flex-1 items-center justify-between gap-4 rounded-xl border border-line/80 bg-background px-4 py-3"
+              className="inner-surface flex min-w-[220px] flex-1 items-center justify-between gap-4 px-4 py-3"
             >
               <div className="min-w-0">
                 <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
@@ -206,15 +202,15 @@ export function StatusPill({
 }) {
   const toneClass =
     tone === "lime"
-      ? "bg-accent-2 text-background"
+      ? "status-pill status-pill-green"
       : tone === "danger"
-        ? "bg-danger/10 text-danger"
+        ? "status-pill border-danger/20 bg-danger/10 text-danger"
         : tone === "muted"
-          ? "bg-panel-strong text-muted"
-          : "bg-accent/10 text-accent";
+          ? "status-pill border-line bg-panel-strong text-muted"
+          : "status-pill";
 
   return (
-    <span className={`rounded-full px-4 py-1.5 text-xs font-semibold ${toneClass}`}>{children}</span>
+    <span className={toneClass}>{children}</span>
   );
 }
 
@@ -226,7 +222,7 @@ export function DataTable({
   rows: Array<Array<ReactNode>>;
 }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-line bg-panel p-4">
+    <div className="section-surface overflow-x-auto p-4">
       <table className="w-full min-w-[780px] text-left text-sm">
         <thead className="bg-panel-strong text-xs font-semibold text-foreground/90">
           <tr>
@@ -273,7 +269,7 @@ export function PrimaryButton({
       {...props}
       whileHover={{ scale: 1.03 }}
       whileTap={{ scale: 0.98 }}
-      className="rounded-full bg-accent px-6 py-3 text-sm font-semibold text-background transition disabled:cursor-not-allowed disabled:opacity-60"
+      className="btn-dark btn-active disabled:cursor-not-allowed disabled:opacity-60"
     >
       {children}
     </motion.button>
@@ -287,7 +283,7 @@ export function GhostButton({
   return (
     <button
       {...props}
-      className="rounded-full border border-line bg-panel px-6 py-3 text-sm font-semibold text-foreground transition hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
+      className="btn-dark disabled:cursor-not-allowed disabled:opacity-60"
     >
       {children}
     </button>
@@ -307,7 +303,7 @@ export function FieldShell({
 }) {
   return (
     <label className="grid gap-2 text-sm font-semibold text-muted">
-      <span>{label}</span>
+      <span className="label-text">{label}</span>
       {children}
       {hint ? <span className="text-xs font-medium leading-5 text-muted">{hint}</span> : null}
       {error ? <span className="text-xs font-semibold text-danger">{error}</span> : null}
@@ -329,7 +325,7 @@ export function EmptyState({
   const Icon = icon;
 
   return (
-    <div className="rounded-2xl border border-dashed border-line bg-panel/70 p-8 text-center">
+    <div className="card-surface border-dashed p-8 text-center">
       <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-accent/10 text-accent">
         <Icon className="h-5 w-5" />
       </div>
