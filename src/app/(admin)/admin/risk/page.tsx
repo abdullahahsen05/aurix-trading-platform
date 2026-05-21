@@ -147,7 +147,7 @@ export default function AdminRiskPage() {
                 </SelectField>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-                <p className="text-sm text-muted">These controls update the mock admin risk layer.</p>
+                <p className="text-sm text-muted">Changes will apply to the platform risk configuration.</p>
                 <div className="flex gap-3">
                   <GhostButton type="button">Reset</GhostButton>
                   <PrimaryButton type="submit">Save settings</PrimaryButton>
@@ -219,7 +219,7 @@ export default function AdminRiskPage() {
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-muted">
             <Bell className="h-4 w-4 text-accent" />
-            Risk events are mirrored from the mock monitoring stream for now.
+            Risk events are live from the platform monitoring stream.
           </div>
         </Panel>
       </div>

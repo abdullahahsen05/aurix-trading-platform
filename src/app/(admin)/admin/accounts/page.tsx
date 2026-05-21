@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { CheckCircle2, Search, X } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
 import {
@@ -16,36 +16,8 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField } from "@/components/app/FormFields";
-
-type ApiAccountRecord = {
-  id: string;
-  user_id: string;
-  account_name: string;
-  broker_name: string;
-  status: string;
-  currency: string;
-  created_at: string;
-};
-
-type AccountRecord = {
-  accountId: string;
-  accountName: string;
-  brokerName: string;
-  status: "CONNECTED" | "SYNCING" | "DISCONNECTED" | "RESTRICTED" | "PENDING";
-  updatedAt: string;
-  openTradeCount: number;
-};
-
-function toAccountRecord(raw: ApiAccountRecord): AccountRecord {
-  return {
-    accountId: raw.id,
-    accountName: raw.account_name,
-    brokerName: raw.broker_name,
-    status: (raw.status as AccountRecord["status"]) ?? "PENDING",
-    updatedAt: raw.created_at,
-    openTradeCount: 0,
-  };
-}
+import type { TraderAccountSummary } from "@/lib/domain/types";
+import { formatMoney, formatPercent } from "@/lib/utils/format";
 
 export default function AdminAccountsPage() {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -53,11 +25,11 @@ export default function AdminAccountsPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
   const [selectedId, setSelectedId] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "CONNECTED" | "SYNCING" | "DISCONNECTED" | "RESTRICTED">(
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "CONNECTED" | "SYNCING" | "DISCONNECTED" | "RESTRICTED" | "PENDING">(
     "ALL",
   );
 
-  const { data: rawAccounts = [], isLoading } = useQuery<ApiAccountRecord[]>({
+  const { data: accounts = [], isLoading } = useQuery<TraderAccountSummary[]>({
     queryKey: ["admin-accounts"],
     queryFn: async () => {
       const res = await fetch("/api/admin/accounts");
@@ -67,11 +39,14 @@ export default function AdminAccountsPage() {
     },
   });
 
-  const accounts: AccountRecord[] = useMemo(() => rawAccounts.map(toAccountRecord), [rawAccounts]);
-  const filteredAccounts = accounts.filter((account) => statusFilter === "ALL" || account.status === statusFilter);
+  const filteredAccounts = accounts.filter(
+    (account) => statusFilter === "ALL" || account.status === statusFilter,
+  );
   const effectiveSelectedId = selectedId || accounts[0]?.accountId || "";
   const selectedAccount =
-    filteredAccounts.find((account) => account.accountId === effectiveSelectedId) ?? filteredAccounts[0] ?? accounts[0];
+    filteredAccounts.find((account) => account.accountId === effectiveSelectedId) ??
+    filteredAccounts[0] ??
+    accounts[0];
 
   const handleVerify = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -140,15 +115,18 @@ export default function AdminAccountsPage() {
           { label: "Accounts", value: isLoading ? "..." : accounts.length },
           {
             label: "Connected",
-            value: accounts.filter((account) => account.status === "CONNECTED").length,
+            value: accounts.filter((a) => a.status === "CONNECTED").length,
             tone: "lime",
           },
           {
-            label: "Syncing",
-            value: accounts.filter((account) => account.status === "SYNCING").length,
+            label: "Pending",
+            value: accounts.filter((a) => a.status === "PENDING").length,
             tone: "accent",
           },
-          { label: "Restricted", value: accounts.filter((a) => a.status === "RESTRICTED").length },
+          {
+            label: "Open trades",
+            value: accounts.reduce((sum, a) => sum + a.openTradeCount, 0),
+          },
         ]}
       />
 
@@ -164,35 +142,35 @@ export default function AdminAccountsPage() {
               },
             },
             {
-              label: `Connected (${accounts.filter((account) => account.status === "CONNECTED").length})`,
+              label: `Connected (${accounts.filter((a) => a.status === "CONNECTED").length})`,
               active: statusFilter === "CONNECTED",
               onClick: () => {
                 setStatusFilter("CONNECTED");
-                setSelectedId(accounts.find((account) => account.status === "CONNECTED")?.accountId ?? accounts[0]?.accountId ?? "");
+                setSelectedId(accounts.find((a) => a.status === "CONNECTED")?.accountId ?? accounts[0]?.accountId ?? "");
               },
             },
             {
-              label: `Syncing (${accounts.filter((account) => account.status === "SYNCING").length})`,
-              active: statusFilter === "SYNCING",
+              label: `Pending (${accounts.filter((a) => a.status === "PENDING").length})`,
+              active: statusFilter === "PENDING",
               onClick: () => {
-                setStatusFilter("SYNCING");
-                setSelectedId(accounts.find((account) => account.status === "SYNCING")?.accountId ?? accounts[0]?.accountId ?? "");
+                setStatusFilter("PENDING");
+                setSelectedId(accounts.find((a) => a.status === "PENDING")?.accountId ?? accounts[0]?.accountId ?? "");
               },
             },
             {
-              label: `Disconnected (${accounts.filter((account) => account.status === "DISCONNECTED").length})`,
+              label: `Disconnected (${accounts.filter((a) => a.status === "DISCONNECTED").length})`,
               active: statusFilter === "DISCONNECTED",
               onClick: () => {
                 setStatusFilter("DISCONNECTED");
-                setSelectedId(accounts.find((account) => account.status === "DISCONNECTED")?.accountId ?? accounts[0]?.accountId ?? "");
+                setSelectedId(accounts.find((a) => a.status === "DISCONNECTED")?.accountId ?? accounts[0]?.accountId ?? "");
               },
             },
             {
-              label: `Restricted (${accounts.filter((account) => account.status === "RESTRICTED").length})`,
+              label: `Restricted (${accounts.filter((a) => a.status === "RESTRICTED").length})`,
               active: statusFilter === "RESTRICTED",
               onClick: () => {
                 setStatusFilter("RESTRICTED");
-                setSelectedId(accounts.find((account) => account.status === "RESTRICTED")?.accountId ?? accounts[0]?.accountId ?? "");
+                setSelectedId(accounts.find((a) => a.status === "RESTRICTED")?.accountId ?? accounts[0]?.accountId ?? "");
               },
             },
           ]}
@@ -227,20 +205,33 @@ export default function AdminAccountsPage() {
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Account ID</p>
-                <p className="mt-1 text-sm font-semibold text-foreground truncate">{selectedAccount.accountId}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Balance</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{formatMoney(selectedAccount.balance)}</p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Status</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{selectedAccount.status}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Equity</p>
+                <p className="mt-1 text-sm font-semibold text-accent-2">{formatMoney(selectedAccount.equity)}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Drawdown</p>
+                <p className="mt-1 text-sm font-semibold text-danger">{formatPercent(selectedAccount.drawdownPercent)}</p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Open trades</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{selectedAccount.openTradeCount}</p>
               </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Created</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedAccount.updatedAt).toLocaleDateString()}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Floating P&L</p>
+                <p className={`mt-1 text-sm font-semibold ${selectedAccount.floatingPnl.amount >= 0 ? "text-accent-2" : "text-danger"}`}>
+                  {formatMoney(selectedAccount.floatingPnl)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Last updated</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedAccount.updatedAt).toLocaleString()}</p>
               </div>
             </div>
 
@@ -260,7 +251,7 @@ export default function AdminAccountsPage() {
         </div>
       ) : null}
 
-      <DirectorySearchOverlay<AccountRecord>
+      <DirectorySearchOverlay<TraderAccountSummary>
         open={searchOpen}
         onOpenChange={setSearchOpen}
         title="Find accounts"
@@ -280,7 +271,7 @@ export default function AdminAccountsPage() {
             options: [
               { value: "ALL", label: "All statuses" },
               { value: "CONNECTED", label: "Connected" },
-              { value: "SYNCING", label: "Syncing" },
+              { value: "PENDING", label: "Pending" },
               { value: "DISCONNECTED", label: "Disconnected" },
               { value: "RESTRICTED", label: "Restricted" },
             ],
@@ -309,10 +300,10 @@ export default function AdminAccountsPage() {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
-                {new Date(account.updatedAt).toLocaleDateString()}
+                {formatMoney(account.equity)}
               </span>
               <span className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
-                {account.openTradeCount} open trades
+                {formatPercent(account.drawdownPercent)} DD
               </span>
             </div>
           </>
@@ -329,20 +320,20 @@ export default function AdminAccountsPage() {
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Account ID</p>
-                <p className="mt-1 text-sm font-semibold text-foreground truncate">{account.accountId}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Balance</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{formatMoney(account.balance)}</p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Status</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{account.status}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Equity</p>
+                <p className="mt-1 text-sm font-semibold text-accent-2">{formatMoney(account.equity)}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Drawdown</p>
+                <p className="mt-1 text-sm font-semibold text-danger">{formatPercent(account.drawdownPercent)}</p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Open trades</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{account.openTradeCount}</p>
-              </div>
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Created</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(account.updatedAt).toLocaleString()}</p>
               </div>
             </div>
           </Panel>

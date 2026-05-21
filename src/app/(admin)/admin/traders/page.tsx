@@ -16,16 +16,16 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField, TextAreaField } from "@/components/app/FormFields";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatMoney } from "@/lib/utils/format";
 import type { TraderProfileDto, CrmNoteDto } from "@/lib/domain/types";
 
 type TraderRecord = TraderProfileDto;
 
 export default function AdminTradersPage() {
+  const queryClient = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [segmentFilter, setSegmentFilter] = useState<"ALL" | "FUNDED" | "EVALUATION" | "AT_RISK" | "VIP">("ALL");
@@ -56,16 +56,35 @@ export default function AdminTradersPage() {
   const selectedTrader = filteredTraders.find((trader) => trader.traderId === effectiveSelectedId) ?? filteredTraders[0] ?? traderList[0];
   const selectedNotes = selectedTrader ? crmNotes.filter((note) => note.traderId === selectedTrader.traderId) : [];
 
+  const noteMutation = useMutation({
+    mutationFn: async (data: { traderId: string; note: string }) => {
+      const res = await fetch("/api/crm/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to save note");
+      return json.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["crm-notes"] });
+      setNoteOpen(false);
+      setSuccessMessage("CRM note saved to trader profile.");
+    },
+    onError: (err: Error) => {
+      setSuccessMessage("");
+      alert(err.message);
+    },
+  });
+
   const handleAddNote = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setIsSaving(true);
-    setSuccessMessage("");
-
-    window.setTimeout(() => {
-      setIsSaving(false);
-      setNoteOpen(false);
-      setSuccessMessage("CRM note created. The trader profile timeline refreshed in mock mode.");
-    }, 900);
+    const form = new FormData(event.currentTarget);
+    const traderId = form.get("traderId") as string;
+    const note = form.get("note") as string;
+    if (!traderId || !note.trim()) return;
+    noteMutation.mutate({ traderId, note });
   };
 
   return (
@@ -94,24 +113,24 @@ export default function AdminTradersPage() {
                   Write a relationship note against a trader profile and keep the activity timeline up to date.
                 </Dialog.Description>
                 <form className="mt-6 grid gap-4" onSubmit={handleAddNote}>
-                  <SelectField label="Trader" defaultValue={selectedTrader?.traderId ?? ""}>
+                  <SelectField label="Trader" name="traderId" defaultValue={selectedTrader?.traderId ?? ""}>
                     {traderList.map((trader) => (
                       <option key={trader.traderId} value={trader.traderId}>
                         {trader.name}
                       </option>
                     ))}
                   </SelectField>
-                  <TextAreaField label="Note" defaultValue="Follow up on account verification and risk posture." />
+                  <TextAreaField label="Note" name="note" defaultValue="" placeholder="Write a relationship note, follow-up, or risk observation..." />
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
                     <p className="text-sm text-muted">
-                      Notes are written to the mock CRM service until backend persistence is enabled.
+                      Notes are saved to the trader profile and visible to all admins.
                     </p>
                     <div className="flex gap-3">
                       <Dialog.Close asChild>
                         <GhostButton type="button">Cancel</GhostButton>
                       </Dialog.Close>
-                      <PrimaryButton type="submit" disabled={isSaving}>
-                        {isSaving ? "Saving..." : "Save note"}
+                      <PrimaryButton type="submit" disabled={noteMutation.isPending}>
+                        {noteMutation.isPending ? "Saving..." : "Save note"}
                       </PrimaryButton>
                     </div>
                   </div>
