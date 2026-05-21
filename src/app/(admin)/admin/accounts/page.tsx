@@ -3,6 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { CheckCircle2, Search, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
 import {
   GhostButton,
@@ -15,30 +16,67 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField } from "@/components/app/FormFields";
-import { tradingAccounts } from "@/lib/data/mockData";
-import { formatMoney, formatPercent } from "@/lib/utils/format";
 
-type AccountRecord = (typeof tradingAccounts)[number];
+type ApiAccountRecord = {
+  id: string;
+  user_id: string;
+  account_name: string;
+  broker_name: string;
+  status: string;
+  currency: string;
+  created_at: string;
+};
+
+type AccountRecord = {
+  accountId: string;
+  accountName: string;
+  brokerName: string;
+  status: "CONNECTED" | "SYNCING" | "DISCONNECTED" | "RESTRICTED" | "PENDING";
+  updatedAt: string;
+  openTradeCount: number;
+};
+
+function toAccountRecord(raw: ApiAccountRecord): AccountRecord {
+  return {
+    accountId: raw.id,
+    accountName: raw.account_name,
+    brokerName: raw.broker_name,
+    status: (raw.status as AccountRecord["status"]) ?? "PENDING",
+    updatedAt: raw.created_at,
+    openTradeCount: 0,
+  };
+}
 
 export default function AdminAccountsPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
-  const [selectedId, setSelectedId] = useState(tradingAccounts[0]?.accountId ?? "");
+  const [selectedId, setSelectedId] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "CONNECTED" | "SYNCING" | "DISCONNECTED" | "RESTRICTED">(
     "ALL",
   );
 
-  const accounts = useMemo(() => tradingAccounts, []);
+  const { data: rawAccounts = [], isLoading } = useQuery<ApiAccountRecord[]>({
+    queryKey: ["admin-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/accounts");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
+      return json.data;
+    },
+  });
+
+  const accounts: AccountRecord[] = useMemo(() => rawAccounts.map(toAccountRecord), [rawAccounts]);
   const filteredAccounts = accounts.filter((account) => statusFilter === "ALL" || account.status === statusFilter);
+  const effectiveSelectedId = selectedId || accounts[0]?.accountId || "";
   const selectedAccount =
-    filteredAccounts.find((account) => account.accountId === selectedId) ?? filteredAccounts[0] ?? accounts[0];
+    filteredAccounts.find((account) => account.accountId === effectiveSelectedId) ?? filteredAccounts[0] ?? accounts[0];
 
   const handleVerify = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setVerifyOpen(false);
-    setSuccessMessage("Selected account verification queued in mock supervision.");
+    setSuccessMessage("Selected account verification queued in supervision.");
   };
 
   return (
@@ -73,7 +111,7 @@ export default function AdminAccountsPage() {
                     <option value="SYNCING">Syncing only</option>
                   </SelectField>
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-                    <p className="text-sm text-muted">Verification updates the mock queue and clears no data.</p>
+                    <p className="text-sm text-muted">Verification updates the queue and clears no data.</p>
                     <div className="flex gap-3">
                       <Dialog.Close asChild>
                         <GhostButton type="button">Cancel</GhostButton>
@@ -99,7 +137,7 @@ export default function AdminAccountsPage() {
     >
       <InlineStatusStrip
         items={[
-          { label: "Accounts", value: accounts.length },
+          { label: "Accounts", value: isLoading ? "..." : accounts.length },
           {
             label: "Connected",
             value: accounts.filter((account) => account.status === "CONNECTED").length,
@@ -110,7 +148,7 @@ export default function AdminAccountsPage() {
             value: accounts.filter((account) => account.status === "SYNCING").length,
             tone: "accent",
           },
-          { label: "Restricted", value: "0" },
+          { label: "Restricted", value: accounts.filter((a) => a.status === "RESTRICTED").length },
         ]}
       />
 
@@ -173,54 +211,54 @@ export default function AdminAccountsPage() {
         </div>
       ) : null}
 
-      <div className="mt-5">
-        <Panel className="min-w-0">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected account</p>
-              <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedAccount.accountName}</h2>
-              <p className="mt-1 text-sm text-muted">{selectedAccount.brokerName}</p>
+      {selectedAccount ? (
+        <div className="mt-5">
+          <Panel className="min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected account</p>
+                <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedAccount.accountName}</h2>
+                <p className="mt-1 text-sm text-muted">{selectedAccount.brokerName}</p>
+              </div>
+              <StatusPill tone={selectedAccount.status === "CONNECTED" ? "lime" : "accent"}>
+                {selectedAccount.status}
+              </StatusPill>
             </div>
-            <StatusPill tone={selectedAccount.status === "CONNECTED" ? "lime" : "accent"}>
-              {selectedAccount.status}
-            </StatusPill>
-          </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Balance</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{formatMoney(selectedAccount.balance)}</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Account ID</p>
+                <p className="mt-1 text-sm font-semibold text-foreground truncate">{selectedAccount.accountId}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Status</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedAccount.status}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Open trades</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedAccount.openTradeCount}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Created</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedAccount.updatedAt).toLocaleDateString()}</p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Equity</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{formatMoney(selectedAccount.equity)}</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Floating PnL</p>
-              <p
-                className={`mt-1 text-sm font-semibold ${
-                  selectedAccount.floatingPnl.amount >= 0 ? "text-accent-2" : "text-danger"
-                }`}
+
+            <div className="mt-5 flex flex-wrap gap-3">
+              <GhostButton
+                type="button"
+                onClick={() => setAccountMessage(`${selectedAccount.accountName} queued for removal from supervision.`)}
               >
-                {formatMoney(selectedAccount.floatingPnl)}
-              </p>
+                Remove from queue
+              </GhostButton>
             </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Drawdown</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{formatPercent(selectedAccount.drawdownPercent)}</p>
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            <GhostButton
-              type="button"
-              onClick={() => setAccountMessage(`${selectedAccount.accountName} queued for removal from supervision.`)}
-            >
-              Remove from queue
-            </GhostButton>
-          </div>
-        </Panel>
-      </div>
+          </Panel>
+        </div>
+      ) : isLoading ? (
+        <div className="mt-5 rounded-2xl border border-line bg-panel p-8 text-center text-sm text-muted">
+          Loading accounts...
+        </div>
+      ) : null}
 
       <DirectorySearchOverlay<AccountRecord>
         open={searchOpen}
@@ -228,7 +266,7 @@ export default function AdminAccountsPage() {
         title="Find accounts"
         description="Search and filters stay in the overlay so the supervision page remains minimal."
         items={accounts}
-        selectedId={selectedAccount.accountId}
+        selectedId={selectedAccount?.accountId ?? ""}
         onSelect={(id) => {
           setSelectedId(id);
           setSearchOpen(false);
@@ -291,26 +329,20 @@ export default function AdminAccountsPage() {
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Balance</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{formatMoney(account.balance)}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Account ID</p>
+                <p className="mt-1 text-sm font-semibold text-foreground truncate">{account.accountId}</p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Equity</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{formatMoney(account.equity)}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Status</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{account.status}</p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Floating PnL</p>
-                <p
-                  className={`mt-1 text-sm font-semibold ${
-                    account.floatingPnl.amount >= 0 ? "text-accent-2" : "text-danger"
-                  }`}
-                >
-                  {formatMoney(account.floatingPnl)}
-                </p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Open trades</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{account.openTradeCount}</p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Drawdown</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{formatPercent(account.drawdownPercent)}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Created</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(account.updatedAt).toLocaleString()}</p>
               </div>
             </div>
           </Panel>

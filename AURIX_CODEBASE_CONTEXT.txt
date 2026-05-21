@@ -1,0 +1,491 @@
+================================================================================
+AURIX TRADING PLATFORM — FULL CODEBASE CONTEXT
+For use as a prompt context when requesting backend + Supabase integration work
+================================================================================
+
+PROJECT OVERVIEW
+----------------
+AURIX is a proprietary trading firm dashboard built with:
+  - Next.js 16.2.6 (App Router, TypeScript)
+  - React 19
+  - Tailwind CSS 4
+  - Zustand + TanStack React Query
+  - Framer Motion, Radix UI, Lucide icons
+  - Lightweight Charts (financial) + Recharts
+  - Socket.io (real-time WebSocket layer, scaffolded but not live)
+  - Prisma 7 ORM with a PostgreSQL schema (defined but no live DB connected)
+  - Zod for validation, jose for JWT, bcryptjs for password hashing
+
+The app is currently UI-only. All data comes from a mock data file.
+There is no authentication, no database connection, and no live broker data.
+The next step is to wire up Supabase as the database + auth provider.
+
+================================================================================
+CURRENT STATE — WHAT IS MOCK / NOT WIRED UP
+================================================================================
+
+1. AUTH (src/app/api/auth/session/route.ts)
+   - GET /api/auth/session returns a hardcoded user object:
+     { id: "trader-001", email: "ayan@example.com", name: "Ayan Malik", role: "TRADER" }
+   - No real login, register, JWT verification, or session management exists.
+   - Login/register/forgot-password/reset-password pages exist as UI shells.
+
+2. ALL SERVICES (src/lib/services/) return mock data directly:
+   - tradeService.ts       → filters from mockData.trades[]
+   - tradingAccountService.ts → returns mockData.tradingAccounts[]
+   - analyticsService.ts   → uses mockData.equityCurve[] and mockData.trades[]
+   - riskService.ts        → returns mockData.riskRules[] and mockData.riskEvents[]
+   - crmService.ts         → returns mockData.traders[] and mockData.crmNotes[]
+   - adminService.ts       → returns mockData.adminSummary
+
+3. BROKER ADAPTER (src/lib/broker/MetaApiBrokerAdapter.ts)
+   - Shell class that checks for METAAPI_TOKEN env var but throws
+     "not implemented" errors on all live methods.
+   - Interface (BrokerAdapter.ts) defines: verifyConnection, fetchSnapshot,
+     fetchOpenTrades, fetchTradeHistory.
+
+4. REAL-TIME (src/lib/realtime/)
+   - Socket.io server and client are scaffolded.
+   - Events defined: account.snapshot.updated, trade.opened, trade.closed,
+     risk.event.created, notification.created
+   - Nothing is actually emitting or receiving events yet.
+
+5. DATABASE
+   - Prisma schema exists with full models (see DATABASE SCHEMA section).
+   - DATABASE_URL env var expected but not set.
+   - No migrations have been run. No seed data is live.
+
+================================================================================
+DATABASE SCHEMA (prisma/schema.prisma)
+================================================================================
+
+Enums:
+  UserRole:      TRADER | ADMIN
+  UserStatus:    ACTIVE | SUSPENDED | PENDING
+  AccountStatus: PENDING | CONNECTED | SYNCING | DISCONNECTED | RESTRICTED
+  TradeStatus:   OPEN | CLOSED
+  TradeSide:     BUY | SELL
+  RiskSeverity:  INFO | WARNING | CRITICAL
+
+Models:
+
+  User
+    id            cuid (PK)
+    email         unique string
+    passwordHash  string (nullable)
+    name          string
+    role          UserRole
+    status        UserStatus (default PENDING)
+    → has one TraderProfile
+    → has many TradingAccount
+    → has many AuditLog (as actor)
+
+  TraderProfile
+    id      cuid (PK)
+    userId  unique FK → User
+    segment string (default "EVALUATION")
+    → has many CrmNote
+    → has many CrmActivity
+    → has many Subscription
+
+  TradingAccount
+    id              cuid (PK)
+    userId          FK → User
+    accountName     string
+    brokerName      string
+    brokerAccountId string (nullable)
+    status          AccountStatus (default PENDING)
+    currency        string (default "USD")
+    → has one BrokerCredential
+    → has many AccountSnapshot
+    → has many Trade
+    → has many DailyAccountMetric
+    → has many RiskRule
+    → has many RiskEvent
+    → has many Notification
+    Index: (userId, status)
+
+  BrokerCredential
+    id                  cuid (PK)
+    tradingAccountId    unique FK → TradingAccount
+    provider            string
+    encryptedReference  string (stores encrypted MT5 credentials)
+
+  AccountSnapshot
+    id               cuid (PK)
+    tradingAccountId FK → TradingAccount
+    balance          Decimal(18,2)
+    equity           Decimal(18,2)
+    floatingPnl      Decimal(18,2)
+    drawdownPercent  Decimal(7,2)
+    capturedAt       DateTime
+    Index: (tradingAccountId, capturedAt DESC)
+
+  Trade
+    id               cuid (PK)
+    tradingAccountId FK → TradingAccount
+    symbol           string (e.g. EURUSD, XAUUSD, NAS100)
+    side             TradeSide
+    status           TradeStatus
+    volume           Decimal(12,4)
+    openPrice        Decimal(18,6)
+    closePrice       Decimal(18,6) nullable
+    profit           Decimal(18,2)
+    currency         string (default "USD")
+    openedAt         DateTime
+    closedAt         DateTime nullable
+    Index: (tradingAccountId, status, openedAt DESC)
+
+  DailyAccountMetric
+    id                  cuid (PK)
+    tradingAccountId    FK → TradingAccount
+    metricDay           Date
+    profit              Decimal(18,2)
+    winRatePercent      Decimal(7,2)
+    maxDrawdownPercent  Decimal(7,2)
+    tradeCount          Int
+    Unique: (tradingAccountId, metricDay)
+
+  RiskRule
+    id               cuid (PK)
+    tradingAccountId FK → TradingAccount (nullable = platform-level rule)
+    name             string
+    severity         RiskSeverity
+    metric           string (DAILY_LOSS | MAX_DRAWDOWN | OPEN_TRADES)
+    threshold        Decimal(18,2)
+    enabled          boolean
+
+  RiskEvent
+    id               cuid (PK)
+    tradingAccountId FK → TradingAccount
+    ruleName         string
+    severity         RiskSeverity
+    message          string
+    acknowledgedAt   DateTime nullable
+    createdAt        DateTime
+
+  CrmNote
+    id              cuid (PK)
+    traderProfileId FK → TraderProfile
+    authorName      string
+    note            string
+    createdAt       DateTime
+
+  CrmActivity
+    id              cuid (PK)
+    traderProfileId FK → TraderProfile
+    type            string
+    description     string
+    createdAt       DateTime
+
+  Subscription
+    id              cuid (PK)
+    traderProfileId FK → TraderProfile
+    planName        string
+    status          string
+    startedAt       DateTime
+    endsAt          DateTime nullable
+
+  Notification
+    id               cuid (PK)
+    tradingAccountId FK → TradingAccount (nullable)
+    userId           string (nullable)
+    title            string
+    message          string
+    readAt           DateTime nullable
+    createdAt        DateTime
+
+  AuditLog
+    id          cuid (PK)
+    actorUserId FK → User (nullable)
+    action      string
+    entityType  string
+    entityId    string (nullable)
+    metadata    Json (nullable)
+    createdAt   DateTime
+
+================================================================================
+TYPESCRIPT DOMAIN TYPES (src/lib/domain/types.ts)
+================================================================================
+
+These are the DTOs used by all API routes and services:
+
+  MoneyValue           { amount: number; currency: string }
+
+  TraderAccountSummary {
+    accountId, accountName, brokerName, status: AccountStatus,
+    balance: MoneyValue, equity: MoneyValue, floatingPnl: MoneyValue,
+    openTradeCount, drawdownPercent, updatedAt
+  }
+
+  TradeDto {
+    id, accountId, symbol, side: TradeSide, status: TradeStatus,
+    volume, openPrice, closePrice | null,
+    profit: MoneyValue, openedAt, closedAt | null
+  }
+
+  AnalyticsSummary {
+    accountId, totalProfit: MoneyValue, winRatePercent, maxDrawdownPercent,
+    riskRewardRatio, consistencyScore, tradeCount,
+    period: "DAILY" | "WEEKLY" | "MONTHLY" | "ALL_TIME"
+  }
+
+  EquityPoint          { capturedAt, balance, equity }
+
+  RiskRuleDto {
+    id, scope: "PLATFORM" | "ACCOUNT", name, severity: RiskSeverity,
+    metric: "DAILY_LOSS" | "MAX_DRAWDOWN" | "OPEN_TRADES",
+    threshold, enabled
+  }
+
+  RiskEventDto         { id, accountId, ruleName, severity, message, createdAt }
+
+  CrmNoteDto           { id, traderId, authorName, note, createdAt }
+
+  TraderProfileDto {
+    traderId, name, email,
+    segment: "EVALUATION" | "FUNDED" | "AT_RISK" | "VIP",
+    accountCount, totalEquity: MoneyValue, lastActivityAt
+  }
+
+  AdminSummaryDto {
+    activeTraders, connectedAccounts, openRiskEvents,
+    monthlyRecurringRevenue: MoneyValue
+  }
+
+  ApiEnvelope<T>       { ok: true; data: T } | { ok: false; error: { code, message } }
+
+================================================================================
+API ROUTES (src/app/api/)
+================================================================================
+
+All routes follow the ApiEnvelope<T> response shape.
+All are currently backed by mock data via service functions.
+
+  GET  /api/auth/session                → hardcoded user object (no real auth)
+  GET  /api/trading-accounts            → list all accounts for current user
+  GET  /api/trading-accounts/[accountId]→ get single account
+  GET  /api/trades?accountId=&status=   → list trades with optional filters
+  GET  /api/analytics/summary?accountId=→ AnalyticsSummary
+  GET  /api/analytics/equity-curve?accountId= → EquityPoint[]
+  GET  /api/risk/rules                  → RiskRuleDto[]
+  GET  /api/risk/events?accountId=      → RiskEventDto[]
+  GET  /api/crm/traders                 → TraderProfileDto[]
+  GET  /api/crm/notes?traderId=         → CrmNoteDto[]
+  GET  /api/admin/users                 → admin user list
+  GET  /api/realtime/token              → WebSocket auth token (stub)
+
+================================================================================
+PAGES & ROUTING
+================================================================================
+
+Auth pages (no layout):
+  /login              Login form (UI only)
+  /register           Register form (UI only)
+  /forgot-password    Forgot password form (UI only)
+  /reset-password     Reset password form (UI only)
+
+Trader pages (role: TRADER, protected layout with sidebar + topbar):
+  /dashboard          KPI strip, equity curve chart, open trades table,
+                      performance rings, calendar tracker
+  /accounts           List of connected trading accounts
+  /accounts/[accountId] Single account detail
+  /trades             All trades (open + closed) with filters
+  /analytics          Historical performance charts and metrics
+  /risk               Risk rules list + triggered risk events
+  /reports            Performance report summaries
+  /settings           User profile and notification settings
+
+Admin pages (role: ADMIN, separate layout):
+  /admin              Admin KPI overview
+  /admin/users        User management table
+  /admin/traders      Trader supervision with segment filters
+  /admin/accounts     All accounts oversight
+  /admin/crm          CRM: trader profiles + notes timeline
+  /admin/risk         Platform-wide risk rule configuration
+  /admin/subscriptions Subscription plan management
+  /admin/audit        Audit log viewer
+
+================================================================================
+DOMAIN LOGIC (src/lib/domain/)
+================================================================================
+
+metrics.ts — Pure calculation functions (no DB dependency):
+  calculateTotalProfit(trades)       → sums closed trade profit
+  calculateWinRate(trades)           → % of profitable closed trades
+  calculateMaxDrawdown(equityCurve)  → peak-to-trough equity drawdown %
+  calculateRiskRewardRatio(trades)   → avg win / avg loss
+  calculateProfitFactor(trades)      → gross profit / gross loss
+  calculateConsistencyScore(trades)  → % of trading days that were profitable
+  buildAnalyticsSummary(...)         → combines all of the above into AnalyticsSummary
+
+risk.ts — evaluateRiskRules():
+  Takes { account, trades, rules, dailyProfit } and returns triggered RiskEventDto[]
+  Checks DAILY_LOSS, MAX_DRAWDOWN, OPEN_TRADES thresholds
+
+================================================================================
+REAL-TIME EVENTS (src/lib/realtime/events.ts)
+================================================================================
+
+  account.snapshot.updated  → when account balance/equity refreshes
+  trade.opened              → new open trade detected
+  trade.closed              → trade closed
+  risk.event.created        → a risk rule was triggered
+  notification.created      → new notification for user
+
+================================================================================
+MOCK DATA SUMMARY (src/lib/data/mockData.ts)
+================================================================================
+
+tradingAccounts[]:  2 accounts
+  - "Orion Growth 100K"     (acc-orion-001) CONNECTED, balance $102,480
+  - "Nova Evaluation 50K"   (acc-nova-002)  SYNCING,   balance $49,820
+
+equityCurve[]:  28 data points over ~7 days (6-hour intervals)
+  Starting at $100,000, gentle upward drift with sine-wave pulse
+
+trades[]:  17 trades total
+  - 14 closed trades across EURUSD, XAUUSD, GBPJPY, NAS100
+  - 3 open trades: XAUUSD BUY (+$418), EURUSD SELL (+$244), NAS100 SELL (-$524)
+
+riskRules[]:  3 rules
+  - Daily loss limit $2,500 (CRITICAL, PLATFORM)
+  - Max drawdown 5% (WARNING, PLATFORM)
+  - Open trade concentration 5 (INFO, ACCOUNT)
+
+riskEvents[]:  1 event
+  - Nova Evaluation breaching 5% drawdown (WARNING)
+
+traders[]:  2 trader profiles
+  - Ayan Malik (FUNDED, $152,438 equity)
+  - Sara Khan  (AT_RISK, $49,296 equity)
+
+crmNotes[]:  2 notes
+
+adminSummary:
+  - 128 active traders, 214 connected accounts, 1 open risk event, $18,400 MRR
+
+================================================================================
+WHAT NEEDS TO BE BUILT (BACKEND + SUPABASE INTEGRATION)
+================================================================================
+
+1. SUPABASE SETUP
+   - Replace Prisma PostgreSQL connection with Supabase project URL + anon key
+   - Set DATABASE_URL to Supabase connection string in .env.local
+   - Run prisma migrate dev to push schema to Supabase
+   - Keep Prisma as the ORM (it works fine on top of Supabase Postgres)
+
+2. AUTHENTICATION (replace mock session)
+   - Use Supabase Auth (email/password) for login, register, forgot/reset password
+   - On login: call supabase.auth.signInWithPassword()
+   - On register: call supabase.auth.signUp(), then create User + TraderProfile rows
+   - Session: use Supabase session tokens, store in cookies (SSR-safe)
+   - Replace GET /api/auth/session to read from Supabase session cookie
+   - Add middleware (src/middleware.ts) to protect trader/* and admin/* routes
+   - Role-based access: read role from User table, redirect accordingly
+
+3. SERVICE LAYER (replace all mock data with real DB queries via Prisma)
+   Each service function should query Supabase PostgreSQL through Prisma client:
+
+   tradeService.ts
+     listTrades({ accountId, status })
+       → prisma.trade.findMany({ where: { tradingAccountId, status }, orderBy: openedAt DESC })
+
+   tradingAccountService.ts
+     listTradingAccounts(userId)
+       → prisma.tradingAccount.findMany({ where: { userId } })
+     getTradingAccount(accountId, userId)
+       → prisma.tradingAccount.findFirst({ where: { id, userId } })
+
+   analyticsService.ts
+     getAnalyticsSummary(accountId)
+       → query trades + accountSnapshots from DB, then call buildAnalyticsSummary()
+     getEquityCurve(accountId)
+       → prisma.accountSnapshot.findMany({ where: { tradingAccountId }, orderBy: capturedAt ASC })
+
+   riskService.ts
+     listRiskRules(accountId?)
+       → prisma.riskRule.findMany({ where: { OR: [{ tradingAccountId: null }, { tradingAccountId }] } })
+     listRiskEvents(accountId?)
+       → prisma.riskEvent.findMany({ where: { tradingAccountId }, orderBy: createdAt DESC })
+
+   crmService.ts
+     listTraderProfiles()    → prisma.traderProfile.findMany({ include: { user, tradingAccounts } })
+     listCrmNotes(traderId?) → prisma.crmNote.findMany({ where: { traderProfileId } })
+     createCrmNote(...)      → prisma.crmNote.create(...)
+
+   adminService.ts
+     getAdminSummary()
+       → aggregate queries: count(User where active), count(TradingAccount where connected), etc.
+
+4. API ROUTES (add auth guards, wire to real services)
+   - All routes should verify Supabase session token from cookie before responding
+   - Add POST /api/trading-accounts to create a new account
+   - Add POST /api/crm/notes to create a CRM note
+   - Add PATCH /api/risk/rules/[id] to toggle or update a rule
+   - Add POST /api/admin/users/[id]/status to suspend/activate users
+
+5. REAL-TIME (Socket.io + Supabase Realtime alternative)
+   Option A: Keep Socket.io server, emit events from API route handlers after DB writes
+   Option B: Replace with Supabase Realtime (postgres_changes subscriptions) on client
+   Recommended for MVP: Supabase Realtime on the client for account snapshots + risk events
+
+6. BROKER INTEGRATION (MetaApi - later phase)
+   - Complete MetaApiBrokerAdapter.fetchSnapshot() using MetaApi SDK
+   - Store encrypted MT5 credentials in BrokerCredential table
+   - Create a background job / cron that polls MetaApi every 30s and upserts
+     AccountSnapshot rows and Trade rows into Supabase
+   - Emit account.snapshot.updated via Socket.io or Supabase Realtime after each poll
+
+================================================================================
+ENVIRONMENT VARIABLES NEEDED
+================================================================================
+
+  DATABASE_URL=postgresql://...         (Supabase Postgres connection string)
+  NEXT_PUBLIC_SUPABASE_URL=https://...  (Supabase project URL)
+  NEXT_PUBLIC_SUPABASE_ANON_KEY=...     (Supabase anon public key)
+  SUPABASE_SERVICE_ROLE_KEY=...         (for server-side admin operations)
+  JWT_SECRET=...                        (for any custom JWT signing if needed)
+  METAAPI_TOKEN=...                     (MetaTrader broker integration)
+
+================================================================================
+FILE STRUCTURE REFERENCE
+================================================================================
+
+src/
+  app/
+    (auth)/              Login, register, forgot-password, reset-password pages
+    (trader)/            Dashboard, accounts, trades, analytics, risk, reports, settings
+    (admin)/             Admin pages
+    api/                 All API route handlers
+    globals.css          Theme variables and global styles
+    layout.tsx           Root layout
+  components/
+    app/                 Sidebar, Topbar, AppShell, WorkspaceUI, PageHeader, Toast
+    dashboard/           KpiStrip, EquityCurve, OpenTradesTable, PerformanceRings
+    charts/              TradingChart (Lightweight Charts)
+    crm/                 CrmOverlay, TraderProfilePanel, NotesTimeline
+    risk/                RiskStatusPanel, RiskRuleEditor
+    admin/               AdminOverviewOverlay
+  lib/
+    api/envelope.ts      jsonOk() / jsonFail() helpers
+    broker/              BrokerAdapter interface + MetaApiBrokerAdapter (stub)
+    data/mockData.ts     ALL current mock data (to be replaced by DB queries)
+    domain/
+      types.ts           All DTOs and enums
+      metrics.ts         Pure calculation functions (keep as-is)
+      risk.ts            Risk rule evaluation logic (keep as-is)
+      dashboard.ts       Dashboard view types
+    realtime/
+      events.ts          WebSocket event name constants
+      client.ts          Socket.io client init
+      server.ts          Socket.io server init
+    services/            One file per domain — all currently return mock data
+    validation/schemas.ts Zod schemas for API query params
+prisma/
+  schema.prisma          Full DB schema (ready, just needs migration)
+  seed.ts                Demo seed data script
+
+================================================================================
+END OF CONTEXT FILE
+================================================================================

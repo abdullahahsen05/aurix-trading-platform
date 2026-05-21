@@ -16,23 +16,45 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField, TextAreaField } from "@/components/app/FormFields";
-import { crmNotes, traders } from "@/lib/data/mockData";
+import { useQuery } from "@tanstack/react-query";
 import { formatMoney } from "@/lib/utils/format";
+import type { TraderProfileDto, CrmNoteDto } from "@/lib/domain/types";
 
-type TraderRecord = (typeof traders)[number];
+type TraderRecord = TraderProfileDto;
 
 export default function AdminTradersPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const [selectedId, setSelectedId] = useState(traders[0]?.traderId ?? "");
+  const [selectedId, setSelectedId] = useState("");
   const [segmentFilter, setSegmentFilter] = useState<"ALL" | "FUNDED" | "EVALUATION" | "AT_RISK" | "VIP">("ALL");
 
-  const traderList = useMemo(() => traders, []);
+  const { data: traders = [] } = useQuery<TraderProfileDto[]>({
+    queryKey: ["crm-traders"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/traders");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load traders");
+      return json.data;
+    },
+  });
+
+  const { data: crmNotes = [] } = useQuery<CrmNoteDto[]>({
+    queryKey: ["crm-notes"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/notes");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load notes");
+      return json.data;
+    },
+  });
+
+  const traderList = useMemo(() => traders, [traders]);
   const filteredTraders = traderList.filter((trader) => segmentFilter === "ALL" || trader.segment === segmentFilter);
-  const selectedTrader = filteredTraders.find((trader) => trader.traderId === selectedId) ?? filteredTraders[0] ?? traderList[0];
-  const selectedNotes = crmNotes.filter((note) => note.traderId === selectedTrader.traderId);
+  const effectiveSelectedId = selectedId || traderList[0]?.traderId || "";
+  const selectedTrader = filteredTraders.find((trader) => trader.traderId === effectiveSelectedId) ?? filteredTraders[0] ?? traderList[0];
+  const selectedNotes = selectedTrader ? crmNotes.filter((note) => note.traderId === selectedTrader.traderId) : [];
 
   const handleAddNote = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -72,7 +94,7 @@ export default function AdminTradersPage() {
                   Write a relationship note against a trader profile and keep the activity timeline up to date.
                 </Dialog.Description>
                 <form className="mt-6 grid gap-4" onSubmit={handleAddNote}>
-                  <SelectField label="Trader" defaultValue={selectedTrader.traderId}>
+                  <SelectField label="Trader" defaultValue={selectedTrader?.traderId ?? ""}>
                     {traderList.map((trader) => (
                       <option key={trader.traderId} value={trader.traderId}>
                         {trader.name}
@@ -113,12 +135,12 @@ export default function AdminTradersPage() {
         items={[
           {
             label: "Funded",
-            value: traders.filter((trader) => trader.segment === "FUNDED").length,
+            value: traderList.filter((trader) => trader.segment === "FUNDED").length,
             tone: "lime",
           },
           {
             label: "At risk",
-            value: traders.filter((trader) => trader.segment === "AT_RISK").length,
+            value: traderList.filter((trader) => trader.segment === "AT_RISK").length,
             tone: "accent",
           },
           { label: "CRM notes", value: crmNotes.length },
@@ -180,7 +202,10 @@ export default function AdminTradersPage() {
 
       <div className="mt-5">
         <Panel className="min-w-0">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          {!selectedTrader ? (
+            <p className="text-sm text-muted">Loading traders...</p>
+          ) : (
+          <><div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected trader</p>
               <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedTrader.name}</h2>
@@ -227,6 +252,8 @@ export default function AdminTradersPage() {
               )}
             </div>
           </div>
+          </>
+          )}
         </Panel>
       </div>
 
@@ -236,7 +263,7 @@ export default function AdminTradersPage() {
         title="Find traders"
         description="Search and segment filtering stay in the overlay so the page shell stays minimal."
         items={traderList}
-        selectedId={selectedTrader.traderId}
+        selectedId={effectiveSelectedId}
         onSelect={(id) => {
           setSelectedId(id);
           setSearchOpen(false);

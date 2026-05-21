@@ -1,13 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { EmptyState, GhostButton, InlineStatusStrip, Panel, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
 import { CrmOverlay } from "@/components/crm/CrmOverlay";
 import { NoteEditorDialog } from "@/components/crm/NoteEditorDialog";
 import type { CrmContact, CrmNoteItem, CrmRoleFilter, CrmSegmentFilter, CrmTab } from "@/components/crm/crmTypes";
-import { crmNotes, traders } from "@/lib/data/mockData";
-
-type Contact = CrmContact;
+import type { TraderProfileDto, CrmNoteDto } from "@/lib/domain/types";
 
 const crmTabs: Array<{ key: CrmTab; label: string }> = [
   { key: "CONTACT_DIRECTORY", label: "Contacts" },
@@ -20,105 +19,34 @@ function tabButtonClass(active: boolean) {
   return `btn-dark h-9 px-4 text-xs ${active ? "btn-active" : ""}`;
 }
 
-function buildContacts(): Contact[] {
-  const ayan = traders.find((trader) => trader.traderId === "trader-001");
-  const sara = traders.find((trader) => trader.traderId === "trader-002");
-
-  return [
-    {
-      id: "trader-001",
-      name: ayan?.name ?? "Ayan Malik",
-      email: ayan?.email ?? "ayan@example.com",
-      role: "TRADER",
-      segment: ayan?.segment ?? "FUNDED",
-      status: "ACTIVE",
-      team: "Funding desk",
-      accountIds: ["acc-orion-001"],
-      assignedTraders: [],
-      subscription: "Funded Pro",
-      lastActivityAt: ayan?.lastActivityAt ?? "2026-05-11T11:00:00.000Z",
-      tags: ["Top performer", "Low drawdown"],
-    },
-    {
-      id: "trader-002",
-      name: sara?.name ?? "Sara Khan",
-      email: sara?.email ?? "sara@example.com",
-      role: "TRADER",
-      segment: sara?.segment ?? "AT_RISK",
-      status: "AT_RISK",
-      team: "Evaluation desk",
-      accountIds: ["acc-nova-002"],
-      assignedTraders: [],
-      subscription: "Evaluation",
-      lastActivityAt: sara?.lastActivityAt ?? "2026-05-11T09:00:00.000Z",
-      tags: ["Monitoring", "Needs review"],
-    },
-    {
-      id: "user-maya-001",
-      name: "Maya Sterling",
-      email: "maya@platform.local",
-      role: "PLATFORM_USER",
-      segment: "OPERATIONS",
-      status: "ACTIVE",
-      team: "Customer Success",
-      accountIds: [],
-      assignedTraders: ["Ayan Malik", "Sara Khan"],
-      subscription: "Workspace Seat",
-      lastActivityAt: "2026-05-11T14:12:00.000Z",
-      tags: ["Onboarding", "Retention"],
-    },
-    {
-      id: "user-noah-001",
-      name: "Noah Bennett",
-      email: "noah@platform.local",
-      role: "PLATFORM_USER",
-      segment: "RISK",
-      status: "ACTIVE",
-      team: "Risk Desk",
-      accountIds: [],
-      assignedTraders: ["Sara Khan"],
-      subscription: "Workspace Seat",
-      lastActivityAt: "2026-05-11T15:45:00.000Z",
-      tags: ["Review queue", "Escalations"],
-    },
-  ];
+function traderToContact(trader: TraderProfileDto): CrmContact {
+  return {
+    id: trader.traderId,
+    name: trader.name,
+    email: trader.email,
+    role: "TRADER",
+    segment: trader.segment,
+    status: trader.segment === "AT_RISK" ? "AT_RISK" : "ACTIVE",
+    team: "Funding desk",
+    accountIds: [],
+    assignedTraders: [],
+    subscription: trader.segment === "FUNDED" ? "Funded Pro" : "Evaluation",
+    lastActivityAt: trader.lastActivityAt,
+    tags: trader.segment === "AT_RISK" ? ["Monitoring", "Needs review"] : ["Top performer"],
+  };
 }
 
-const crmContacts = buildContacts();
-
-const platformNotes: Record<string, CrmNoteItem[]> = {
-  "user-maya-001": [
-    {
-      id: "maya-note-1",
-      authorName: "Support Lead",
-      note: "Reviewed onboarding queue and confirmed account linkage health.",
-      createdAt: "2026-05-11T14:10:00.000Z",
-    },
-    {
-      id: "maya-note-2",
-      authorName: "Compliance",
-      note: "Customer segmentation rules are current for funded traders.",
-      createdAt: "2026-05-11T09:30:00.000Z",
-    },
-  ],
-  "user-noah-001": [
-    {
-      id: "noah-note-1",
-      authorName: "Risk Desk",
-      note: "Checked open alerts and updated the supervision queue.",
-      createdAt: "2026-05-11T15:45:00.000Z",
-    },
-    {
-      id: "noah-note-2",
-      authorName: "Platform Admin",
-      note: "Validated account tracking coverage for broker-linked profiles.",
-      createdAt: "2026-05-11T08:05:00.000Z",
-    },
-  ],
-};
+function noteToItem(note: CrmNoteDto): CrmNoteItem {
+  return {
+    id: note.id,
+    authorName: note.authorName,
+    note: note.note,
+    createdAt: note.createdAt,
+  };
+}
 
 export default function AdminCrmPage() {
-  const [selectedId, setSelectedId] = useState(crmContacts[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState("");
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<CrmRoleFilter>("ALL");
   const [segmentFilter, setSegmentFilter] = useState<CrmSegmentFilter>("ALL");
@@ -127,6 +55,31 @@ export default function AdminCrmPage() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const pageSize = 10;
+
+  const { data: traders = [] } = useQuery<TraderProfileDto[]>({
+    queryKey: ["crm-traders"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/traders");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load traders");
+      return json.data;
+    },
+  });
+
+  const { data: crmNotesRaw = [] } = useQuery<CrmNoteDto[]>({
+    queryKey: ["crm-notes"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/notes");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load CRM notes");
+      return json.data;
+    },
+  });
+
+  const crmContacts: CrmContact[] = useMemo(() => traders.map(traderToContact), [traders]);
+  const crmNotes: CrmNoteItem[] = useMemo(() => crmNotesRaw.map(noteToItem), [crmNotesRaw]);
+
+  const effectiveSelectedId = selectedId || crmContacts[0]?.id || "";
 
   const filteredContacts = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -140,7 +93,7 @@ export default function AdminCrmPage() {
       const matchesSegment = segmentFilter === "ALL" || contact.segment === segmentFilter;
       return matchesQuery && matchesRole && matchesSegment;
     });
-  }, [query, roleFilter, segmentFilter]);
+  }, [query, roleFilter, segmentFilter, crmContacts]);
 
   const totalContacts = filteredContacts.length;
   const totalPages = Math.max(1, Math.ceil(totalContacts / pageSize));
@@ -148,11 +101,14 @@ export default function AdminCrmPage() {
   const startIndex = (currentPageSafe - 1) * pageSize;
   const visibleContacts = filteredContacts.slice(startIndex, startIndex + pageSize);
 
-  const selectedContact = filteredContacts.find((contact) => contact.id === selectedId) ?? null;
+  const selectedContact = filteredContacts.find((contact) => contact.id === effectiveSelectedId) ?? null;
   const selectedNotes: CrmNoteItem[] = selectedContact
-    ? selectedContact.role === "TRADER"
-      ? crmNotes.filter((note) => note.traderId === selectedContact.id)
-      : platformNotes[selectedContact.id] ?? []
+    ? crmNotes.filter((note) => {
+        // CrmNoteDto has traderId, CrmNoteItem we mapped doesn't carry it
+        // We need to find from raw notes
+        const rawNote = crmNotesRaw.find((n) => n.id === note.id);
+        return rawNote?.traderId === selectedContact.id;
+      })
     : [];
   const recentNotes = selectedNotes.slice(0, 3);
 
@@ -193,11 +149,11 @@ export default function AdminCrmPage() {
             value: crmContacts.filter((contact) => contact.role === "PLATFORM_USER").length,
             tone: "accent",
           },
-          { label: "Active subscriptions", value: "2", tone: "lime" },
+          { label: "Active subscriptions", value: crmContacts.filter((c) => c.segment === "FUNDED").length, tone: "lime" },
         ]}
       />
 
-          {feedbackMessage ? (
+      {feedbackMessage ? (
         <div className="mt-5 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-medium text-accent">
           {feedbackMessage}
         </div>
@@ -329,8 +285,8 @@ export default function AdminCrmPage() {
         onTabChange={setActiveOverlay}
         contacts={crmContacts}
         selectedContact={selectedContact}
-        selectedId={selectedId}
-        onSelectContact={setSelectedId}
+        selectedId={effectiveSelectedId}
+        onSelectContact={(id) => setSelectedId(id)}
         query={query}
         onQueryChange={(value) => {
           setQuery(value);

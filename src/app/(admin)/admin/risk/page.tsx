@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { Bell, ShieldAlert, SlidersHorizontal } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import {
   DataTable,
   GhostButton,
@@ -12,11 +13,41 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField, TextField } from "@/components/app/FormFields";
-import { riskEvents, riskRules, tradingAccounts } from "@/lib/data/mockData";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
+import type { RiskEventDto, RiskRuleDto, TraderAccountSummary } from "@/lib/domain/types";
 
 export default function AdminRiskPage() {
   const [message, setMessage] = useState("");
+
+  const { data: riskRules = [] } = useQuery<RiskRuleDto[]>({
+    queryKey: ["risk-rules"],
+    queryFn: async () => {
+      const res = await fetch("/api/risk/rules");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk rules");
+      return json.data;
+    },
+  });
+
+  const { data: riskEvents = [] } = useQuery<RiskEventDto[]>({
+    queryKey: ["risk-events"],
+    queryFn: async () => {
+      const res = await fetch("/api/risk/events");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk events");
+      return json.data;
+    },
+  });
+
+  const { data: tradingAccounts = [] } = useQuery<TraderAccountSummary[]>({
+    queryKey: ["trading-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/trading-accounts");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
+      return json.data;
+    },
+  });
 
   const handleSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

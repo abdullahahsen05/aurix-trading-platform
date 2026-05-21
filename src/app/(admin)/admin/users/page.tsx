@@ -3,6 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Import, Plus, Search, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
 import {
   GhostButton,
@@ -15,7 +16,15 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField, TextField } from "@/components/app/FormFields";
-import { traders } from "@/lib/data/mockData";
+
+type ApiUserRecord = {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+  status: string;
+  created_at: string;
+};
 
 type UserRecord = {
   id: string;
@@ -27,6 +36,18 @@ type UserRecord = {
   lastActiveAt: string;
 };
 
+function toUserRecord(raw: ApiUserRecord): UserRecord {
+  return {
+    id: raw.id,
+    name: raw.full_name ?? raw.email,
+    email: raw.email,
+    role: raw.role === "ADMIN" ? "ADMIN" : "TRADER",
+    status: raw.status === "SUSPENDED" ? "SUSPENDED" : "ACTIVE",
+    segment: raw.role === "ADMIN" ? "OPERATIONS" : "EVALUATION",
+    lastActiveAt: raw.created_at,
+  };
+}
+
 export default function AdminUsersPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -35,32 +56,20 @@ export default function AdminUsersPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [moderationMessage, setModerationMessage] = useState("");
-  const [selectedId, setSelectedId] = useState("trader-001");
+  const [selectedId, setSelectedId] = useState("");
   const [profileFilter, setProfileFilter] = useState<"ALL" | "TRADER" | "ADMIN" | "SUSPENDED">("ALL");
 
-  const users: UserRecord[] = useMemo(
-    () => [
-      ...traders.map((trader) => ({
-        id: trader.traderId,
-        name: trader.name,
-        email: trader.email,
-        role: "TRADER" as const,
-        status: "ACTIVE" as const,
-        segment: trader.segment,
-        lastActiveAt: trader.lastActivityAt,
-      })),
-      {
-        id: "admin-001",
-        name: "Platform Admin",
-        email: "admin@example.com",
-        role: "ADMIN" as const,
-        status: "ACTIVE" as const,
-        segment: "OPERATIONS",
-        lastActiveAt: "2026-05-11T10:30:00.000Z",
-      },
-    ],
-    [],
-  );
+  const { data: rawUsers = [], isLoading } = useQuery<ApiUserRecord[]>({
+    queryKey: ["admin-users"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/users");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load users");
+      return json.data;
+    },
+  });
+
+  const users: UserRecord[] = useMemo(() => rawUsers.map(toUserRecord), [rawUsers]);
 
   const filteredUsers = users.filter((user) => {
     if (profileFilter === "ALL") return true;
@@ -68,7 +77,8 @@ export default function AdminUsersPage() {
     return user.role === profileFilter;
   });
 
-  const selectedUser = filteredUsers.find((user) => user.id === selectedId) ?? filteredUsers[0] ?? users[0];
+  const effectiveSelectedId = selectedId || users[0]?.id || "";
+  const selectedUser = filteredUsers.find((user) => user.id === effectiveSelectedId) ?? filteredUsers[0] ?? users[0];
 
   const handleAddUser = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -78,7 +88,7 @@ export default function AdminUsersPage() {
     window.setTimeout(() => {
       setIsSaving(false);
       setAddOpen(false);
-      setSuccessMessage("User created in the mock admin directory.");
+      setSuccessMessage("User created in the admin directory.");
     }, 900);
   };
 
@@ -176,7 +186,7 @@ export default function AdminUsersPage() {
                   <TextField label="Segment" defaultValue="EVALUATION" />
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
                     <p className="text-sm text-muted">
-                      Users stay in the mock directory until the auth layer is connected.
+                      Users stay in the directory until the auth layer is connected.
                     </p>
                     <div className="flex gap-3">
                       <Dialog.Close asChild>
@@ -205,7 +215,7 @@ export default function AdminUsersPage() {
     >
       <InlineStatusStrip
         items={[
-          { label: "Total users", value: users.length },
+          { label: "Total users", value: isLoading ? "..." : users.length },
           { label: "Admins", value: users.filter((user) => user.role === "ADMIN").length, tone: "accent" },
           { label: "Traders", value: users.filter((user) => user.role === "TRADER").length, tone: "lime" },
           { label: "Suspended", value: users.filter((user) => user.status === "SUSPENDED").length },
@@ -263,46 +273,52 @@ export default function AdminUsersPage() {
         </div>
       ) : null}
 
-      <div className="mt-5">
-        <Panel className="min-w-0">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected profile</p>
-              <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedUser.name}</h2>
-              <p className="mt-1 text-sm text-muted">{selectedUser.email}</p>
+      {selectedUser ? (
+        <div className="mt-5">
+          <Panel className="min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected profile</p>
+                <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedUser.name}</h2>
+                <p className="mt-1 text-sm text-muted">{selectedUser.email}</p>
+              </div>
+              <StatusPill tone={selectedUser.role === "ADMIN" ? "accent" : "lime"}>{selectedUser.role}</StatusPill>
             </div>
-            <StatusPill tone={selectedUser.role === "ADMIN" ? "accent" : "lime"}>{selectedUser.role}</StatusPill>
-          </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Status</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{selectedUser.status}</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Status</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedUser.status}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Segment</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedUser.segment}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Last active</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedUser.lastActiveAt).toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Access</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">Workspace enabled</p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Segment</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{selectedUser.segment}</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Last active</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedUser.lastActiveAt).toLocaleString()}</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Access</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">Workspace enabled</p>
-            </div>
-          </div>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <GhostButton
-              type="button"
-              onClick={() => setModerationMessage(`${selectedUser.name} marked for suspension review in mock moderation.`)}
-            >
-              Suspend review
-            </GhostButton>
-          </div>
-        </Panel>
-      </div>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <GhostButton
+                type="button"
+                onClick={() => setModerationMessage(`${selectedUser.name} marked for suspension review.`)}
+              >
+                Suspend review
+              </GhostButton>
+            </div>
+          </Panel>
+        </div>
+      ) : isLoading ? (
+        <div className="mt-5 rounded-2xl border border-line bg-panel p-8 text-center text-sm text-muted">
+          Loading users...
+        </div>
+      ) : null}
 
       <DirectorySearchOverlay<UserRecord>
         open={searchOpen}
@@ -310,7 +326,7 @@ export default function AdminUsersPage() {
         title="Find users"
         description="Search and filter stay inside the overlay so the page shell stays minimal."
         items={users}
-        selectedId={selectedId}
+        selectedId={effectiveSelectedId}
         onSelect={(id) => {
           setSelectedId(id);
           setSearchOpen(false);

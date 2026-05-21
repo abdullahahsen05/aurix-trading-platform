@@ -2,22 +2,52 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/app/WorkspaceUI";
 import { SelectField, TextField } from "@/components/app/FormFields";
+import { createClient } from "@/lib/supabase/client";
 
 export default function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const router = useRouter();
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
     setMessage("");
+    setError("");
 
-    window.setTimeout(() => {
+    const formData = new FormData(event.currentTarget);
+    const fullName = formData.get("fullName") as string;
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+    const confirmPassword = formData.get("confirmPassword") as string;
+
+    if (password !== confirmPassword) {
       setIsSubmitting(false);
-      setMessage("Account created in mock mode. Verification email queued.");
-    }, 900);
+      setError("Passwords do not match.");
+      return;
+    }
+
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: fullName },
+      },
+    });
+
+    if (authError) {
+      setIsSubmitting(false);
+      setError(authError.message);
+      return;
+    }
+
+    setMessage("Account created. Redirecting to workspace...");
+    router.push("/dashboard");
   };
 
   return (
@@ -27,7 +57,7 @@ export default function RegisterPage() {
           <p className="text-xs font-semibold uppercase text-accent">Trader signup</p>
           <h1 className="mt-2 text-2xl font-semibold text-foreground">Create your trading workspace</h1>
           <p className="mt-2 text-sm leading-6 text-muted">
-            Registration screen is UI-ready and will connect to real auth in the backend phase.
+            Enter your details to create your trader account and access the dashboard.
           </p>
         </div>
 
@@ -37,12 +67,18 @@ export default function RegisterPage() {
           </div>
         ) : null}
 
+        {error ? (
+          <div className="mb-5 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger">
+            {error}
+          </div>
+        ) : null}
+
         <form className="grid gap-4" onSubmit={handleSubmit}>
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField label="Full name" placeholder="Full name" />
-            <TextField label="Email" placeholder="name@example.com" />
-            <TextField label="Password" type="password" placeholder="Password" />
-            <TextField label="Confirm password" type="password" placeholder="Confirm password" />
+            <TextField label="Full name" name="fullName" placeholder="Full name" />
+            <TextField label="Email" name="email" type="email" placeholder="name@example.com" />
+            <TextField label="Password" name="password" type="password" placeholder="Password" />
+            <TextField label="Confirm password" name="confirmPassword" type="password" placeholder="Confirm password" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <SelectField label="Account type" defaultValue="TRADER">

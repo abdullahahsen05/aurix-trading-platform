@@ -22,6 +22,20 @@ function EquityCurvePanel({
   title?: string;
   description?: string;
 }) {
+  if (data.length === 0) {
+    return (
+      <div className="h-72 rounded-lg border border-line bg-panel p-4 flex flex-col justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <p className="mt-1 text-xs text-muted">{description}</p>
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-sm text-muted">No equity data yet</p>
+        </div>
+      </div>
+    );
+  }
+
   const width = 900;
   const height = 235;
   const padding = 14;

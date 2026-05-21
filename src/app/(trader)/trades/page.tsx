@@ -1,23 +1,38 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
 import { GhostButton, InlineStatusStrip, Panel, PageActionGroup, PrimaryButton, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
-import { trades } from "@/lib/data/mockData";
 import { formatMoney } from "@/lib/utils/format";
-
-type TradeRecord = (typeof trades)[number];
+import type { TradeDto } from "@/lib/domain/types";
 
 export default function TradesPage() {
   const [searchOpen, setSearchOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState(trades[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState("");
 
-  const tradeList = useMemo(() => trades, []);
-  const selectedTrade = tradeList.find((trade) => trade.id === selectedId) ?? tradeList[0];
+  const { data: tradeList = [], isLoading } = useQuery<TradeDto[]>({
+    queryKey: ["trades"],
+    queryFn: async () => {
+      const res = await fetch("/api/trades");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load trades");
+      return json.data;
+    },
+  });
 
-  const openTrades = tradeList.filter((trade) => trade.status === "OPEN");
-  const closedTrades = tradeList.filter((trade) => trade.status === "CLOSED");
-  const netProfit = tradeList.reduce((total, trade) => total + trade.profit.amount, 0);
+  // Set initial selectedId once trades load
+  const effectiveSelectedId = selectedId || tradeList[0]?.id || "";
+  const selectedTrade = tradeList.find((trade) => trade.id === effectiveSelectedId) ?? tradeList[0];
+
+  const openTrades = useMemo(() => tradeList.filter((trade) => trade.status === "OPEN"), [tradeList]);
+  const closedTrades = useMemo(() => tradeList.filter((trade) => trade.status === "CLOSED"), [tradeList]);
+  const netProfit = useMemo(() => tradeList.reduce((total, trade) => total + trade.profit.amount, 0), [tradeList]);
+
+  const uniqueSymbols = useMemo(
+    () => [...new Set(tradeList.map((t) => t.symbol))],
+    [tradeList],
+  );
 
   return (
     <WorkspacePage
@@ -40,67 +55,81 @@ export default function TradesPage() {
           {
             label: "Net PnL",
             value: formatMoney({ amount: netProfit, currency: "USD" }),
-            helper: "Mock ledger total",
+            helper: "Ledger total",
             tone: netProfit >= 0 ? "lime" : "danger",
           },
-          { label: "Symbols", value: "4", helper: "EURUSD, XAUUSD, GBPJPY, NAS100" },
+          {
+            label: "Symbols",
+            value: uniqueSymbols.length,
+            helper: uniqueSymbols.slice(0, 4).join(", ") || "None",
+          },
         ]}
       />
 
       <div className="mt-5">
-        <Panel className="min-w-0">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected trade</p>
-              <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedTrade.symbol}</h2>
-              <p className="mt-1 text-sm text-muted">
-                {selectedTrade.side} - {selectedTrade.accountId}
-              </p>
+        {isLoading ? (
+          <Panel className="min-w-0">
+            <p className="text-sm text-muted">Loading trades...</p>
+          </Panel>
+        ) : selectedTrade ? (
+          <Panel className="min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected trade</p>
+                <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedTrade.symbol}</h2>
+                <p className="mt-1 text-sm text-muted">
+                  {selectedTrade.side} - {selectedTrade.accountId}
+                </p>
+              </div>
+              <StatusPill tone={selectedTrade.status === "OPEN" ? "accent" : "muted"}>{selectedTrade.status}</StatusPill>
             </div>
-            <StatusPill tone={selectedTrade.status === "OPEN" ? "accent" : "muted"}>{selectedTrade.status}</StatusPill>
-          </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Volume</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{selectedTrade.volume}</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Volume</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedTrade.volume}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Open price</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedTrade.openPrice}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Profit</p>
+                <p
+                  className={`mt-1 text-sm font-semibold ${
+                    selectedTrade.profit.amount >= 0 ? "text-accent-2" : "text-danger"
+                  }`}
+                >
+                  {formatMoney(selectedTrade.profit)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Opened</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedTrade.openedAt).toLocaleDateString()}</p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Open price</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{selectedTrade.openPrice}</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Profit</p>
-              <p
-                className={`mt-1 text-sm font-semibold ${
-                  selectedTrade.profit.amount >= 0 ? "text-accent-2" : "text-danger"
-                }`}
-              >
-                {formatMoney(selectedTrade.profit)}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Opened</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedTrade.openedAt).toLocaleDateString()}</p>
-            </div>
-          </div>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <GhostButton type="button" onClick={() => setSearchOpen(true)}>
-              Search ledger
-            </GhostButton>
-            <PrimaryButton type="button">Export</PrimaryButton>
-          </div>
-        </Panel>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <GhostButton type="button" onClick={() => setSearchOpen(true)}>
+                Search ledger
+              </GhostButton>
+              <PrimaryButton type="button">Export</PrimaryButton>
+            </div>
+          </Panel>
+        ) : (
+          <Panel className="min-w-0">
+            <p className="text-sm text-muted">No trades found.</p>
+          </Panel>
+        )}
       </div>
 
-      <DirectorySearchOverlay<TradeRecord>
+      <DirectorySearchOverlay<TradeDto>
         open={searchOpen}
         onOpenChange={setSearchOpen}
         title="Search trades"
         description="Search, status filters, and paging stay in the overlay to keep the ledger minimal."
         items={tradeList}
-        selectedId={selectedTrade.id}
+        selectedId={effectiveSelectedId}
         onSelect={(id) => {
           setSelectedId(id);
           setSearchOpen(false);

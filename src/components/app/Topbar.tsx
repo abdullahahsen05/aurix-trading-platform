@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AlertTriangle, Bell, CheckCircle2, Info, Menu, X } from "lucide-react";
-import { tradingAccounts } from "@/lib/data/mockData";
+import { useQuery } from "@tanstack/react-query";
 import { navItems } from "@/components/app/navigation";
-import type { UserRole } from "@/lib/domain/types";
+import type { UserRole, TraderAccountSummary } from "@/lib/domain/types";
 
 export function Topbar({
   role,
@@ -18,6 +18,16 @@ export function Topbar({
   const pathname = usePathname();
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  const { data: tradingAccounts = [] } = useQuery<TraderAccountSummary[]>({
+    queryKey: ["trading-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/trading-accounts");
+      const json = await res.json();
+      if (!json.ok) return [];
+      return json.data;
+    },
+  });
   const mobileItems = navItems.filter((item) => item.role === role).slice(0, 6);
   const activeItem =
     navItems

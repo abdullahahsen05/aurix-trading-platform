@@ -1,6 +1,7 @@
  "use client";
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   DataTable,
   Panel,
@@ -10,16 +11,16 @@ import {
 import { AdminOverviewOverlay, type AdminOverviewView } from "@/components/admin/AdminOverviewOverlay";
 import { PerformanceRings } from "@/components/dashboard/PerformanceRings";
 import { EquityCurve } from "@/components/dashboard/EquityCurve";
-import {
-  adminSummary,
-  crmNotes,
-  equityCurve,
-  riskEvents,
-  riskRules,
-  traders,
-  tradingAccounts,
-  trades,
-} from "@/lib/data/mockData";
+import type {
+  AdminSummaryDto,
+  CrmNoteDto,
+  EquityPoint,
+  RiskEventDto,
+  RiskRuleDto,
+  TradeDto,
+  TraderAccountSummary,
+  TraderProfileDto,
+} from "@/lib/domain/types";
 import {
   calculateTotalProfit,
   calculateConsistencyScore,
@@ -34,59 +35,141 @@ const adminTabs: Array<{ key: AdminOverviewView; label: string }> = [
   { key: "CRM", label: "CRM" },
 ];
 
-const platformRings = [
-  {
-    label: "Active Traders",
-    value: `${adminSummary.activeTraders}`,
-    status: "Excellent",
-    statusTone: "lime" as const,
-    progress: Math.min(adminSummary.activeTraders / 150, 1),
-    tone: "yellow" as const,
-  },
-  {
-    label: "Connected Accounts",
-    value: `${adminSummary.connectedAccounts}`,
-    status: "Good",
-    statusTone: "accent" as const,
-    progress: Math.min(adminSummary.connectedAccounts / 250, 1),
-    tone: "lime" as const,
-  },
-  {
-    label: "Open Risk Events",
-    value: `${adminSummary.openRiskEvents}`,
-    status: adminSummary.openRiskEvents > 0 ? "Watch" : "Stable",
-    statusTone: adminSummary.openRiskEvents > 0 ? ("danger" as const) : ("lime" as const),
-    progress: Math.max(0.08, 1 - adminSummary.openRiskEvents / 10),
-    tone: "yellow" as const,
-  },
-  {
-    label: "MRR",
-    value: formatMoney(adminSummary.monthlyRecurringRevenue),
-    status: "Good",
-    statusTone: "accent" as const,
-    progress: Math.min(adminSummary.monthlyRecurringRevenue.amount / 20000, 1),
-    tone: "lime" as const,
-  },
-  {
-    label: "Accounts Under Supervision",
-    value: `${tradingAccounts.length}`,
-    status: "Stable",
-    statusTone: "lime" as const,
-    progress: Math.min(tradingAccounts.length / 10, 1),
-    tone: "yellow" as const,
-  },
-] satisfies Array<{
-  label: string;
-  value: string;
-  status: string;
-  statusTone: "accent" | "lime" | "muted" | "danger";
-  progress: number;
-  tone?: "yellow" | "lime";
-}>;
-
 export default function AdminOverviewPage() {
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [overlayView, setOverlayView] = useState<AdminOverviewView>("OVERVIEW");
+
+  const { data: adminSummary } = useQuery<AdminSummaryDto>({
+    queryKey: ["admin-summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/summary");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load admin summary");
+      return json.data;
+    },
+  });
+
+  const { data: tradingAccounts = [] } = useQuery<TraderAccountSummary[]>({
+    queryKey: ["admin-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/accounts");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
+      return json.data;
+    },
+  });
+
+  const { data: traders = [] } = useQuery<TraderProfileDto[]>({
+    queryKey: ["crm-traders"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/traders");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load traders");
+      return json.data;
+    },
+  });
+
+  const { data: trades = [] } = useQuery<TradeDto[]>({
+    queryKey: ["trades"],
+    queryFn: async () => {
+      const res = await fetch("/api/trades");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load trades");
+      return json.data;
+    },
+  });
+
+  const { data: riskEvents = [] } = useQuery<RiskEventDto[]>({
+    queryKey: ["risk-events"],
+    queryFn: async () => {
+      const res = await fetch("/api/risk/events");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk events");
+      return json.data;
+    },
+  });
+
+  const { data: riskRules = [] } = useQuery<RiskRuleDto[]>({
+    queryKey: ["risk-rules"],
+    queryFn: async () => {
+      const res = await fetch("/api/risk/rules");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk rules");
+      return json.data;
+    },
+  });
+
+  const { data: crmNotes = [] } = useQuery<CrmNoteDto[]>({
+    queryKey: ["crm-notes"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/notes");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load CRM notes");
+      return json.data;
+    },
+  });
+
+  // Use a flat equity curve from accounts for the platform-level trend
+  const equityCurve: EquityPoint[] = tradingAccounts.map((account) => ({
+    capturedAt: account.updatedAt,
+    balance: account.balance.amount,
+    equity: account.equity.amount,
+  }));
+
+  const activeTraders = adminSummary?.activeTraders ?? 0;
+  const connectedAccounts = adminSummary?.connectedAccounts ?? 0;
+  const openRiskEvents = adminSummary?.openRiskEvents ?? riskEvents.length;
+  const monthlyRecurringRevenue = adminSummary?.monthlyRecurringRevenue ?? { amount: 0, currency: "USD" };
+
+  const platformRings = [
+    {
+      label: "Active Traders",
+      value: `${activeTraders}`,
+      status: "Excellent",
+      statusTone: "lime" as const,
+      progress: Math.min(activeTraders / 150, 1),
+      tone: "yellow" as const,
+    },
+    {
+      label: "Connected Accounts",
+      value: `${connectedAccounts}`,
+      status: "Good",
+      statusTone: "accent" as const,
+      progress: Math.min(connectedAccounts / 250, 1),
+      tone: "lime" as const,
+    },
+    {
+      label: "Open Risk Events",
+      value: `${openRiskEvents}`,
+      status: openRiskEvents > 0 ? "Watch" : "Stable",
+      statusTone: openRiskEvents > 0 ? ("danger" as const) : ("lime" as const),
+      progress: Math.max(0.08, 1 - openRiskEvents / 10),
+      tone: "yellow" as const,
+    },
+    {
+      label: "MRR",
+      value: formatMoney(monthlyRecurringRevenue),
+      status: "Good",
+      statusTone: "accent" as const,
+      progress: Math.min(monthlyRecurringRevenue.amount / 20000, 1),
+      tone: "lime" as const,
+    },
+    {
+      label: "Accounts Under Supervision",
+      value: `${tradingAccounts.length}`,
+      status: "Stable",
+      statusTone: "lime" as const,
+      progress: Math.min(tradingAccounts.length / 10, 1),
+      tone: "yellow" as const,
+    },
+  ] satisfies Array<{
+    label: string;
+    value: string;
+    status: string;
+    statusTone: "accent" | "lime" | "muted" | "danger";
+    progress: number;
+    tone?: "yellow" | "lime";
+  }>;
 
   const openView = (view: AdminOverviewView) => {
     setOverlayView(view);
@@ -165,7 +248,7 @@ export default function AdminOverviewPage() {
           <div className="mt-4 rounded-xl border border-line bg-background p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Summary</p>
             <p className="mt-2 text-sm leading-6 text-muted">
-              {trades.filter((trade) => trade.status === "CLOSED").length} closed trades are represented in the mock platform snapshot, with
+              {trades.filter((trade) => trade.status === "CLOSED").length} closed trades are represented in the platform snapshot, with
               {` ${tradingAccounts.length} accounts`} currently under supervision.
             </p>
           </div>
@@ -228,10 +311,10 @@ export default function AdminOverviewPage() {
         open={overlayOpen}
         view={overlayView}
         onOpenChange={setOverlayOpen}
-        activeTraders={adminSummary.activeTraders}
-        connectedAccounts={adminSummary.connectedAccounts}
-        openRiskEvents={adminSummary.openRiskEvents}
-        monthlyRecurringRevenue={adminSummary.monthlyRecurringRevenue}
+        activeTraders={activeTraders}
+        connectedAccounts={connectedAccounts}
+        openRiskEvents={openRiskEvents}
+        monthlyRecurringRevenue={monthlyRecurringRevenue}
         equityCurve={equityCurve}
         trades={trades}
         tradingAccounts={tradingAccounts}

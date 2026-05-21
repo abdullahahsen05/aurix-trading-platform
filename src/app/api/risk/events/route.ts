@@ -1,7 +1,14 @@
-import { jsonOk } from "@/lib/api/envelope";
+import { jsonFail, jsonOk } from "@/lib/api/envelope";
+import { requireAuth, AuthError } from "@/lib/auth/session";
 import { listRiskEvents } from "@/lib/services/riskService";
 
 export async function GET(request: Request) {
-  const accountId = new URL(request.url).searchParams.get("accountId") ?? undefined;
-  return jsonOk(await listRiskEvents(accountId));
+  try {
+    const user = await requireAuth();
+    const accountId = new URL(request.url).searchParams.get("accountId") ?? undefined;
+    return jsonOk(await listRiskEvents(accountId, user.id, user.role));
+  } catch (err) {
+    if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);
+    throw err;
+  }
 }

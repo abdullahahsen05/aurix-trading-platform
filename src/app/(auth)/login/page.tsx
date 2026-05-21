@@ -2,22 +2,50 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/app/WorkspaceUI";
 import { TextField } from "@/components/app/FormFields";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const router = useRouter();
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
     setMessage("");
+    setError("");
 
-    window.setTimeout(() => {
+    const formData = new FormData(event.currentTarget);
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (authError) {
       setIsSubmitting(false);
-      setMessage("Signed in successfully. Redirecting to the trading workspace.");
-    }, 900);
+      setError(authError.message);
+      return;
+    }
+
+    // Fetch profile to determine role
+    const { data: { user } } = await supabase.auth.getUser();
+    let role = "TRADER";
+    if (user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+      role = profile?.role ?? "TRADER";
+    }
+
+    setMessage("Signed in successfully. Redirecting...");
+    router.push(role === "ADMIN" ? "/admin" : "/dashboard");
   };
 
   return (
@@ -42,9 +70,15 @@ export default function LoginPage() {
           </div>
         ) : null}
 
+        {error ? (
+          <div className="mb-5 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger">
+            {error}
+          </div>
+        ) : null}
+
         <form className="grid gap-4" onSubmit={handleSubmit}>
-          <TextField label="Email" defaultValue="ayan@example.com" />
-          <TextField label="Password" type="password" defaultValue="password" />
+          <TextField label="Email" name="email" type="email" defaultValue="ayan@example.com" />
+          <TextField label="Password" name="password" type="password" defaultValue="password" />
           <div className="flex items-center justify-end gap-4">
             <Link href="/forgot-password" className="text-sm font-semibold text-accent">
               Forgot password?

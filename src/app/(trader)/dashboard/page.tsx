@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { riskRules, trades, tradingAccounts } from "@/lib/data/mockData";
+import { useQuery } from "@tanstack/react-query";
 import { TradingChart } from "@/components/charts/TradingChart";
 import { DashboardModeOverlay } from "@/components/dashboard/DashboardModeOverlay";
 import { DashboardKpiStrip, MarketSentimentStrip } from "@/components/dashboard/DashboardKpiStrip";
@@ -14,8 +14,8 @@ import {
   calculateWinRate,
 } from "@/lib/domain/metrics";
 import type { DashboardView, Period } from "@/lib/domain/dashboard";
-
-const baseAccount = tradingAccounts[0];
+import type { TraderAccountSummary, TradeDto, RiskRuleDto } from "@/lib/domain/types";
+import { useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
 
 const dashboardTabs: Array<{ id: DashboardView; label: string }> = [
   { id: "CURRENT_EQUITY", label: "Current Equity" },
@@ -73,15 +73,66 @@ export default function TraderDashboardPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("DAILY");
   const [selectedView, setSelectedView] = useState<DashboardView>("CURRENT_EQUITY");
   const [activeOverlay, setActiveOverlay] = useState<DashboardView | null>(null);
+
+  // Fetch trading accounts
+  const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({
+    queryKey: ["trading-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/trading-accounts");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
+      return json.data;
+    },
+  });
+
+  // Fetch all trades
+  const { data: trades = [] } = useQuery<TradeDto[]>({
+    queryKey: ["trades"],
+    queryFn: async () => {
+      const res = await fetch("/api/trades");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load trades");
+      return json.data;
+    },
+  });
+
+  // Fetch risk rules
+  const { data: riskRules = [] } = useQuery<RiskRuleDto[]>({
+    queryKey: ["risk-rules"],
+    queryFn: async () => {
+      const res = await fetch("/api/risk/rules");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk rules");
+      return json.data;
+    },
+  });
+
+  // Subscribe to realtime updates
+  useRealtimeUpdates();
+
+  const baseAccount = accounts[0];
+
   const [live, setLive] = useState({
-    balance: baseAccount.balance.amount,
-    equity: baseAccount.equity.amount,
-    pnl: baseAccount.floatingPnl.amount,
+    balance: 0,
+    equity: 0,
+    pnl: 0,
     refresh: new Date(),
   });
 
-  const openTrades = useMemo(() => trades.filter((trade) => trade.status === "OPEN"), []);
-  const closedTrades = useMemo(() => trades.filter((trade) => trade.status === "CLOSED"), []);
+  // Sync live state when account data arrives
+  useEffect(() => {
+    if (baseAccount) {
+      setLive({
+        balance: baseAccount.balance.amount,
+        equity: baseAccount.equity.amount,
+        pnl: baseAccount.floatingPnl.amount,
+        refresh: new Date(),
+      });
+    }
+  }, [baseAccount]);
+
+  const openTrades = useMemo(() => trades.filter((trade) => trade.status === "OPEN"), [trades]);
+  const closedTrades = useMemo(() => trades.filter((trade) => trade.status === "CLOSED"), [trades]);
   const summary = periodSummaries[selectedPeriod];
   const dailyLossLimit = riskRules.find((rule) => rule.metric === "DAILY_LOSS")?.threshold ?? 2500;
   const maxDrawdownLimit = riskRules.find((rule) => rule.metric === "MAX_DRAWDOWN")?.threshold ?? 5;
@@ -92,9 +143,12 @@ export default function TraderDashboardPage() {
   const avgWinLoss = useMemo(() => calculateAverageWinLossRatio(closedTrades), [closedTrades]);
   const pnlPositive = live.pnl >= 0;
   const pnlPrefix = pnlPositive ? "↑" : "↓";
-  const balanceChange = ((live.balance - baseAccount.balance.amount) / baseAccount.balance.amount) * 100;
-  const equityChange = ((live.equity - baseAccount.equity.amount) / baseAccount.equity.amount) * 100;
-  const pnlChange = baseAccount.floatingPnl.amount === 0 ? 0 : (live.pnl / Math.abs(baseAccount.floatingPnl.amount)) * 100;
+  const baseBalance = baseAccount?.balance.amount ?? 0;
+  const baseEquity = baseAccount?.equity.amount ?? 0;
+  const basePnl = baseAccount?.floatingPnl.amount ?? 0;
+  const balanceChange = baseBalance === 0 ? 0 : ((live.balance - baseBalance) / baseBalance) * 100;
+  const equityChange = baseEquity === 0 ? 0 : ((live.equity - baseEquity) / baseEquity) * 100;
+  const pnlChange = basePnl === 0 ? 0 : (live.pnl / Math.abs(basePnl)) * 100;
   const currentHour = new Date().getHours();
 
   const performanceRings = useMemo<PerformanceRingItem[]>(
@@ -207,12 +261,13 @@ export default function TraderDashboardPage() {
   ];
 
   useEffect(() => {
+    if (!baseAccount) return;
     const timer = window.setInterval(() => {
       setLive((current) => {
         const drift = Math.sin(Date.now() / 2400) * 48;
         const balance = Number((current.balance + drift * 0.15).toFixed(0));
         const equity = Number((current.equity + drift * 0.22).toFixed(0));
-        const pnl = Number((equity - balance + baseAccount.floatingPnl.amount).toFixed(0));
+        const pnl = Number((equity - balance + (baseAccount?.floatingPnl.amount ?? 0)).toFixed(0));
         return {
           balance,
           equity,
@@ -223,7 +278,7 @@ export default function TraderDashboardPage() {
     }, 2600);
 
     return () => window.clearInterval(timer);
-  }, []);
+  }, [baseAccount]);
 
   return (
     <WorkspacePage

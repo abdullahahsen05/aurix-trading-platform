@@ -3,28 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "prisma db seed"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed:supabase": "tsx scripts/seed-supabase.ts",
+    "migrate": "tsx scripts/run-migrations.ts"
   },
   "dependencies": {
     "@playwright/test": "^1.59.1",
-    "@prisma/client": "^7.8.0",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.50.0",
     "@tanstack/react-query": "^5.100.9",
+    "@types/pg": "^8.20.0",
     "@vitejs/plugin-react": "^6.0.1",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
@@ -34,7 +32,7 @@
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.14.0",
     "next": "16.2.6",
-    "prisma": "^7.8.0",
+    "pg": "^8.21.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",

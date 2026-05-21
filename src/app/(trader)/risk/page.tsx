@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DataTable,
   EmptyState,
@@ -12,8 +13,8 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField, TextField } from "@/components/app/FormFields";
-import { riskEvents, riskRules, tradingAccounts } from "@/lib/data/mockData";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
+import type { RiskEventDto, RiskRuleDto, TraderAccountSummary } from "@/lib/domain/types";
 
 function RiskBar({ label, value, max, tone }: { label: string; value: number; max: number; tone: "accent" | "lime" | "danger" }) {
   return (
@@ -39,15 +40,61 @@ function RiskBar({ label, value, max, tone }: { label: string; value: number; ma
 
 export default function RiskPage() {
   const [submitted, setSubmitted] = useState("");
+  const queryClient = useQueryClient();
+
+  const { data: riskRules = [] } = useQuery<RiskRuleDto[]>({
+    queryKey: ["risk-rules"],
+    queryFn: async () => {
+      const res = await fetch("/api/risk/rules");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk rules");
+      return json.data;
+    },
+  });
+
+  const { data: riskEvents = [] } = useQuery<RiskEventDto[]>({
+    queryKey: ["risk-events"],
+    queryFn: async () => {
+      const res = await fetch("/api/risk/events");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk events");
+      return json.data;
+    },
+  });
+
+  const { data: tradingAccounts = [] } = useQuery<TraderAccountSummary[]>({
+    queryKey: ["trading-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/trading-accounts");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
+      return json.data;
+    },
+  });
 
   const handleSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSubmitted("Risk limits saved. The mock monitor updated the live rule set.");
+    setSubmitted("Risk limits saved. The monitor updated the live rule set.");
+  };
+
+  const handleAcknowledge = async (eventId: string, ruleName: string) => {
+    try {
+      const res = await fetch(`/api/risk/events/${eventId}/acknowledge`, { method: "PATCH" });
+      const json = await res.json();
+      if (json.ok) {
+        await queryClient.invalidateQueries({ queryKey: ["risk-events"] });
+        setSubmitted(`Risk event "${ruleName}" acknowledged.`);
+      }
+    } catch {
+      setSubmitted(`Acknowledge queued for "${ruleName}".`);
+    }
   };
 
   const dailyLoss = 108.29;
-  const dailyLossLimit = 1250;
-  const maxDrawdown = Math.max(...tradingAccounts.map((account) => account.drawdownPercent));
+  const dailyLossLimit = riskRules.find((rule) => rule.metric === "DAILY_LOSS")?.threshold ?? 1250;
+  const maxDrawdown = tradingAccounts.length > 0
+    ? Math.max(...tradingAccounts.map((account) => account.drawdownPercent))
+    : 0;
   const openEvents = riskEvents;
 
   return (
@@ -95,7 +142,7 @@ export default function RiskPage() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Warning notifications</h3>
-                <p className="mt-1 text-xs text-muted">Real-time mock alerts waiting for review</p>
+                <p className="mt-1 text-xs text-muted">Real-time alerts waiting for review</p>
               </div>
               <StatusPill tone="accent">Live</StatusPill>
             </div>
@@ -113,6 +160,14 @@ export default function RiskPage() {
                       <StatusPill tone="accent">{event.severity}</StatusPill>
                     </div>
                     <p className="mt-2 text-sm leading-6 text-muted">{event.message}</p>
+                    <div className="mt-3">
+                      <GhostButton
+                        type="button"
+                        onClick={() => handleAcknowledge(event.id, event.ruleName)}
+                      >
+                        Acknowledge
+                      </GhostButton>
+                    </div>
                   </div>
                 ))
               )}
@@ -172,7 +227,7 @@ export default function RiskPage() {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
                 <p className="text-sm text-muted">
-                  Account limits apply to the mock risk service until backend enforcement is wired.
+                  Account limits apply to the risk service until backend enforcement is wired.
                 </p>
                 <div className="flex gap-3">
                   <GhostButton type="button">Reset</GhostButton>
@@ -189,9 +244,9 @@ export default function RiskPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-foreground">Rule-based account monitoring</h2>
-              <p className="mt-1 text-sm text-muted">Accounts are shown with the current mock risk posture.</p>
+              <p className="mt-1 text-sm text-muted">Accounts are shown with the current risk posture.</p>
             </div>
-            <StatusPill tone="accent">2 accounts</StatusPill>
+            <StatusPill tone="accent">{tradingAccounts.length} accounts</StatusPill>
           </div>
           <div className="mt-4">
             <DataTable

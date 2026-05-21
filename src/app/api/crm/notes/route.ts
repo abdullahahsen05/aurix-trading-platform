@@ -1,23 +1,35 @@
 import { jsonFail, jsonOk } from "@/lib/api/envelope";
-import { listCrmNotes } from "@/lib/services/crmService";
+import { requireAdmin, AuthError } from "@/lib/auth/session";
+import { listCrmNotes, createCrmNote } from "@/lib/services/crmService";
 import { crmNoteCreateSchema } from "@/lib/validation/schemas";
 
 export async function GET(request: Request) {
-  const traderId = new URL(request.url).searchParams.get("traderId") ?? undefined;
-  return jsonOk(await listCrmNotes(traderId));
+  try {
+    await requireAdmin();
+    const traderId = new URL(request.url).searchParams.get("traderId") ?? undefined;
+    return jsonOk(await listCrmNotes(traderId));
+  } catch (err) {
+    if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);
+    throw err;
+  }
 }
 
 export async function POST(request: Request) {
-  const parsed = crmNoteCreateSchema.safeParse(await request.json());
-  if (!parsed.success) return jsonFail("INVALID_BODY", parsed.error.message, 400);
+  try {
+    const user = await requireAdmin();
+    const parsed = crmNoteCreateSchema.safeParse(await request.json());
+    if (!parsed.success) return jsonFail("INVALID_BODY", parsed.error.message, 400);
 
-  return jsonOk(
-    {
-      id: `note-${Date.now()}`,
-      authorName: "Admin",
-      createdAt: new Date().toISOString(),
-      ...parsed.data,
-    },
-    { status: 201 },
-  );
+    const note = await createCrmNote({
+      traderId: parsed.data.traderId,
+      note: parsed.data.note,
+      authorName: user.name,
+      authorUserId: user.id,
+    });
+
+    return jsonOk(note, { status: 201 });
+  } catch (err) {
+    if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);
+    throw err;
+  }
 }

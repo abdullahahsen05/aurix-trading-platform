@@ -1,10 +1,66 @@
-import { crmNotes, traders } from "@/lib/data/mockData";
+import { createClient } from '@/lib/supabase/server'
+import { mapCrmNoteToDto, mapTraderProfileToDto } from '@/lib/mappers/crmMapper'
+import type { CrmNoteDto, TraderProfileDto } from '@/lib/domain/types'
 
-export async function listTraderProfiles() {
-  return traders;
+export async function listTraderProfiles(): Promise<TraderProfileDto[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('trader_profiles')
+    .select(`
+      id,
+      user_id,
+      segment,
+      profiles!inner(full_name, email),
+      trading_accounts(
+        id,
+        account_snapshots(equity)
+      )
+    `)
+    .order('created_at', { ascending: false })
+
+  if (error) throw new Error(`Failed to fetch trader profiles: ${error.message}`)
+
+  return (data ?? []).map(row => mapTraderProfileToDto(row as any))
 }
 
-export async function listCrmNotes(traderId?: string) {
-  if (!traderId) return crmNotes;
-  return crmNotes.filter((note) => note.traderId === traderId);
+export async function listCrmNotes(traderId?: string): Promise<CrmNoteDto[]> {
+  const supabase = await createClient()
+
+  let query = supabase
+    .from('crm_notes')
+    .select('id, trader_profile_id, author_name, note, created_at')
+    .order('created_at', { ascending: false })
+
+  if (traderId) {
+    query = query.eq('trader_profile_id', traderId)
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(`Failed to fetch CRM notes: ${error.message}`)
+
+  return (data ?? []).map(mapCrmNoteToDto)
+}
+
+export async function createCrmNote(data: {
+  traderId: string
+  authorName: string
+  note: string
+  authorUserId?: string
+}): Promise<CrmNoteDto> {
+  const supabase = await createClient()
+
+  const { data: note, error } = await supabase
+    .from('crm_notes')
+    .insert({
+      trader_profile_id: data.traderId,
+      author_user_id: data.authorUserId ?? null,
+      author_name: data.authorName,
+      note: data.note,
+    })
+    .select('id, trader_profile_id, author_name, note, created_at')
+    .single()
+
+  if (error || !note) throw new Error(`Failed to create CRM note: ${error?.message}`)
+  return mapCrmNoteToDto(note)
 }

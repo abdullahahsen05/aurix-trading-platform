@@ -1,12 +1,19 @@
 import { jsonFail, jsonOk } from "@/lib/api/envelope";
+import { requireAuth, AuthError } from "@/lib/auth/session";
 import { getAnalyticsSummary } from "@/lib/services/analyticsService";
 import { analyticsSummaryQuerySchema } from "@/lib/validation/schemas";
 
 export async function GET(request: Request) {
-  const parsed = analyticsSummaryQuerySchema.safeParse(
-    Object.fromEntries(new URL(request.url).searchParams),
-  );
-  if (!parsed.success) return jsonFail("INVALID_QUERY", parsed.error.message, 400);
+  try {
+    const user = await requireAuth();
+    const parsed = analyticsSummaryQuerySchema.safeParse(
+      Object.fromEntries(new URL(request.url).searchParams),
+    );
+    if (!parsed.success) return jsonFail("INVALID_QUERY", parsed.error.message, 400);
 
-  return jsonOk(await getAnalyticsSummary(parsed.data.accountId));
+    return jsonOk(await getAnalyticsSummary(parsed.data.accountId, user.id, user.role));
+  } catch (err) {
+    if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);
+    throw err;
+  }
 }

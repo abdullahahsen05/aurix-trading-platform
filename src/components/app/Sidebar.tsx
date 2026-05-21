@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { LogOut, X } from "lucide-react";
 import { navItems } from "@/components/app/navigation";
 import type { UserRole } from "@/lib/domain/types";
+import { createClient } from "@/lib/supabase/client";
 
 export function Sidebar({
   role,
@@ -17,7 +18,14 @@ export function Sidebar({
   onMobileNavOpenChange: (open: boolean) => void;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const items = navItems.filter((item) => item.role === role);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
 
   const renderNav = (closeDrawer?: () => void) => (
     <nav className="flex flex-col gap-3">
@@ -60,13 +68,14 @@ export function Sidebar({
         <div className="mt-2 flex flex-1 flex-col">
           {renderNav()}
           <div className="mt-auto border-t border-line/70 pt-4">
-            <Link
-              href="/login"
+            <button
+              type="button"
+              onClick={handleLogout}
               className="btn-dark flex h-11 w-full items-center justify-center gap-2 px-4 text-sm text-muted transition hover:border-accent/40 hover:text-accent"
             >
               <LogOut className="h-4 w-4" />
               Logout
-            </Link>
+            </button>
           </div>
         </div>
       </aside>
@@ -95,14 +104,17 @@ export function Sidebar({
             <div className="mt-2 flex min-h-0 flex-1 flex-col">
               {renderNav(() => onMobileNavOpenChange(false))}
               <div className="mt-auto border-t border-line/70 pt-4">
-                <Link
-                  href="/login"
-                  onClick={() => onMobileNavOpenChange(false)}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onMobileNavOpenChange(false);
+                    handleLogout();
+                  }}
                   className="btn-dark flex h-11 w-full items-center justify-center gap-2 px-4 text-sm text-muted transition hover:border-accent/40 hover:text-accent"
                 >
                   <LogOut className="h-4 w-4" />
                   Logout
-                </Link>
+                </button>
               </div>
             </div>
           </Dialog.Content>

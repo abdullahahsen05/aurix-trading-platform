@@ -1,0 +1,57 @@
+/**
+ * Ambient type declarations for lucide-react v1.14.0
+ * This package ships without a working .d.ts file, so we declare it globally here.
+ * This file must NOT have top-level imports (it must be an ambient declaration).
+ */
+declare module 'lucide-react' {
+  import type { FC, SVGProps, RefAttributes, ForwardRefExoticComponent } from 'react'
+
+  export interface LucideProps extends SVGProps<SVGSVGElement> {
+    size?: number | string
+    absoluteStrokeWidth?: boolean
+    color?: string
+    strokeWidth?: number | string
+  }
+
+  export type LucideIcon = ForwardRefExoticComponent<LucideProps & RefAttributes<SVGSVGElement>>
+
+  // Icons used in AURIX — navigation
+  export const Activity: LucideIcon
+  export const BadgeDollarSign: LucideIcon
+  export const BarChart3: LucideIcon
+  export const Bell: LucideIcon
+  export const BookOpenCheck: LucideIcon
+  export const CandlestickChart: LucideIcon
+  export const Gauge: LucideIcon
+  export const LayoutDashboard: LucideIcon
+  export const ListChecks: LucideIcon
+  export const Settings: LucideIcon
+  export const ShieldAlert: LucideIcon
+  export const Users: LucideIcon
+  export const WalletCards: LucideIcon
+
+  // Icons used in AURIX — components
+  export const AlertTriangle: LucideIcon
+  export const CalendarPlus: LucideIcon
+  export const CheckCircle2: LucideIcon
+  export const Crosshair: LucideIcon
+  export const Download: LucideIcon
+  export const FileSpreadsheet: LucideIcon
+  export const Import: LucideIcon
+  export const Info: LucideIcon
+  export const Key: LucideIcon
+  export const LogOut: LucideIcon
+  export const Maximize2: LucideIcon
+  export const Menu: LucideIcon
+  export const MoveHorizontal: LucideIcon
+  export const Plus: LucideIcon
+  export const RefreshCcw: LucideIcon
+  export const Search: LucideIcon
+  export const ShieldCheck: LucideIcon
+  export const SlidersHorizontal: LucideIcon
+  export const Sparkles: LucideIcon
+  export const TrendingDown: LucideIcon
+  export const TrendingUp: LucideIcon
+  export const X: LucideIcon
+  export const ZoomIn: LucideIcon
+}

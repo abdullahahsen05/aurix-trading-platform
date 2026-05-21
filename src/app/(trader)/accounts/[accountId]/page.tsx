@@ -1,8 +1,60 @@
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
 import { DataTable, InlineStatusStrip, Panel, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
 import { AccountConnectionActions } from "@/components/accounts/AccountConnectionActions";
-import { equityCurve, trades, tradingAccounts } from "@/lib/data/mockData";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
+import type { TraderAccountSummary, TradeDto, EquityPoint } from "@/lib/domain/types";
+
+async function fetchAccount(accountId: string): Promise<TraderAccountSummary | null> {
+  try {
+    const cookieStore = await cookies();
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/api/trading-accounts/${accountId}`,
+      {
+        headers: { Cookie: cookieStore.toString() },
+        cache: "no-store",
+      },
+    );
+    const json = await res.json();
+    return json.ok ? json.data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchTrades(accountId: string): Promise<TradeDto[]> {
+  try {
+    const cookieStore = await cookies();
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/api/trades?accountId=${accountId}`,
+      {
+        headers: { Cookie: cookieStore.toString() },
+        cache: "no-store",
+      },
+    );
+    const json = await res.json();
+    return json.ok ? json.data : [];
+  } catch {
+    return [];
+  }
+}
+
+async function fetchEquityCurve(accountId: string): Promise<EquityPoint[]> {
+  try {
+    const cookieStore = await cookies();
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/api/analytics/equity-curve?accountId=${accountId}`,
+      {
+        headers: { Cookie: cookieStore.toString() },
+        cache: "no-store",
+      },
+    );
+    const json = await res.json();
+    return json.ok ? json.data : [];
+  } catch {
+    return [];
+  }
+}
 
 export default async function AccountDetailPage({
   params,
@@ -10,11 +62,15 @@ export default async function AccountDetailPage({
   params: Promise<{ accountId: string }>;
 }) {
   const { accountId } = await params;
-  const account = tradingAccounts.find((item) => item.accountId === accountId);
+  const [account, accountTrades, equityCurveData] = await Promise.all([
+    fetchAccount(accountId),
+    fetchTrades(accountId),
+    fetchEquityCurve(accountId),
+  ]);
+
   if (!account) notFound();
 
-  const accountTrades = trades.filter((trade) => trade.accountId === accountId);
-  const latestSnapshots = equityCurve.slice(-7).reverse();
+  const latestSnapshots = equityCurveData.slice(-7).reverse();
 
   return (
     <WorkspacePage
@@ -57,12 +113,16 @@ export default async function AccountDetailPage({
         <Panel>
           <h2 className="text-lg font-semibold text-foreground">Snapshot feed</h2>
           <div className="mt-4 space-y-3">
-            {latestSnapshots.map((snapshot) => (
-              <div key={snapshot.capturedAt} className="flex items-center justify-between rounded-xl border border-line bg-background p-3 text-sm">
-                <span className="text-muted">{new Date(snapshot.capturedAt).toLocaleString()}</span>
-                <span className="font-semibold text-accent-2">${snapshot.equity.toLocaleString()}</span>
-              </div>
-            ))}
+            {latestSnapshots.length > 0 ? (
+              latestSnapshots.map((snapshot) => (
+                <div key={snapshot.capturedAt} className="flex items-center justify-between rounded-xl border border-line bg-background p-3 text-sm">
+                  <span className="text-muted">{new Date(snapshot.capturedAt).toLocaleString()}</span>
+                  <span className="font-semibold text-accent-2">${snapshot.equity.toLocaleString()}</span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted">No snapshots available yet.</p>
+            )}
           </div>
         </Panel>
       </div>

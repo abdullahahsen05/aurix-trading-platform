@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Download, FileSpreadsheet, TrendingDown, TrendingUp } from "lucide-react";
 import {
   DataTable,
@@ -13,8 +14,8 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { EquityCurve } from "@/components/dashboard/EquityCurve";
-import { analyticsSummary, equityCurve, trades } from "@/lib/data/mockData";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
+import type { AnalyticsSummary, EquityPoint, TraderAccountSummary, TradeDto } from "@/lib/domain/types";
 
 const periods = ["DAILY", "WEEKLY", "MONTHLY", "ALL_TIME"] as const;
 
@@ -42,14 +43,6 @@ const kpiSnapshots = {
     avgR: 2.36,
     status: "Healthy month",
     note: "Monthly performance is steady and the equity curve keeps rising.",
-  },
-  ALL_TIME: {
-    netProfit: analyticsSummary.totalProfit.amount,
-    winRate: analyticsSummary.winRatePercent,
-    riskUtilization: Math.min((analyticsSummary.maxDrawdownPercent / 8) * 100, 100),
-    avgR: analyticsSummary.riskRewardRatio,
-    status: "Controlled",
-    note: "All-time metrics remain balanced with a positive long-term slope.",
   },
 } as const;
 
@@ -81,7 +74,7 @@ function DrawdownMeter({ value }: { value: number }) {
   );
 }
 
-function GrowthGraph({ points }: { points: typeof equityCurve }) {
+function GrowthGraph({ points }: { points: EquityPoint[] }) {
   const width = 800;
   const height = 220;
   const padding = 18;
@@ -101,31 +94,35 @@ function GrowthGraph({ points }: { points: typeof equityCurve }) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-sm font-semibold text-foreground">Historical growth</h3>
-          <p className="mt-1 text-xs text-muted">Equity growth across the current mock history</p>
+          <p className="mt-1 text-xs text-muted">Equity growth across the current history</p>
         </div>
         <StatusPill tone="accent">Updated live</StatusPill>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="mt-4 h-[220px] w-full" role="img" aria-label="Historical growth graph">
-        <defs>
-          <linearGradient id="analyticsGrowthGradient" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="#ffcf00" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#ffcf00" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[0.25, 0.5, 0.75].map((ratio) => (
-          <line
-            key={ratio}
-            x1={padding}
-            x2={width - padding}
-            y1={height * ratio}
-            y2={height * ratio}
-            stroke="#1d1c17"
-            strokeDasharray="5 8"
-          />
-        ))}
-        <polygon points={`${padding},${height - padding} ${line} ${width - padding},${height - padding}`} fill="url(#analyticsGrowthGradient)" />
-        <polyline points={line} fill="none" stroke="#ffcf00" strokeWidth="4" />
-      </svg>
+      {points.length > 0 ? (
+        <svg viewBox={`0 0 ${width} ${height}`} className="mt-4 h-[220px] w-full" role="img" aria-label="Historical growth graph">
+          <defs>
+            <linearGradient id="analyticsGrowthGradient" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#ffcf00" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="#ffcf00" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[0.25, 0.5, 0.75].map((ratio) => (
+            <line
+              key={ratio}
+              x1={padding}
+              x2={width - padding}
+              y1={height * ratio}
+              y2={height * ratio}
+              stroke="#1d1c17"
+              strokeDasharray="5 8"
+            />
+          ))}
+          <polygon points={`${padding},${height - padding} ${line} ${width - padding},${height - padding}`} fill="url(#analyticsGrowthGradient)" />
+          <polyline points={line} fill="none" stroke="#ffcf00" strokeWidth="4" />
+        </svg>
+      ) : (
+        <div className="mt-4 h-[220px] flex items-center justify-center text-sm text-muted">No data available</div>
+      )}
     </div>
   );
 }
@@ -133,18 +130,77 @@ function GrowthGraph({ points }: { points: typeof equityCurve }) {
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState<(typeof periods)[number]>("ALL_TIME");
   const [exportStatus, setExportStatus] = useState<string>("");
-  const kpi = kpiSnapshots[period];
 
-  const closedTrades = useMemo(() => trades.filter((trade) => trade.status === "CLOSED"), []);
+  // Fetch accounts to get the first account ID
+  const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({
+    queryKey: ["trading-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/trading-accounts");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
+      return json.data;
+    },
+  });
+
+  const firstAccountId = accounts[0]?.accountId;
+
+  // Fetch analytics summary
+  const { data: analyticsSummary } = useQuery<AnalyticsSummary>({
+    queryKey: ["analytics-summary", firstAccountId, period],
+    queryFn: async () => {
+      const res = await fetch(`/api/analytics/summary?accountId=${firstAccountId}&period=${period}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load analytics");
+      return json.data;
+    },
+    enabled: !!firstAccountId,
+  });
+
+  // Fetch equity curve
+  const { data: equityCurve = [] } = useQuery<EquityPoint[]>({
+    queryKey: ["equity-curve", firstAccountId],
+    queryFn: async () => {
+      const res = await fetch(`/api/analytics/equity-curve?accountId=${firstAccountId}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load equity curve");
+      return json.data;
+    },
+    enabled: !!firstAccountId,
+  });
+
+  // Fetch trades for closed-trade stats
+  const { data: trades = [] } = useQuery<TradeDto[]>({
+    queryKey: ["trades"],
+    queryFn: async () => {
+      const res = await fetch("/api/trades");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load trades");
+      return json.data;
+    },
+  });
+
+  const closedTrades = useMemo(() => trades.filter((trade) => trade.status === "CLOSED"), [trades]);
   const winningTrades = closedTrades.filter((trade) => trade.profit.amount > 0);
   const losingTrades = closedTrades.filter((trade) => trade.profit.amount < 0);
   const averageWin = winningTrades.reduce((sum, trade) => sum + trade.profit.amount, 0) / Math.max(winningTrades.length, 1);
   const averageLoss = Math.abs(losingTrades.reduce((sum, trade) => sum + trade.profit.amount, 0)) / Math.max(losingTrades.length, 1);
 
+  // KPI for selected period (use API data for ALL_TIME, static for others)
+  const kpi = period === "ALL_TIME"
+    ? {
+        netProfit: analyticsSummary?.totalProfit.amount ?? 0,
+        winRate: analyticsSummary?.winRatePercent ?? 0,
+        riskUtilization: Math.min(((analyticsSummary?.maxDrawdownPercent ?? 0) / 8) * 100, 100),
+        avgR: analyticsSummary?.riskRewardRatio ?? 0,
+        status: "Controlled",
+        note: "All-time metrics remain balanced with a positive long-term slope.",
+      }
+    : kpiSnapshots[period];
+
   const performanceRows = [
-    ["Profit factor", analyticsSummary.riskRewardRatio.toFixed(2), "Higher is better"],
-    ["Win rate", formatPercent(analyticsSummary.winRatePercent), "Closed trades only"],
-    ["Consistency", formatPercent(analyticsSummary.consistencyScore), "Profitable trading days"],
+    ["Profit factor", (analyticsSummary?.riskRewardRatio ?? 0).toFixed(2), "Higher is better"],
+    ["Win rate", formatPercent(analyticsSummary?.winRatePercent ?? 0), "Closed trades only"],
+    ["Consistency", formatPercent(analyticsSummary?.consistencyScore ?? 0), "Profitable trading days"],
     ["Average win", formatMoney({ amount: averageWin, currency: "USD" }), "Mean profitable trade"],
     ["Average loss", formatMoney({ amount: averageLoss, currency: "USD" }), "Mean losing trade"],
   ];
@@ -197,22 +253,35 @@ export default function AnalyticsPage() {
       <div className="mt-5">
         <InlineStatusStrip
           items={[
-            { label: "Total profit", value: formatMoney(analyticsSummary.totalProfit), tone: "lime" },
-            { label: "Win rate", value: formatPercent(analyticsSummary.winRatePercent) },
+            {
+              label: "Total profit",
+              value: analyticsSummary ? formatMoney(analyticsSummary.totalProfit) : "—",
+              tone: "lime",
+            },
+            {
+              label: "Win rate",
+              value: analyticsSummary ? formatPercent(analyticsSummary.winRatePercent) : "—",
+            },
             {
               label: "Max drawdown",
-              value: formatPercent(analyticsSummary.maxDrawdownPercent),
+              value: analyticsSummary ? formatPercent(analyticsSummary.maxDrawdownPercent) : "—",
               tone: "accent",
             },
-            { label: "Risk reward", value: analyticsSummary.riskRewardRatio },
-            { label: "Consistency", value: formatPercent(analyticsSummary.consistencyScore) },
+            {
+              label: "Risk reward",
+              value: analyticsSummary?.riskRewardRatio ?? "—",
+            },
+            {
+              label: "Consistency",
+              value: analyticsSummary ? formatPercent(analyticsSummary.consistencyScore) : "—",
+            },
           ]}
         />
       </div>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.64fr_0.36fr]">
         <EquityCurve data={equityCurve} />
-        <DrawdownMeter value={analyticsSummary.maxDrawdownPercent} />
+        <DrawdownMeter value={analyticsSummary?.maxDrawdownPercent ?? 0} />
       </div>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.64fr_0.36fr]">
@@ -222,7 +291,7 @@ export default function AnalyticsPage() {
               <h2 className="text-lg font-semibold text-foreground">Performance metrics</h2>
               <p className="mt-1 text-sm text-muted">A compact view of the account&apos;s trading quality</p>
             </div>
-            <StatusPill tone="accent">Mock data</StatusPill>
+            <StatusPill tone="accent">Live data</StatusPill>
           </div>
           <div className="mt-4">
             <DataTable
@@ -290,7 +359,7 @@ export default function AnalyticsPage() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-foreground">Risk-to-reward overview</h2>
-              <p className="mt-1 text-sm text-muted">Closed-trade behavior across the mock ledger</p>
+              <p className="mt-1 text-sm text-muted">Closed-trade behavior across the ledger</p>
             </div>
             <TrendingDown className="h-5 w-5 text-danger" />
           </div>

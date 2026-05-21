@@ -4,20 +4,35 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { PrimaryButton } from "@/components/app/WorkspaceUI";
 import { TextField } from "@/components/app/FormFields";
+import { createClient } from "@/lib/supabase/client";
 
 export default function ForgotPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
     setMessage("");
+    setError("");
 
-    window.setTimeout(() => {
-      setIsSubmitting(false);
-      setMessage("Reset link prepared. Check the inbox once auth delivery is connected.");
-    }, 900);
+    const formData = new FormData(event.currentTarget);
+    const email = formData.get("email") as string;
+
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: process.env.NEXT_PUBLIC_SITE_URL + "/reset-password",
+    });
+
+    setIsSubmitting(false);
+
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+
+    setMessage("Reset link sent. Check your inbox to continue.");
   };
 
   return (
@@ -35,8 +50,14 @@ export default function ForgotPasswordPage() {
           </div>
         ) : null}
 
+        {error ? (
+          <div className="mt-5 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger">
+            {error}
+          </div>
+        ) : null}
+
         <form className="mt-7 grid gap-4" onSubmit={handleSubmit}>
-          <TextField label="Email" placeholder="name@example.com" />
+          <TextField label="Email" name="email" type="email" placeholder="name@example.com" />
           <div className="flex items-center justify-between gap-4">
             <Link href="/login" className="text-sm font-semibold text-accent">
               Back to login

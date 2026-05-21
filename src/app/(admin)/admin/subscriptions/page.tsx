@@ -15,7 +15,8 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField, TextField } from "@/components/app/FormFields";
-import { adminSummary, traders } from "@/lib/data/mockData";
+import { useQuery } from "@tanstack/react-query";
+import type { AdminSummaryDto, TraderProfileDto } from "@/lib/domain/types";
 
 type SubscriptionRecord = {
   id: string;
@@ -34,17 +35,37 @@ export default function AdminSubscriptionsPage() {
   const [selectedId, setSelectedId] = useState("sub-001");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "Active" | "Paused" | "Trial">("ALL");
 
+  const { data: adminSummary } = useQuery<AdminSummaryDto>({
+    queryKey: ["admin-summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/summary");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load admin summary");
+      return json.data;
+    },
+  });
+
+  const { data: traders = [] } = useQuery<TraderProfileDto[]>({
+    queryKey: ["crm-traders"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/traders");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load traders");
+      return json.data;
+    },
+  });
+
   const plans: SubscriptionRecord[] = useMemo(
     () =>
       traders.map((trader, index) => ({
         id: `sub-${index + 1}`,
         traderName: trader.name,
-        plan: index === 0 ? "Funded Pro" : "Evaluation",
-        price: index === 0 ? "$199/mo" : "$99/mo",
-        status: "Active",
+        plan: trader.segment === "FUNDED" ? "Funded Pro" : "Evaluation",
+        price: trader.segment === "FUNDED" ? "$199/mo" : "$99/mo",
+        status: "Active" as const,
         billing: "Manual invoice",
       })),
-    [],
+    [traders],
   );
 
   const filteredPlans = plans.filter((plan) => statusFilter === "ALL" || plan.status === statusFilter);
@@ -135,7 +156,11 @@ export default function AdminSubscriptionsPage() {
     >
       <InlineStatusStrip
         items={[
-          { label: "MRR", value: `$${adminSummary.monthlyRecurringRevenue.amount.toLocaleString()}`, tone: "lime" },
+          {
+            label: "MRR",
+            value: `$${(adminSummary?.monthlyRecurringRevenue?.amount ?? 0).toLocaleString()}`,
+            tone: "lime",
+          },
           { label: "Active plans", value: plans.length },
           { label: "Payment provider", value: "Pending", helper: "Future integration", tone: "accent" },
         ]}
@@ -187,41 +212,47 @@ export default function AdminSubscriptionsPage() {
       ) : null}
 
       <div className="mt-5">
-        <Panel className="min-w-0">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected plan</p>
-              <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedPlan.traderName}</h2>
-              <p className="mt-1 text-sm text-muted">
-                {selectedPlan.plan} - {selectedPlan.price}
-              </p>
+        {selectedPlan ? (
+          <Panel className="min-w-0">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected plan</p>
+                <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedPlan.traderName}</h2>
+                <p className="mt-1 text-sm text-muted">
+                  {selectedPlan.plan} - {selectedPlan.price}
+                </p>
+              </div>
+              <StatusPill tone="lime">{selectedPlan.status}</StatusPill>
             </div>
-            <StatusPill tone="lime">{selectedPlan.status}</StatusPill>
-          </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Billing cycle</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">Monthly</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Billing cycle</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">Monthly</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Price</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedPlan.price}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Billing</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedPlan.billing}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Entitlement</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{selectedPlan.status}</p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Price</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{selectedPlan.price}</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Billing</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{selectedPlan.billing}</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-background px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Entitlement</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{selectedPlan.status}</p>
-            </div>
-          </div>
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <GhostButton type="button">Open billing</GhostButton>
-          </div>
-        </Panel>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <GhostButton type="button">Open billing</GhostButton>
+            </div>
+          </Panel>
+        ) : (
+          <Panel className="min-w-0">
+            <p className="text-sm text-muted">No subscription plans yet. Create one above.</p>
+          </Panel>
+        )}
       </div>
 
       <DirectorySearchOverlay<SubscriptionRecord>
@@ -230,7 +261,7 @@ export default function AdminSubscriptionsPage() {
         title="Search subscriptions"
         description="Plan search and paging are moved into the overlay so the page remains minimal."
         items={plans}
-        selectedId={selectedPlan.id}
+        selectedId={selectedPlan?.id ?? ""}
         onSelect={(id) => {
           setSelectedId(id);
           setSearchOpen(false);

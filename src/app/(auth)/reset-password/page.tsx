@@ -2,23 +2,46 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Key, ShieldCheck } from "lucide-react";
 import { PrimaryButton } from "@/components/app/WorkspaceUI";
 import { TextField } from "@/components/app/FormFields";
+import { createClient } from "@/lib/supabase/client";
 
 export default function ResetPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const router = useRouter();
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
     setMessage("");
+    setError("");
 
-    window.setTimeout(() => {
+    const formData = new FormData(event.currentTarget);
+    const newPassword = formData.get("newPassword") as string;
+    const confirmPassword = formData.get("confirmPassword") as string;
+
+    if (newPassword !== confirmPassword) {
       setIsSubmitting(false);
-      setMessage("Password updated. Use the new credentials to sign in again.");
-    }, 900);
+      setError("Passwords do not match.");
+      return;
+    }
+
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.updateUser({ password: newPassword });
+
+    setIsSubmitting(false);
+
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+
+    setMessage("Password updated. Redirecting to login...");
+    router.push("/login");
   };
 
   return (
@@ -43,9 +66,15 @@ export default function ResetPasswordPage() {
           </div>
         ) : null}
 
+        {error ? (
+          <div className="mt-5 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger">
+            {error}
+          </div>
+        ) : null}
+
         <form className="mt-7 grid gap-4" onSubmit={handleSubmit}>
-          <TextField label="New password" type="password" placeholder="New password" />
-          <TextField label="Confirm password" type="password" placeholder="Confirm password" />
+          <TextField label="New password" name="newPassword" type="password" placeholder="New password" />
+          <TextField label="Confirm password" name="confirmPassword" type="password" placeholder="Confirm password" />
           <div className="flex items-center justify-end gap-4">
             <Link href="/login" className="text-sm font-semibold text-accent">
               Back to login

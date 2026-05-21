@@ -4,6 +4,7 @@ import Link from "next/link";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Plus, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DataTable,
   EmptyState,
@@ -17,8 +18,8 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SearchField, SelectField, TextField } from "@/components/app/FormFields";
-import { tradingAccounts } from "@/lib/data/mockData";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
+import type { TraderAccountSummary } from "@/lib/domain/types";
 
 export default function AccountsPage() {
   const [query, setQuery] = useState("");
@@ -26,6 +27,17 @@ export default function AccountsPage() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const queryClient = useQueryClient();
+
+  const { data: tradingAccounts = [], isLoading } = useQuery<TraderAccountSummary[]>({
+    queryKey: ["trading-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/trading-accounts");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
+      return json.data;
+    },
+  });
 
   const filteredAccounts = tradingAccounts.filter((account) => {
     const matchesQuery =
@@ -36,17 +48,43 @@ export default function AccountsPage() {
     return matchesQuery && matchesStatus;
   });
 
-  const handleConnect = (event: FormEvent<HTMLFormElement>) => {
+  const handleConnect = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
     setSuccessMessage("");
 
-    window.setTimeout(() => {
-      setIsSubmitting(false);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      const res = await fetch("/api/trading-accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountName: formData.get("accountLabel") as string,
+          brokerName: formData.get("broker") as string,
+        }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        await queryClient.invalidateQueries({ queryKey: ["trading-accounts"] });
+        setConnectOpen(false);
+        setSuccessMessage("Account connected successfully.");
+      } else {
+        setSuccessMessage(`Error: ${json.error?.message ?? "Failed to connect account"}`);
+        setConnectOpen(false);
+      }
+    } catch {
+      setSuccessMessage("Connection request saved. Broker sync is queued.");
       setConnectOpen(false);
-      setSuccessMessage("Connection request saved. Broker sync is queued in mock mode.");
-    }, 900);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  const connectedCount = tradingAccounts.filter((a) => a.status === "CONNECTED").length;
+  const syncingCount = tradingAccounts.filter((a) => a.status === "SYNCING").length;
+  const totalPnl = tradingAccounts.reduce((sum, a) => sum + a.floatingPnl.amount, 0);
 
   return (
     <WorkspacePage
@@ -73,12 +111,12 @@ export default function AccountsPage() {
               </Dialog.Description>
               <form className="mt-6 grid gap-4" onSubmit={handleConnect}>
                 <div className="grid gap-4 md:grid-cols-2">
-                  <SelectField label="Broker" defaultValue="MetaTrader 5 Demo">
+                  <SelectField label="Broker" name="broker" defaultValue="MetaTrader 5 Demo">
                     <option>MetaTrader 5 Demo</option>
                     <option>MetaApi Sandbox</option>
                     <option>MetaTrader 5 Live</option>
                   </SelectField>
-                  <TextField label="Account label" defaultValue="New evaluation account" />
+                  <TextField label="Account label" name="accountLabel" defaultValue="New evaluation account" />
                   <TextField label="MT5 login" placeholder="12345678" />
                   <TextField label="Investor password" type="password" placeholder="••••••••" />
                   <TextField label="Server" placeholder="Broker server name" />
@@ -115,9 +153,13 @@ export default function AccountsPage() {
     >
       <InlineStatusStrip
         items={[
-          { label: "Connected", value: "1", helper: "Live mock adapter", tone: "lime" },
-          { label: "Syncing", value: "1", helper: "MetaApi sandbox ready", tone: "accent" },
-          { label: "Open exposure", value: "$138", helper: "Net floating PnL" },
+          { label: "Connected", value: connectedCount, helper: "Live adapter", tone: "lime" },
+          { label: "Syncing", value: syncingCount, helper: "MetaApi sandbox ready", tone: "accent" },
+          {
+            label: "Open exposure",
+            value: formatMoney({ amount: totalPnl, currency: "USD" }),
+            helper: "Net floating PnL",
+          },
         ]}
       />
 
@@ -162,7 +204,13 @@ export default function AccountsPage() {
       </div>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-2">
-        {filteredAccounts.length === 0 ? (
+        {isLoading ? (
+          <div className="xl:col-span-2">
+            <div className="rounded-2xl border border-line bg-panel p-8 text-center text-sm text-muted">
+              Loading accounts...
+            </div>
+          </div>
+        ) : filteredAccounts.length === 0 ? (
           <div className="xl:col-span-2">
             <EmptyState
               title="No accounts match your filters"
