@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { mapTradeToDto } from '@/lib/mappers/tradeMapper'
 import type { TradeDto, TradeStatus } from '@/lib/domain/types'
 import type { UserRole } from '@/lib/auth/rbac'
@@ -9,7 +10,8 @@ export async function listTrades(params: {
   accountId?: string
   status?: TradeStatus
 }): Promise<TradeDto[]> {
-  const supabase = await createClient()
+  // Admin bypasses RLS to see all trades; traders see only their own via SSR client.
+  const supabase = params.role === 'ADMIN' ? createAdminClient() : await createClient()
 
   let query = supabase
     .from('trades')

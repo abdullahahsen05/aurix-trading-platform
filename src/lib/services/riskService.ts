@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { mapRiskRuleToDto, mapRiskEventToDto } from '@/lib/mappers/riskMapper'
 import type { RiskRuleDto, RiskEventDto } from '@/lib/domain/types'
 import type { UserRole } from '@/lib/auth/rbac'
@@ -8,7 +9,8 @@ export async function listRiskRules(
   userId: string,
   role: UserRole
 ): Promise<RiskRuleDto[]> {
-  const supabase = await createClient()
+  // Admin bypasses RLS to see all rules; traders see their own via SSR client.
+  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
 
   // Platform-level rules (trading_account_id IS NULL) always included for active users
   const { data: platformRules } = await supabase
@@ -41,7 +43,8 @@ export async function listRiskEvents(
   userId: string,
   role: UserRole
 ): Promise<RiskEventDto[]> {
-  const supabase = await createClient()
+  // Admin bypasses RLS to see all events; traders see their own via SSR client.
+  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
 
   let query = supabase
     .from('risk_events')

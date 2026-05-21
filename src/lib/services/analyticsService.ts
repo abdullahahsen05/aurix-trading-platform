@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { mapTradeToDto } from '@/lib/mappers/tradeMapper'
 import { buildAnalyticsSummary } from '@/lib/domain/metrics'
 import type { AnalyticsSummary, EquityPoint } from '@/lib/domain/types'
@@ -9,7 +10,7 @@ export async function getAnalyticsSummary(
   userId: string,
   role: UserRole
 ): Promise<AnalyticsSummary> {
-  const supabase = await createClient()
+  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
 
   // Verify access
   if (role !== 'ADMIN') {
@@ -52,7 +53,7 @@ export async function getEquityCurve(
   userId: string,
   role: UserRole
 ): Promise<EquityPoint[]> {
-  const supabase = await createClient()
+  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
 
   if (role !== 'ADMIN') {
     const { data } = await supabase

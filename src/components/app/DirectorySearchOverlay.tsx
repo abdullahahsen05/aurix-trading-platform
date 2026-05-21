@@ -90,8 +90,8 @@ export function DirectorySearchOverlay<T>({
             <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">{searchLabel}</p>
-                <h2 className="mt-2 text-lg font-semibold text-foreground">{title}</h2>
-                <p className="mt-1 text-sm text-muted">{description}</p>
+                <Dialog.Title className="mt-2 text-lg font-semibold text-foreground">{title}</Dialog.Title>
+                <Dialog.Description className="mt-1 text-sm text-muted">{description}</Dialog.Description>
               </div>
               <Dialog.Close asChild>
                 <button

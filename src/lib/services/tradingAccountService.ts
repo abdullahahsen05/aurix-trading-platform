@@ -1,10 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { mapAccountToDto } from '@/lib/mappers/accountMapper'
 import type { TraderAccountSummary } from '@/lib/domain/types'
 import type { UserRole } from '@/lib/auth/rbac'
 
 export async function listTradingAccounts(userId: string, role: UserRole): Promise<TraderAccountSummary[]> {
-  const supabase = await createClient()
+  // Admin bypasses RLS to see all accounts; traders see only their own via SSR client.
+  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
 
   let query = supabase
     .from('trading_accounts')
@@ -49,7 +51,7 @@ export async function getTradingAccount(
   userId: string,
   role: UserRole
 ): Promise<TraderAccountSummary | null> {
-  const supabase = await createClient()
+  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
 
   let query = supabase
     .from('trading_accounts')

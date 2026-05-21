@@ -1,9 +1,11 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { mapCrmNoteToDto, mapTraderProfileToDto } from '@/lib/mappers/crmMapper'
 import type { CrmNoteDto, TraderProfileDto } from '@/lib/domain/types'
 
 export async function listTraderProfiles(): Promise<TraderProfileDto[]> {
-  const supabase = await createClient()
+  // Use admin client to bypass RLS — this function is only called from
+  // admin API routes that already gate access via requireAdmin().
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('trader_profiles')
@@ -25,7 +27,8 @@ export async function listTraderProfiles(): Promise<TraderProfileDto[]> {
 }
 
 export async function listCrmNotes(traderId?: string): Promise<CrmNoteDto[]> {
-  const supabase = await createClient()
+  // Use admin client to bypass RLS — only called from admin-gated routes.
+  const supabase = createAdminClient()
 
   let query = supabase
     .from('crm_notes')
@@ -48,7 +51,8 @@ export async function createCrmNote(data: {
   note: string
   authorUserId?: string
 }): Promise<CrmNoteDto> {
-  const supabase = await createClient()
+  // Use admin client — called from admin-gated POST /api/crm/notes.
+  const supabase = createAdminClient()
 
   const { data: note, error } = await supabase
     .from('crm_notes')
