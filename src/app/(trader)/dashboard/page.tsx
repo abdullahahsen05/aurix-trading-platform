@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
-import { TradingChart } from "@/components/charts/TradingChart";
 import { DashboardModeOverlay } from "@/components/dashboard/DashboardModeOverlay";
 import { DashboardKpiStrip, MarketSentimentStrip } from "@/components/dashboard/DashboardKpiStrip";
 import { PerformanceRings, type PerformanceRingItem } from "@/components/dashboard/PerformanceRings";
@@ -13,9 +13,30 @@ import {
   calculateProfitFactor,
   calculateWinRate,
 } from "@/lib/domain/metrics";
-import type { DashboardView, Period } from "@/lib/domain/dashboard";
+import { computePeriodStats, type DashboardView, type Period, type PeriodStats } from "@/lib/domain/dashboard";
 import type { TraderAccountSummary, TradeDto, RiskRuleDto } from "@/lib/domain/types";
 import { useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
+
+const TradingChart = dynamic(
+  () => import("@/components/charts/TradingChart").then((mod) => mod.TradingChart),
+  {
+    ssr: false,
+    loading: () => (
+      <section className="section-surface overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+          <div>
+            <div className="h-6 w-44 animate-pulse rounded-full bg-panel-strong" />
+            <div className="mt-3 h-4 w-32 animate-pulse rounded-full bg-panel-strong" />
+          </div>
+          <div className="h-6 w-20 animate-pulse rounded-full bg-panel-strong" />
+        </div>
+        <div className="px-5 py-5">
+          <div className="inner-surface h-[560px] animate-pulse" />
+        </div>
+      </section>
+    ),
+  },
+);
 
 const dashboardTabs: Array<{ id: DashboardView; label: string }> = [
   { id: "CURRENT_EQUITY", label: "Current Equity" },
@@ -23,51 +44,6 @@ const dashboardTabs: Array<{ id: DashboardView; label: string }> = [
   { id: "PROFIT_SUMMARY", label: "Profit Summary" },
   { id: "CALENDAR_TRACKER", label: "Calendar Tracker" },
 ];
-
-const periodSummaries: Record<
-  Period,
-  {
-    totalProfit: number;
-    winRate: number;
-    drawdown: number;
-    consistency: number;
-    tradeCount: number;
-    riskReward: number;
-  }
-> = {
-  DAILY: {
-    totalProfit: 1240,
-    winRate: 61.2,
-    drawdown: 1.9,
-    consistency: 78.4,
-    tradeCount: 6,
-    riskReward: 2.3,
-  },
-  WEEKLY: {
-    totalProfit: 6840,
-    winRate: 58.6,
-    drawdown: 3.7,
-    consistency: 71.2,
-    tradeCount: 18,
-    riskReward: 2.7,
-  },
-  MONTHLY: {
-    totalProfit: 28740,
-    winRate: 56.8,
-    drawdown: 4.9,
-    consistency: 67.5,
-    tradeCount: 44,
-    riskReward: 2.5,
-  },
-};
-
-function buildSparkline(seed: number, direction: number) {
-  return Array.from({ length: 7 }, (_, index) => {
-    const wave = Math.sin(seed * 0.14 + index * 0.6) * 0.16;
-    const drift = index * direction * 0.035;
-    return Number((0.42 + wave + drift).toFixed(3));
-  });
-}
 
 export default function TraderDashboardPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("DAILY");
@@ -83,6 +59,8 @@ export default function TraderDashboardPage() {
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
       return json.data;
     },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
   // Fetch all trades
@@ -94,6 +72,7 @@ export default function TraderDashboardPage() {
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load trades");
       return json.data;
     },
+    staleTime: 60_000,
   });
 
   // Fetch risk rules
@@ -105,6 +84,8 @@ export default function TraderDashboardPage() {
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk rules");
       return json.data;
     },
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 
   // Subscribe to realtime updates
@@ -133,7 +114,10 @@ export default function TraderDashboardPage() {
 
   const openTrades = useMemo(() => trades.filter((trade) => trade.status === "OPEN"), [trades]);
   const closedTrades = useMemo(() => trades.filter((trade) => trade.status === "CLOSED"), [trades]);
-  const summary = periodSummaries[selectedPeriod];
+  const periodStats = useMemo<PeriodStats>(
+    () => computePeriodStats(closedTrades, selectedPeriod),
+    [closedTrades, selectedPeriod],
+  );
   const dailyLossLimit = riskRules.find((rule) => rule.metric === "DAILY_LOSS")?.threshold ?? 2500;
   const maxDrawdownLimit = riskRules.find((rule) => rule.metric === "MAX_DRAWDOWN")?.threshold ?? 5;
   const openTradeLimit = riskRules.find((rule) => rule.metric === "OPEN_TRADES")?.threshold ?? 5;
@@ -146,10 +130,19 @@ export default function TraderDashboardPage() {
   const baseBalance = baseAccount?.balance.amount ?? 0;
   const baseEquity = baseAccount?.equity.amount ?? 0;
   const basePnl = baseAccount?.floatingPnl.amount ?? 0;
+  const accountDrawdown = baseAccount?.drawdownPercent ?? 0;
   const balanceChange = baseBalance === 0 ? 0 : ((live.balance - baseBalance) / baseBalance) * 100;
   const equityChange = baseEquity === 0 ? 0 : ((live.equity - baseEquity) / baseEquity) * 100;
   const pnlChange = basePnl === 0 ? 0 : (live.pnl / Math.abs(basePnl)) * 100;
   const currentHour = new Date().getHours();
+  const overlayPeriodStats = useMemo(
+    () => ({
+      ...periodStats,
+      drawdown: accountDrawdown,
+      consistency: periodStats.winRate,
+    }),
+    [accountDrawdown, periodStats],
+  );
 
   const performanceRings = useMemo<PerformanceRingItem[]>(
     () => [
@@ -177,24 +170,8 @@ export default function TraderDashboardPage() {
         progress: Math.min(avgWinLoss / 4, 1),
         tone: "yellow" as const,
       },
-      {
-        label: "Win Rate",
-        value: formatPercent(summary.winRate),
-        status: summary.winRate >= 60 ? "Excellent" : summary.winRate >= 55 ? "Good" : "Average",
-        statusTone: summary.winRate >= 60 ? ("lime" as const) : summary.winRate >= 55 ? ("accent" as const) : ("muted" as const),
-        progress: summary.winRate / 100,
-        tone: "lime" as const,
-      },
-      {
-        label: "Risk/Reward",
-        value: summary.riskReward.toFixed(2),
-        status: summary.riskReward >= 2.5 ? "Excellent" : summary.riskReward >= 2 ? "Good" : "Average",
-        statusTone: summary.riskReward >= 2.5 ? ("lime" as const) : summary.riskReward >= 2 ? ("accent" as const) : ("muted" as const),
-        progress: Math.min(summary.riskReward / 4, 1),
-        tone: "yellow" as const,
-      },
     ],
-    [avgWinLoss, profitFactor, summary.riskReward, summary.winRate, tradeWinRate],
+    [avgWinLoss, profitFactor, tradeWinRate],
   );
 
   const kpiItems = [
@@ -205,7 +182,7 @@ export default function TraderDashboardPage() {
       tone: "accent" as const,
       status: balanceChange >= 0 ? "Good" : "Watch",
       statusTone: balanceChange >= 0 ? ("lime" as const) : ("danger" as const),
-      sparkline: buildSparkline(live.balance, 1),
+      sparkline: [],
     },
     {
       label: "Equity",
@@ -214,7 +191,7 @@ export default function TraderDashboardPage() {
       tone: "lime" as const,
       status: equityChange >= 0 ? "Excellent" : "Watch",
       statusTone: equityChange >= 0 ? ("lime" as const) : ("danger" as const),
-      sparkline: buildSparkline(live.equity, 1.25),
+      sparkline: [],
     },
     {
       label: "Floating PnL",
@@ -223,7 +200,7 @@ export default function TraderDashboardPage() {
       tone: pnlPositive ? ("lime" as const) : ("danger" as const),
       status: pnlPositive ? "Good" : "Average",
       statusTone: pnlPositive ? ("lime" as const) : ("muted" as const),
-      sparkline: buildSparkline(live.pnl, pnlPositive ? 1.5 : -1.5),
+      sparkline: [],
     },
   ];
 
@@ -236,20 +213,20 @@ export default function TraderDashboardPage() {
     },
     {
       label: "Trend Bias",
-      value: summary.winRate >= 58 && profitFactor >= 1.4 ? "Bullish" : "Balanced",
+      value: periodStats.winRate >= 58 && profitFactor >= 1.4 ? "Bullish" : "Balanced",
       helper: "Price structure is stable",
       tone: "lime" as const,
     },
     {
       label: "Volatility",
-      value: summary.drawdown >= 4.5 ? "Elevated" : summary.drawdown >= 3 ? "Moderate" : "Low",
+      value: accountDrawdown >= 4.5 ? "Elevated" : accountDrawdown >= 3 ? "Moderate" : "Low",
       helper: "Based on the selected period",
-      tone: summary.drawdown >= 4.5 ? ("danger" as const) : ("lime" as const),
+      tone: accountDrawdown >= 4.5 ? ("danger" as const) : ("lime" as const),
     },
     {
       label: "Fear & Greed",
-      value: `${Math.round((summary.winRate * 0.45 + summary.consistency * 0.35 + profitFactor * 10) / 1.1)}`,
-      helper: "Mock market sentiment score",
+      value: `${Math.round((periodStats.winRate * 0.8 + profitFactor * 10) / 1.1)}`,
+      helper: "Calculated from period performance",
       tone: "accent" as const,
     },
     {
@@ -331,7 +308,7 @@ export default function TraderDashboardPage() {
         live={live}
         openTrades={openTrades}
         trades={trades}
-        summary={summary}
+        summary={overlayPeriodStats}
         dailyLossLimit={dailyLossLimit}
         maxDrawdownLimit={maxDrawdownLimit}
         openTradeLimit={openTradeLimit}

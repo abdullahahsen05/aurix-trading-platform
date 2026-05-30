@@ -1,0 +1,87 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { computePeriodStats } from "@/lib/domain/dashboard";
+import type { TradeDto } from "@/lib/domain/types";
+
+const usd = (amount: number) => ({ amount, currency: "USD" });
+
+function trade(
+  id: string,
+  profit: number,
+  closedAt: string | null,
+  status: TradeDto["status"] = "CLOSED",
+): TradeDto {
+  return {
+    id,
+    accountId: "account-1",
+    symbol: "EURUSD",
+    side: "BUY",
+    status,
+    volume: 1,
+    openPrice: 1,
+    closePrice: status === "CLOSED" ? 1.1 : null,
+    profit: usd(profit),
+    openedAt: "2026-04-01T00:00:00.000Z",
+    closedAt,
+  };
+}
+
+const trades: TradeDto[] = [
+  trade("today-win", 200, "2026-05-30T02:00:00.000Z"),
+  trade("today-loss", -50, "2026-05-30T10:00:00.000Z"),
+  trade("six-days-ago", 40, "2026-05-24T12:00:00.000Z"),
+  trade("seven-day-boundary", -20, "2026-05-23T15:00:00.000Z"),
+  trade("thirty-one-days-old", 500, "2026-04-29T15:00:00.000Z"),
+  trade("open-trade", 999, null, "OPEN"),
+];
+
+describe("computePeriodStats", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-30T15:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("DAILY includes only trades closed today", () => {
+    expect(computePeriodStats(trades, "DAILY")).toMatchObject({
+      totalProfit: 150,
+      tradeCount: 2,
+    });
+  });
+
+  test("WEEKLY includes trades closed in the last seven days", () => {
+    expect(computePeriodStats(trades, "WEEKLY")).toMatchObject({
+      totalProfit: 170,
+      tradeCount: 4,
+    });
+  });
+
+  test("MONTHLY includes the last thirty days and excludes thirty-one-day-old trades", () => {
+    expect(computePeriodStats(trades, "MONTHLY")).toMatchObject({
+      totalProfit: 170,
+      tradeCount: 4,
+    });
+  });
+
+  test("empty daily stats returns zeros", () => {
+    expect(computePeriodStats([trade("old", 100, "2026-05-29T23:59:59.000Z")], "DAILY")).toEqual({
+      totalProfit: 0,
+      winRate: 0,
+      tradeCount: 0,
+      riskReward: 0,
+    });
+  });
+
+  test("DAILY winRate is 50 for one win and one loss", () => {
+    expect(computePeriodStats(trades, "DAILY").winRate).toBe(50);
+  });
+
+  test("open trades are excluded", () => {
+    expect(computePeriodStats([trade("closed", 20, "2026-05-30T12:00:00.000Z"), trade("open", 999, null, "OPEN")], "DAILY")).toMatchObject({
+      totalProfit: 20,
+      tradeCount: 1,
+    });
+  });
+});
