@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
  * Subscribe to Supabase Realtime events and invalidate React Query caches.
  * Call this hook once in a top-level layout or dashboard component.
  */
-export function useRealtimeUpdates(accountIds?: string[]) {
+export function useRealtimeUpdates() {
   const queryClient = useQueryClient()
 
   useEffect(() => {
