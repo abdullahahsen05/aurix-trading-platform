@@ -1,27 +1,42 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   DataTable,
   EmptyState,
-  GhostButton,
   InlineStatusStrip,
   Panel,
-  PrimaryButton,
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
-import { SelectField, TextField } from "@/components/app/FormFields";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 import type { RiskEventDto, RiskRuleDto, TraderAccountSummary } from "@/lib/domain/types";
 
-function RiskBar({ label, value, max, tone }: { label: string; value: number; max: number; tone: "accent" | "lime" | "danger" }) {
+function RiskBar({
+  label,
+  value,
+  max,
+  tone,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  tone: "accent" | "lime" | "danger";
+}) {
   return (
     <div className="rounded-2xl border border-line bg-background p-4">
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm font-semibold text-foreground">{label}</p>
-        <span className={`text-sm font-semibold ${tone === "danger" ? "text-danger" : tone === "lime" ? "text-accent-2" : "text-accent"}`}>
+        <span
+          className={`text-sm font-semibold ${
+            tone === "danger"
+              ? "text-danger"
+              : tone === "lime"
+                ? "text-accent-2"
+                : "text-accent"
+          }`}
+        >
           {formatPercent(value)}
         </span>
       </div>
@@ -39,8 +54,7 @@ function RiskBar({ label, value, max, tone }: { label: string; value: number; ma
 }
 
 export default function RiskPage() {
-  const [submitted, setSubmitted] = useState("");
-  const queryClient = useQueryClient();
+  const [notice, setNotice] = useState("");
 
   const { data: riskRules = [] } = useQuery<RiskRuleDto[]>({
     queryKey: ["risk-rules"],
@@ -72,46 +86,43 @@ export default function RiskPage() {
     },
   });
 
-  const handleSave = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSubmitted("Risk limits saved. The monitor updated the live rule set.");
-  };
-
-  const handleAcknowledge = async (eventId: string, ruleName: string) => {
-    try {
-      const res = await fetch(`/api/risk/events/${eventId}/acknowledge`, { method: "PATCH" });
+  const { data: dailyPnlData } = useQuery<{ dailyPnl: number; currency: string }>({
+    queryKey: ["daily-pnl"],
+    queryFn: async () => {
+      const res = await fetch("/api/trader/daily-pnl");
       const json = await res.json();
-      if (json.ok) {
-        await queryClient.invalidateQueries({ queryKey: ["risk-events"] });
-        setSubmitted(`Risk event "${ruleName}" acknowledged.`);
-      }
-    } catch {
-      setSubmitted(`Acknowledge queued for "${ruleName}".`);
-    }
-  };
+      if (!json.ok) return { dailyPnl: 0, currency: "USD" };
+      return json.data;
+    },
+  });
 
-  const dailyLoss = 108.29;
-  const dailyLossLimit = riskRules.find((rule) => rule.metric === "DAILY_LOSS")?.threshold ?? 1250;
-  const maxDrawdown = tradingAccounts.length > 0
-    ? Math.max(...tradingAccounts.map((account) => account.drawdownPercent))
-    : 0;
-  const openEvents = riskEvents;
+  const dailyLossLimit =
+    riskRules.find((rule) => rule.metric === "DAILY_LOSS")?.threshold ?? 1250;
+  const maxDrawdown =
+    tradingAccounts.length > 0
+      ? Math.max(...tradingAccounts.map((a) => a.drawdownPercent))
+      : 0;
+  const dailyPnl = dailyPnlData?.dailyPnl ?? 0;
 
   return (
     <WorkspacePage
       eyebrow="Risk"
       title="Risk rule monitoring"
-      description="Daily loss, drawdown, open trade concentration, warning history, and account restriction signals."
-      action={<PrimaryButton type="button">Create rule</PrimaryButton>}
+      description="Daily loss, drawdown, open trade concentration, and warning history."
     >
       <InlineStatusStrip
         items={[
           {
             label: "Active rules",
-            value: riskRules.filter((rule) => rule.enabled).length,
+            value: riskRules.filter((r) => r.enabled).length,
             helper: "Platform + account rules",
           },
-          { label: "Open events", value: riskEvents.length, helper: "Needs review", tone: "accent" },
+          {
+            label: "Open events",
+            value: riskEvents.length,
+            helper: "Pending review by admin",
+            tone: riskEvents.length > 0 ? "accent" : undefined,
+          },
           {
             label: "Highest drawdown",
             value: formatPercent(maxDrawdown),
@@ -121,53 +132,67 @@ export default function RiskPage() {
         ]}
       />
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        <StatusPill tone="danger">Critical</StatusPill>
-        <StatusPill tone="accent">Warning</StatusPill>
-        <StatusPill tone="lime">Stable</StatusPill>
-        <StatusPill tone="muted">Legend</StatusPill>
-      </div>
-
-      {submitted ? (
+      {notice ? (
         <div className="mt-5 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-medium text-accent">
-          {submitted}
+          {notice}
         </div>
       ) : null}
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.35fr_0.65fr]">
+        {/* ── Left: gauges + events ─────────────────────────────────────── */}
         <div className="grid gap-4">
-          <RiskBar label="Daily loss monitor" value={(dailyLoss / dailyLossLimit) * 100} max={100} tone="accent" />
-          <RiskBar label="Max drawdown protection" value={maxDrawdown} max={8} tone={maxDrawdown >= 5 ? "danger" : "lime"} />
+          <RiskBar
+            label={`Today's closed P&L: ${dailyPnl >= 0 ? "+" : ""}${dailyPnl.toFixed(2)}`}
+            value={dailyLossLimit > 0 ? (Math.abs(Math.min(dailyPnl, 0)) / dailyLossLimit) * 100 : 0}
+            max={100}
+            tone={dailyPnl < -dailyLossLimit * 0.8 ? "danger" : "accent"}
+          />
+          <RiskBar
+            label="Max drawdown protection"
+            value={maxDrawdown}
+            max={8}
+            tone={maxDrawdown >= 5 ? "danger" : "lime"}
+          />
+
+          {/* Warning notifications — read-only for traders */}
           <div className="rounded-2xl border border-line bg-panel p-5">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Warning notifications</h3>
-                <p className="mt-1 text-xs text-muted">Real-time alerts waiting for review</p>
+                <p className="mt-1 text-xs text-muted">
+                  Events flagged by the risk engine. Contact your administrator to resolve.
+                </p>
               </div>
               <StatusPill tone="accent">Live</StatusPill>
             </div>
             <div className="mt-4 space-y-3">
-              {openEvents.length === 0 ? (
+              {riskEvents.length === 0 ? (
                 <EmptyState
                   title="No active warnings"
                   description="The risk desk is currently clear."
                 />
               ) : (
-                openEvents.map((event) => (
+                riskEvents.map((event) => (
                   <div key={event.id} className="rounded-xl border border-line bg-background p-4">
                     <div className="flex items-center justify-between gap-4">
                       <p className="font-semibold text-foreground">{event.ruleName}</p>
-                      <StatusPill tone="accent">{event.severity}</StatusPill>
+                      <StatusPill
+                        tone={
+                          event.severity === "CRITICAL"
+                            ? "danger"
+                            : event.severity === "WARNING"
+                              ? "accent"
+                              : "muted"
+                        }
+                      >
+                        {event.severity}
+                      </StatusPill>
                     </div>
                     <p className="mt-2 text-sm leading-6 text-muted">{event.message}</p>
-                    <div className="mt-3">
-                      <GhostButton
-                        type="button"
-                        onClick={() => handleAcknowledge(event.id, event.ruleName)}
-                      >
-                        Acknowledge
-                      </GhostButton>
-                    </div>
+                    <p className="mt-2 text-xs text-muted">
+                      Raised {new Date(event.createdAt).toLocaleString()} · Acknowledgement
+                      by admin required
+                    </p>
                   </div>
                 ))
               )}
@@ -175,6 +200,7 @@ export default function RiskPage() {
           </div>
         </div>
 
+        {/* ── Right: rule set + account monitoring ─────────────────────── */}
         <div className="grid gap-4">
           <Panel>
             <div className="flex items-center justify-between gap-3">
@@ -183,11 +209,12 @@ export default function RiskPage() {
             </div>
             <div className="mt-4">
               <DataTable
-                headers={["Rule", "Metric", "Threshold", "Severity", "State"]}
+                headers={["Rule", "Scope", "Metric", "Threshold", "Severity", "State"]}
                 rows={riskRules.map((rule) => [
                   <span key="name" className="font-semibold text-foreground">
                     {rule.name}
                   </span>,
+                  rule.scope,
                   rule.metric,
                   rule.threshold,
                   <StatusPill
@@ -209,66 +236,46 @@ export default function RiskPage() {
           </Panel>
 
           <Panel>
-            <h2 className="text-lg font-semibold text-foreground">Trading limit settings</h2>
-            <form className="mt-5 grid gap-4" onSubmit={handleSave}>
-              <div className="grid gap-4 md:grid-cols-2">
-                <TextField label="Daily loss limit" defaultValue="1250" />
-                <TextField label="Max drawdown limit" defaultValue="5" />
-                <SelectField label="Concentration rule" defaultValue="OPEN_TRADES">
-                  <option value="OPEN_TRADES">Open trades</option>
-                  <option value="DAILY_LOSS">Daily loss</option>
-                  <option value="MAX_DRAWDOWN">Max drawdown</option>
-                </SelectField>
-                <SelectField label="Action" defaultValue="WARN">
-                  <option value="WARN">Warn only</option>
-                  <option value="LIMIT">Limit position sizing</option>
-                  <option value="RESTRICT">Restrict account</option>
-                </SelectField>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-                <p className="text-sm text-muted">
-                  Account limits apply to the risk service until backend enforcement is wired.
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Rule-based account monitoring
+                </h2>
+                <p className="mt-1 text-sm text-muted">
+                  Accounts shown with current risk posture.
                 </p>
-                <div className="flex gap-3">
-                  <GhostButton type="button">Reset</GhostButton>
-                  <PrimaryButton type="submit">Save limits</PrimaryButton>
-                </div>
               </div>
-            </form>
+              <StatusPill tone="accent">{tradingAccounts.length} accounts</StatusPill>
+            </div>
+            <div className="mt-4">
+              <DataTable
+                headers={["Account", "Broker", "Status", "Balance", "Equity", "Drawdown", "Risk"]}
+                rows={tradingAccounts.map((account) => [
+                  <span key="account" className="font-semibold text-foreground">
+                    {account.accountName}
+                  </span>,
+                  account.brokerName,
+                  <StatusPill
+                    key="status"
+                    tone={account.status === "CONNECTED" ? "lime" : "accent"}
+                  >
+                    {account.status}
+                  </StatusPill>,
+                  formatMoney(account.balance),
+                  <span key="equity" className="font-semibold text-accent-2">
+                    {formatMoney(account.equity)}
+                  </span>,
+                  formatPercent(account.drawdownPercent),
+                  account.drawdownPercent >= 5 ? (
+                    <StatusPill key="risk" tone="danger">Watch</StatusPill>
+                  ) : (
+                    <StatusPill key="risk" tone="lime">Normal</StatusPill>
+                  ),
+                ])}
+              />
+            </div>
           </Panel>
         </div>
-      </div>
-
-      <div className="mt-5">
-        <Panel>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Rule-based account monitoring</h2>
-              <p className="mt-1 text-sm text-muted">Accounts are shown with the current risk posture.</p>
-            </div>
-            <StatusPill tone="accent">{tradingAccounts.length} accounts</StatusPill>
-          </div>
-          <div className="mt-4">
-            <DataTable
-              headers={["Account", "Broker", "Status", "Balance", "Equity", "Drawdown", "Risk state"]}
-              rows={tradingAccounts.map((account) => [
-                <span key="account" className="font-semibold text-foreground">
-                  {account.accountName}
-                </span>,
-                account.brokerName,
-                <StatusPill key="status" tone={account.status === "CONNECTED" ? "lime" : "accent"}>
-                  {account.status}
-                </StatusPill>,
-                formatMoney(account.balance),
-                <span key="equity" className="font-semibold text-accent-2">
-                  {formatMoney(account.equity)}
-                </span>,
-                formatPercent(account.drawdownPercent),
-                account.drawdownPercent >= 5 ? "Watch" : "Normal",
-              ])}
-            />
-          </div>
-        </Panel>
       </div>
     </WorkspacePage>
   );
