@@ -68,13 +68,21 @@ export function Topbar({
   const unreadCount = notifData?.unreadCount ?? 0;
 
   async function handleMarkRead(id: string) {
-    await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
-    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    try {
+      await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    } catch {
+      // network failure — silently ignore; next refetch will correct state
+    }
   }
 
   async function handleMarkAllRead() {
-    await fetch("/api/notifications/read-all", { method: "PATCH" });
-    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    try {
+      await fetch("/api/notifications/read-all", { method: "PATCH" });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    } catch {
+      // network failure — silently ignore; next refetch will correct state
+    }
   }
 
   const mobileItems = navItems.filter((item) => item.role === role).slice(0, 6);
