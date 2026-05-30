@@ -12,7 +12,6 @@ import {
   calculateAverageWinLossRatio,
   calculateConsistencyScore,
   calculateProfitFactor,
-  calculateWinRate,
 } from "@/lib/domain/metrics";
 import {
   computePeriodStats,
@@ -126,7 +125,6 @@ export default function TraderDashboardPage() {
   }, [baseAccount]);
 
   const openTrades = useMemo(() => trades.filter((trade) => trade.status === "OPEN"), [trades]);
-  const closedTrades = useMemo(() => trades.filter((trade) => trade.status === "CLOSED"), [trades]);
   const periodTrades = useMemo(
     () => filterClosedTradesForPeriod(trades, selectedPeriod, statsNow),
     [trades, selectedPeriod, statsNow],
