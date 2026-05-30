@@ -139,7 +139,6 @@ export default function TraderDashboardPage() {
   const maxDrawdownLimit = riskRules.find((rule) => rule.metric === "MAX_DRAWDOWN")?.threshold ?? 5;
   const openTradeLimit = riskRules.find((rule) => rule.metric === "OPEN_TRADES")?.threshold ?? 5;
 
-  const tradeWinRate = useMemo(() => calculateWinRate(closedTrades), [closedTrades]);
   const periodProfitFactor = useMemo(() => calculateProfitFactor(periodTrades), [periodTrades]);
   const periodAvgWinLoss = useMemo(() => calculateAverageWinLossRatio(periodTrades), [periodTrades]);
   const periodConsistency = useMemo(() => calculateConsistencyScore(periodTrades), [periodTrades]);
@@ -166,10 +165,10 @@ export default function TraderDashboardPage() {
     () => [
       {
         label: "Win %",
-        value: formatPercent(tradeWinRate),
-        status: tradeWinRate >= 60 ? "Excellent" : tradeWinRate >= 50 ? "Good" : "Average",
-        statusTone: tradeWinRate >= 60 ? ("lime" as const) : tradeWinRate >= 50 ? ("accent" as const) : ("muted" as const),
-        progress: tradeWinRate / 100,
+        value: formatPercent(periodStats.winRate),
+        status: periodStats.winRate >= 60 ? "Excellent" : periodStats.winRate >= 50 ? "Good" : "Average",
+        statusTone: periodStats.winRate >= 60 ? ("lime" as const) : periodStats.winRate >= 50 ? ("accent" as const) : ("muted" as const),
+        progress: periodStats.winRate / 100,
         tone: "yellow" as const,
       },
       {
@@ -189,7 +188,7 @@ export default function TraderDashboardPage() {
         tone: "yellow" as const,
       },
     ],
-    [periodAvgWinLoss, periodProfitFactor, tradeWinRate],
+    [periodAvgWinLoss, periodProfitFactor, periodStats.winRate],
   );
 
   const kpiItems = [
