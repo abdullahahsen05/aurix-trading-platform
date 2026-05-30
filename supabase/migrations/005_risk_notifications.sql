@@ -1,7 +1,12 @@
--- supabase/migrations/005_risk_notifications.sql
+-- ============================================================
+-- AURIX Trading Platform — Supabase Schema Migration 005
+-- Phase 6: Risk engine + notification infrastructure
+-- Additive only — safe to apply to existing data
+-- ============================================================
 
 -- Add type column to categorise notifications
-ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS type TEXT;
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS type TEXT
+  CHECK (type IN ('RISK_EVENT', 'SYNC_SUCCESS', 'SYNC_FAILURE'));
 
 -- Link notification to the risk event that caused it (used for dedup)
 ALTER TABLE public.notifications
