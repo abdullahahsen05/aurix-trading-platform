@@ -16,6 +16,7 @@ const ALL_MIGRATIONS = [
   '003_security_hardening.sql',
   '004_broker_sync.sql',
   '005_risk_notifications.sql',
+  '006_performance_indexes.sql',
 ]
 
 async function runMigrations() {
