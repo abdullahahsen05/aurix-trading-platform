@@ -10,6 +10,7 @@ import { Panel, PageActionGroup, WorkspacePage } from "@/components/app/Workspac
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 import {
   calculateAverageWinLossRatio,
+  calculateConsistencyScore,
   calculateProfitFactor,
   calculateWinRate,
 } from "@/lib/domain/metrics";
@@ -44,6 +45,16 @@ const dashboardTabs: Array<{ id: DashboardView; label: string }> = [
   { id: "PROFIT_SUMMARY", label: "Profit Summary" },
   { id: "CALENDAR_TRACKER", label: "Calendar Tracker" },
 ];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function getPeriodCutoff(period: Period, now = new Date()) {
+  if (period === "DAILY") {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  }
+
+  return new Date(now.getTime() - (period === "WEEKLY" ? 7 : 30) * DAY_MS);
+}
 
 export default function TraderDashboardPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("DAILY");
@@ -118,6 +129,10 @@ export default function TraderDashboardPage() {
     () => computePeriodStats(closedTrades, selectedPeriod),
     [closedTrades, selectedPeriod],
   );
+  const periodTrades = useMemo(() => {
+    const cutoff = getPeriodCutoff(selectedPeriod);
+    return closedTrades.filter((trade) => trade.closedAt !== null && new Date(trade.closedAt) >= cutoff);
+  }, [closedTrades, selectedPeriod]);
   const dailyLossLimit = riskRules.find((rule) => rule.metric === "DAILY_LOSS")?.threshold ?? 2500;
   const maxDrawdownLimit = riskRules.find((rule) => rule.metric === "MAX_DRAWDOWN")?.threshold ?? 5;
   const openTradeLimit = riskRules.find((rule) => rule.metric === "OPEN_TRADES")?.threshold ?? 5;
@@ -139,9 +154,9 @@ export default function TraderDashboardPage() {
     () => ({
       ...periodStats,
       drawdown: accountDrawdown,
-      consistency: periodStats.winRate,
+      consistency: calculateConsistencyScore(periodTrades),
     }),
-    [accountDrawdown, periodStats],
+    [accountDrawdown, periodStats, periodTrades],
   );
 
   const performanceRings = useMemo<PerformanceRingItem[]>(

@@ -1,5 +1,9 @@
 import type { TradeDto } from "./types";
-import { calculateAverageWinLossRatio, calculateWinRate } from "./metrics";
+import {
+  calculateAverageWinLossRatio,
+  calculateTotalProfit,
+  calculateWinRate,
+} from "./metrics";
 
 export type Period = "DAILY" | "WEEKLY" | "MONTHLY";
 
@@ -31,7 +35,7 @@ export function computePeriodStats(trades: TradeDto[], period: Period, now = new
   });
 
   return {
-    totalProfit: Number(periodTrades.reduce((total, trade) => total + trade.profit.amount, 0).toFixed(2)),
+    totalProfit: calculateTotalProfit(periodTrades).amount,
     winRate: calculateWinRate(periodTrades),
     tradeCount: periodTrades.length,
     riskReward: calculateAverageWinLossRatio(periodTrades),
