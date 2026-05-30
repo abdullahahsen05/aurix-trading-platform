@@ -58,7 +58,7 @@ export default function TraderDashboardPage() {
   const [statsNow, setStatsNow] = useState(() => new Date());
 
   // Fetch trading accounts
-  const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({
+  const { data: accounts = [], isLoading } = useQuery<TraderAccountSummary[]>({
     queryKey: ["trading-accounts"],
     queryFn: async () => {
       const res = await fetch("/api/trading-accounts");
@@ -142,13 +142,7 @@ export default function TraderDashboardPage() {
   const periodConsistency = useMemo(() => calculateConsistencyScore(periodTrades), [periodTrades]);
   const pnlPositive = live.pnl >= 0;
   const pnlPrefix = pnlPositive ? "↑" : "↓";
-  const baseBalance = baseAccount?.balance.amount ?? 0;
-  const baseEquity = baseAccount?.equity.amount ?? 0;
-  const basePnl = baseAccount?.floatingPnl.amount ?? 0;
   const accountDrawdown = baseAccount?.drawdownPercent ?? 0;
-  const balanceChange = baseBalance === 0 ? 0 : ((live.balance - baseBalance) / baseBalance) * 100;
-  const equityChange = baseEquity === 0 ? 0 : ((live.equity - baseEquity) / baseEquity) * 100;
-  const pnlChange = basePnl === 0 ? 0 : (live.pnl / Math.abs(basePnl)) * 100;
   const currentHour = new Date().getHours();
   const overlayPeriodStats = useMemo(
     () => ({
@@ -193,25 +187,25 @@ export default function TraderDashboardPage() {
     {
       label: "Balance",
       value: formatMoney({ amount: live.balance, currency: "USD" }),
-      helper: `Live account value · ${balanceChange >= 0 ? "+" : ""}${balanceChange.toFixed(2)}%`,
+      helper: "Current account balance",
       tone: "accent" as const,
-      status: balanceChange >= 0 ? "Good" : "Watch",
-      statusTone: balanceChange >= 0 ? ("lime" as const) : ("danger" as const),
+      status: "Good",
+      statusTone: "lime" as const,
       sparkline: [],
     },
     {
       label: "Equity",
       value: formatMoney({ amount: live.equity, currency: "USD" }),
-      helper: `Updated with the live feed · ${equityChange >= 0 ? "+" : ""}${equityChange.toFixed(2)}%`,
+      helper: "Net equity including open trades",
       tone: "lime" as const,
-      status: equityChange >= 0 ? "Excellent" : "Watch",
-      statusTone: equityChange >= 0 ? ("lime" as const) : ("danger" as const),
+      status: "Excellent",
+      statusTone: "lime" as const,
       sparkline: [],
     },
     {
       label: "Floating PnL",
       value: `${pnlPrefix} ${formatMoney({ amount: Math.abs(live.pnl), currency: "USD" })}`,
-      helper: `Live position drift · ${pnlChange >= 0 ? "+" : ""}${pnlChange.toFixed(2)}%`,
+      helper: pnlPositive ? "Unrealised gain on open positions" : "Unrealised loss on open positions",
       tone: pnlPositive ? ("lime" as const) : ("danger" as const),
       status: pnlPositive ? "Good" : "Average",
       statusTone: pnlPositive ? ("lime" as const) : ("muted" as const),
@@ -252,26 +246,6 @@ export default function TraderDashboardPage() {
     },
   ];
 
-  useEffect(() => {
-    if (!baseAccount) return;
-    const timer = window.setInterval(() => {
-      setLive((current) => {
-        const drift = Math.sin(Date.now() / 2400) * 48;
-        const balance = Number((current.balance + drift * 0.15).toFixed(0));
-        const equity = Number((current.equity + drift * 0.22).toFixed(0));
-        const pnl = Number((equity - balance + (baseAccount?.floatingPnl.amount ?? 0)).toFixed(0));
-        return {
-          balance,
-          equity,
-          pnl,
-          refresh: new Date(),
-        };
-      });
-    }, 2600);
-
-    return () => window.clearInterval(timer);
-  }, [baseAccount]);
-
   return (
     <WorkspacePage
       eyebrow="Trader workspace"
@@ -298,38 +272,59 @@ export default function TraderDashboardPage() {
         </PageActionGroup>
       }
     >
-      <DashboardKpiStrip items={kpiItems} />
-
-      <div className="mt-4">
-        <MarketSentimentStrip items={marketSentimentItems} />
-      </div>
-
-      <Panel className="mt-4">
-        <PerformanceRings items={performanceRings} />
-      </Panel>
-
-      <div className="mt-4">
-        <TradingChart />
-      </div>
-
-      <DashboardModeOverlay
-        open={activeOverlay !== null}
-        view={activeOverlay}
-        onOpenChange={(open) => {
-          if (!open) setActiveOverlay(null);
-        }}
-        selectedPeriod={selectedPeriod}
-        onPeriodChange={setSelectedPeriod}
-        live={live}
-        openTrades={openTrades}
-        trades={trades}
-        summary={overlayPeriodStats}
-        dailyLossLimit={dailyLossLimit}
-        maxDrawdownLimit={maxDrawdownLimit}
-        openTradeLimit={openTradeLimit}
-        profitFactor={periodProfitFactor}
-        avgWinLoss={periodAvgWinLoss}
-      />
+      {/* Empty state for traders with no connected accounts */}
+      {!isLoading && accounts.length === 0 ? (
+        <div className="mt-10 flex flex-col items-center justify-center gap-5 text-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full border border-line bg-panel">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">No trading account connected</h2>
+            <p className="mt-2 max-w-sm text-sm text-muted">
+              Connect a broker account to start tracking your equity, trades, and performance metrics.
+            </p>
+          </div>
+          <a
+            href="/accounts"
+            className="rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-background transition hover:opacity-90"
+          >
+            Connect account
+          </a>
+        </div>
+      ) : (
+        <>
+          <DashboardKpiStrip items={kpiItems} />
+          <div className="mt-4">
+            <MarketSentimentStrip items={marketSentimentItems} />
+          </div>
+          <Panel className="mt-4">
+            <PerformanceRings items={performanceRings} />
+          </Panel>
+          <div className="mt-4">
+            <TradingChart />
+          </div>
+          <DashboardModeOverlay
+            open={activeOverlay !== null}
+            view={activeOverlay}
+            onOpenChange={(open) => {
+              if (!open) setActiveOverlay(null);
+            }}
+            selectedPeriod={selectedPeriod}
+            onPeriodChange={setSelectedPeriod}
+            live={live}
+            openTrades={openTrades}
+            trades={trades}
+            summary={overlayPeriodStats}
+            dailyLossLimit={dailyLossLimit}
+            maxDrawdownLimit={maxDrawdownLimit}
+            openTradeLimit={openTradeLimit}
+            profitFactor={periodProfitFactor}
+            avgWinLoss={periodAvgWinLoss}
+          />
+        </>
+      )}
     </WorkspacePage>
   );
 }
