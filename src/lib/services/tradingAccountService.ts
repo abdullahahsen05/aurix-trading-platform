@@ -24,7 +24,10 @@ export async function listTradingAccounts(userId: string, role: UserRole): Promi
   if (accountIds.length === 0) return []
 
   // Batch: 2 parallel view queries instead of 2N sequential queries
-  const [{ data: snapshots }, { data: counts }] = await Promise.all([
+  const [
+    { data: snapshots, error: snapshotError },
+    { data: counts, error: countError },
+  ] = await Promise.all([
     supabase
       .from('latest_account_snapshots')
       .select('trading_account_id, balance, equity, floating_pnl, drawdown_percent')
@@ -34,6 +37,9 @@ export async function listTradingAccounts(userId: string, role: UserRole): Promi
       .select('trading_account_id, open_trade_count')
       .in('trading_account_id', accountIds),
   ])
+
+  if (snapshotError) throw new Error(`Failed to fetch latest account snapshots: ${snapshotError.message}`)
+  if (countError) throw new Error(`Failed to fetch open trade counts: ${countError.message}`)
 
   const snapshotMap = new Map(
     (snapshots ?? []).map(s => [s.trading_account_id, s])
@@ -70,7 +76,10 @@ export async function getTradingAccount(
   const { data, error } = await query.single()
   if (error || !data) return null
 
-  const [{ data: snapshots }, { data: counts }] = await Promise.all([
+  const [
+    { data: snapshots, error: snapshotError },
+    { data: counts, error: countError },
+  ] = await Promise.all([
     supabase
       .from('latest_account_snapshots')
       .select('trading_account_id, balance, equity, floating_pnl, drawdown_percent')
@@ -80,6 +89,9 @@ export async function getTradingAccount(
       .select('trading_account_id, open_trade_count')
       .eq('trading_account_id', accountId),
   ])
+
+  if (snapshotError) throw new Error(`Failed to fetch latest account snapshots: ${snapshotError.message}`)
+  if (countError) throw new Error(`Failed to fetch open trade counts: ${countError.message}`)
 
   const snapshot = snapshots?.[0] ?? null
   const openTradeCount = counts?.[0]?.open_trade_count ?? 0
