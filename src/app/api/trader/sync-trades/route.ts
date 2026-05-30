@@ -53,7 +53,6 @@ export async function POST(request: Request) {
       accounts: (accounts ?? []).map(a => ({
         id: a.id,
         status: a.status,
-        provider_account_id: a.provider_account_id,
         last_synced_at: a.last_synced_at,
       })),
     });

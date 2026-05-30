@@ -91,7 +91,7 @@ export default function AdminUsersPage() {
   const currentPageSafe = Math.min(currentPage, totalPages);
   const pagedUsers = filteredUsers.slice((currentPageSafe - 1) * PAGE_SIZE, currentPageSafe * PAGE_SIZE);
 
-  const effectiveSelectedId = selectedId || users[0]?.id || "";
+  const effectiveSelectedId = selectedId || pagedUsers[0]?.id || "";
   const selectedUser =
     pagedUsers.find((u) => u.id === effectiveSelectedId) ??
     pagedUsers[0];

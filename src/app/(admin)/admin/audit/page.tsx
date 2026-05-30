@@ -56,9 +56,8 @@ export default function AdminAuditPage() {
   });
 
   const logs = useMemo<AuditRecord[]>(() => rawLogs.map(toAuditRecord), [rawLogs]);
-  const filteredLogs = logs;
   const effectiveSelectedId = selectedId || logs[0]?.id || "";
-  const selectedLog = filteredLogs.find((log) => log.id === effectiveSelectedId) ?? filteredLogs[0] ?? logs[0];
+  const selectedLog = logs.find((log) => log.id === effectiveSelectedId) ?? logs[0];
 
   return (
     <WorkspacePage
@@ -126,7 +125,7 @@ export default function AdminAuditPage() {
           setSearchOpen(false);
         }}
         searchLabel="Search audit entries"
-        searchPlaceholder="Search actor, action, entity, or result"
+        searchPlaceholder="Search actor, action, or entity"
         emptyTitle="No audit entries match"
         emptyDescription="Use a different search term to reveal the matching actions."
         getId={(log) => log.id}
