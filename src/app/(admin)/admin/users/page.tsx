@@ -3,9 +3,10 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Import, Plus, Search, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
 import {
+  EmptyState,
   GhostButton,
   FilterChipRow,
   InlineStatusStrip,
@@ -31,7 +32,7 @@ type UserRecord = {
   name: string;
   email: string;
   role: "TRADER" | "ADMIN";
-  status: "ACTIVE" | "SUSPENDED";
+  status: "ACTIVE" | "SUSPENDED" | "PENDING";
   segment: string;
   lastActiveAt: string;
 };
@@ -42,24 +43,31 @@ function toUserRecord(raw: ApiUserRecord): UserRecord {
     name: raw.full_name ?? raw.email,
     email: raw.email,
     role: raw.role === "ADMIN" ? "ADMIN" : "TRADER",
-    status: raw.status === "SUSPENDED" ? "SUSPENDED" : "ACTIVE",
+    // Preserve all three statuses — do not collapse PENDING → ACTIVE
+    status: (raw.status as "ACTIVE" | "SUSPENDED" | "PENDING") ?? "ACTIVE",
     segment: raw.role === "ADMIN" ? "OPERATIONS" : "EVALUATION",
     lastActiveAt: raw.created_at,
   };
 }
 
+const STATUS_TONE: Record<string, "lime" | "accent" | "danger" | "muted"> = {
+  ACTIVE: "lime",
+  PENDING: "accent",
+  SUSPENDED: "danger",
+};
+
 export default function AdminUsersPage() {
+  const queryClient = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [moderationMessage, setModerationMessage] = useState("");
+  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState("");
-  const [profileFilter, setProfileFilter] = useState<"ALL" | "TRADER" | "ADMIN" | "SUSPENDED">("ALL");
+  const [profileFilter, setProfileFilter] = useState<"ALL" | "TRADER" | "ADMIN" | "SUSPENDED" | "PENDING">("ALL");
 
-  const { data: rawUsers = [], isLoading } = useQuery<ApiUserRecord[]>({
+  const { data: rawUsers = [], isLoading, isError } = useQuery<ApiUserRecord[]>({
     queryKey: ["admin-users"],
     queryFn: async () => {
       const res = await fetch("/api/admin/users");
@@ -74,46 +82,96 @@ export default function AdminUsersPage() {
   const filteredUsers = users.filter((user) => {
     if (profileFilter === "ALL") return true;
     if (profileFilter === "SUSPENDED") return user.status === "SUSPENDED";
+    if (profileFilter === "PENDING") return user.status === "PENDING";
     return user.role === profileFilter;
   });
 
   const effectiveSelectedId = selectedId || users[0]?.id || "";
-  const selectedUser = filteredUsers.find((user) => user.id === effectiveSelectedId) ?? filteredUsers[0] ?? users[0];
+  const selectedUser =
+    filteredUsers.find((u) => u.id === effectiveSelectedId) ??
+    filteredUsers[0] ??
+    users[0];
 
+  // ── Real status change mutation ─────────────────────────────────────────────
+  const statusMutation = useMutation({
+    mutationFn: async ({
+      userId,
+      status,
+    }: {
+      userId: string;
+      status: "ACTIVE" | "SUSPENDED" | "PENDING";
+    }) => {
+      const res = await fetch(`/api/admin/users/${userId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to update status");
+      return json.data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      setNotice({
+        type: "success",
+        text: `User status updated to ${variables.status}.`,
+      });
+    },
+    onError: (err: Error) => {
+      setNotice({ type: "error", text: err.message });
+    },
+  });
+
+  const handleStatusChange = (
+    userId: string,
+    newStatus: "ACTIVE" | "SUSPENDED" | "PENDING"
+  ) => {
+    setNotice(null);
+    statusMutation.mutate({ userId, status: newStatus });
+  };
+
+  // ── Add user (UI stub — Phase 3 will implement Supabase admin auth invite) ──
   const handleAddUser = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSaving(true);
-    setSuccessMessage("");
-
+    setNotice(null);
     window.setTimeout(() => {
       setIsSaving(false);
       setAddOpen(false);
-      setSuccessMessage("User created in the admin directory.");
-    }, 900);
+      setNotice({
+        type: "success",
+        text: "Invite flow will be wired in Phase 3 (Supabase admin auth).",
+      });
+    }, 400);
   };
 
+  // ── Import (stub — Phase 3) ───────────────────────────────────────────────
   const handleImportUsers = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsImporting(true);
-
     window.setTimeout(() => {
       setIsImporting(false);
       setImportOpen(false);
-      setSuccessMessage("CSV import queued in mock mode.");
-    }, 900);
+      setNotice({ type: "success", text: "CSV import will be wired in Phase 3." });
+    }, 400);
   };
+
+  const pendingCount = users.filter((u) => u.status === "PENDING").length;
+  const suspendedCount = users.filter((u) => u.status === "SUSPENDED").length;
 
   return (
     <WorkspacePage
       eyebrow="Admin"
       title="User management"
-      description="Minimal directory shell for large user sets. Search opens in an overlay so the page stays calm."
+      description="Manage trader and admin accounts, statuses, and access levels."
       action={
         <PageActionGroup>
           <GhostButton type="button" onClick={() => setSearchOpen(true)}>
             <Search className="mr-2 inline-block h-4 w-4" />
             Search
           </GhostButton>
+
+          {/* Import users dialog */}
           <Dialog.Root open={importOpen} onOpenChange={setImportOpen}>
             <Dialog.Trigger asChild>
               <GhostButton type="button">
@@ -124,22 +182,24 @@ export default function AdminUsersPage() {
             <Dialog.Portal>
               <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
               <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
-                <Dialog.Title className="text-xl font-semibold text-foreground">Import users</Dialog.Title>
+                <Dialog.Title className="text-xl font-semibold text-foreground">
+                  Import users
+                </Dialog.Title>
                 <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-                  Drop a CSV file here to queue user creation in mock mode.
+                  Bulk user import via CSV — available in Phase 3.
                 </Dialog.Description>
                 <form className="mt-6 grid gap-4" onSubmit={handleImportUsers}>
                   <div className="rounded-2xl border border-dashed border-line bg-background p-6 text-center text-sm text-muted">
                     Drop CSV here or click browse
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-                    <p className="text-sm text-muted">This only simulates the upload flow.</p>
+                    <p className="text-sm text-muted">Full CSV import wired in Phase 3.</p>
                     <div className="flex gap-3">
                       <Dialog.Close asChild>
                         <GhostButton type="button">Cancel</GhostButton>
                       </Dialog.Close>
                       <PrimaryButton type="submit" disabled={isImporting}>
-                        {isImporting ? "Importing..." : "Queue import"}
+                        {isImporting ? "Processing…" : "Queue import"}
                       </PrimaryButton>
                     </div>
                   </div>
@@ -156,6 +216,8 @@ export default function AdminUsersPage() {
               </Dialog.Content>
             </Dialog.Portal>
           </Dialog.Root>
+
+          {/* Add user dialog */}
           <Dialog.Root open={addOpen} onOpenChange={setAddOpen}>
             <Dialog.Trigger asChild>
               <PrimaryButton type="button">
@@ -166,34 +228,35 @@ export default function AdminUsersPage() {
             <Dialog.Portal>
               <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
               <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
-                <Dialog.Title className="text-xl font-semibold text-foreground">Add user</Dialog.Title>
+                <Dialog.Title className="text-xl font-semibold text-foreground">
+                  Add user
+                </Dialog.Title>
                 <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-                  Create a trader or admin account and set the initial access profile.
+                  Create a trader or admin account. Full invite flow wired in Phase 3.
                 </Dialog.Description>
                 <form className="mt-6 grid gap-4" onSubmit={handleAddUser}>
                   <div className="grid gap-4 md:grid-cols-2">
-                    <TextField label="Full name" defaultValue="New User" />
-                    <TextField label="Email" defaultValue="new.user@example.com" />
-                    <SelectField label="Role" defaultValue="TRADER">
+                    <TextField label="Full name" name="fullName" placeholder="Full name" />
+                    <TextField label="Email" name="email" type="email" placeholder="user@example.com" />
+                    <SelectField label="Role" name="role" defaultValue="TRADER">
                       <option value="TRADER">Trader</option>
                       <option value="ADMIN">Admin</option>
                     </SelectField>
-                    <SelectField label="Status" defaultValue="ACTIVE">
+                    <SelectField label="Initial status" name="status" defaultValue="ACTIVE">
                       <option value="ACTIVE">Active</option>
-                      <option value="SUSPENDED">Suspended</option>
+                      <option value="PENDING">Pending</option>
                     </SelectField>
                   </div>
-                  <TextField label="Segment" defaultValue="EVALUATION" />
                   <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
                     <p className="text-sm text-muted">
-                      Users stay in the directory until the auth layer is connected.
+                      User invite via Supabase auth available in Phase 3.
                     </p>
                     <div className="flex gap-3">
                       <Dialog.Close asChild>
                         <GhostButton type="button">Cancel</GhostButton>
                       </Dialog.Close>
                       <PrimaryButton type="submit" disabled={isSaving}>
-                        {isSaving ? "Creating..." : "Create user"}
+                        {isSaving ? "Creating…" : "Create user"}
                       </PrimaryButton>
                     </div>
                   </div>
@@ -215,116 +278,179 @@ export default function AdminUsersPage() {
     >
       <InlineStatusStrip
         items={[
-          { label: "Total users", value: isLoading ? "..." : users.length },
-          { label: "Admins", value: users.filter((user) => user.role === "ADMIN").length, tone: "accent" },
-          { label: "Traders", value: users.filter((user) => user.role === "TRADER").length, tone: "lime" },
-          { label: "Suspended", value: users.filter((user) => user.status === "SUSPENDED").length },
+          { label: "Total users", value: isLoading ? "…" : users.length },
+          { label: "Admins", value: users.filter((u) => u.role === "ADMIN").length, tone: "accent" },
+          { label: "Traders", value: users.filter((u) => u.role === "TRADER").length, tone: "lime" },
+          { label: "Pending", value: pendingCount, tone: pendingCount > 0 ? "accent" : undefined },
+          { label: "Suspended", value: suspendedCount, tone: suspendedCount > 0 ? "danger" : undefined },
         ]}
       />
 
+      {/* Filter chips */}
       <div className="mt-5 rounded-2xl border border-line bg-panel p-4">
         <FilterChipRow
           chips={[
             {
-              label: `All profiles (${users.length})`,
+              label: `All (${users.length})`,
               active: profileFilter === "ALL",
-              onClick: () => {
-                setProfileFilter("ALL");
-                setSelectedId(users[0]?.id ?? "");
-              },
+              onClick: () => setProfileFilter("ALL"),
             },
             {
-              label: `Traders (${users.filter((user) => user.role === "TRADER").length})`,
+              label: `Traders (${users.filter((u) => u.role === "TRADER").length})`,
               active: profileFilter === "TRADER",
-              onClick: () => {
-                setProfileFilter("TRADER");
-                setSelectedId(users.find((user) => user.role === "TRADER")?.id ?? users[0]?.id ?? "");
-              },
+              onClick: () => setProfileFilter("TRADER"),
             },
             {
-              label: `Admins (${users.filter((user) => user.role === "ADMIN").length})`,
+              label: `Admins (${users.filter((u) => u.role === "ADMIN").length})`,
               active: profileFilter === "ADMIN",
-              onClick: () => {
-                setProfileFilter("ADMIN");
-                setSelectedId(users.find((user) => user.role === "ADMIN")?.id ?? users[0]?.id ?? "");
-              },
+              onClick: () => setProfileFilter("ADMIN"),
             },
             {
-              label: `Suspended (${users.filter((user) => user.status === "SUSPENDED").length})`,
+              label: `Pending (${pendingCount})`,
+              active: profileFilter === "PENDING",
+              onClick: () => setProfileFilter("PENDING"),
+            },
+            {
+              label: `Suspended (${suspendedCount})`,
               active: profileFilter === "SUSPENDED",
-              onClick: () => {
-                setProfileFilter("SUSPENDED");
-                setSelectedId(users.find((user) => user.status === "SUSPENDED")?.id ?? users[0]?.id ?? "");
-              },
+              onClick: () => setProfileFilter("SUSPENDED"),
             },
           ]}
         />
       </div>
 
-      {successMessage ? (
-        <div className="mt-5 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-medium text-accent">
-          {successMessage}
+      {/* Notice banner */}
+      {notice ? (
+        <div
+          className={`mt-5 rounded-2xl border px-4 py-3 text-sm font-medium ${
+            notice.type === "success"
+              ? "border-accent/20 bg-accent/10 text-accent"
+              : "border-danger/20 bg-danger/10 text-danger"
+          }`}
+        >
+          {notice.text}
         </div>
       ) : null}
 
-      {moderationMessage ? (
-        <div className="mt-3 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger">
-          {moderationMessage}
+      {/* Loading skeleton */}
+      {isLoading ? (
+        <div className="mt-5 space-y-2">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-14 rounded-xl border border-line bg-panel animate-pulse" />
+          ))}
         </div>
-      ) : null}
-
-      {selectedUser ? (
+      ) : isError ? (
+        <div className="mt-5 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+          Failed to load users. Please refresh the page.
+        </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="mt-5">
+          <EmptyState
+            title="No users found"
+            description={profileFilter !== "ALL" ? "No users match the current filter." : "No users in the system yet."}
+          />
+        </div>
+      ) : selectedUser ? (
         <div className="mt-5">
           <Panel className="min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected profile</p>
-                <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedUser.name}</h2>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">
+                  Selected profile
+                </p>
+                <h2 className="mt-2 text-lg font-semibold text-foreground">
+                  {selectedUser.name}
+                </h2>
                 <p className="mt-1 text-sm text-muted">{selectedUser.email}</p>
               </div>
-              <StatusPill tone={selectedUser.role === "ADMIN" ? "accent" : "lime"}>{selectedUser.role}</StatusPill>
+              <div className="flex items-center gap-2">
+                <StatusPill tone={STATUS_TONE[selectedUser.status] ?? "muted"}>
+                  {selectedUser.status}
+                </StatusPill>
+                <StatusPill tone={selectedUser.role === "ADMIN" ? "accent" : "lime"}>
+                  {selectedUser.role}
+                </StatusPill>
+              </div>
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Status</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{selectedUser.status}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+                  Status
+                </p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {selectedUser.status}
+                </p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Segment</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{selectedUser.segment}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+                  Segment
+                </p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {selectedUser.segment}
+                </p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Last active</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedUser.lastActiveAt).toLocaleString()}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+                  Joined
+                </p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {new Date(selectedUser.lastActiveAt).toLocaleDateString()}
+                </p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Access</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">Workspace enabled</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+                  Role
+                </p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {selectedUser.role}
+                </p>
               </div>
             </div>
 
-            <div className="mt-5 flex flex-wrap gap-3">
-              <GhostButton
-                type="button"
-                onClick={() => setModerationMessage(`${selectedUser.name} marked for suspension review.`)}
-              >
-                Suspend review
-              </GhostButton>
+            {/* ── Real status action buttons ─────────────────────────────── */}
+            <div className="mt-5 flex flex-wrap gap-3 border-t border-line pt-4">
+              {selectedUser.status !== "ACTIVE" && (
+                <PrimaryButton
+                  type="button"
+                  disabled={statusMutation.isPending}
+                  onClick={() => handleStatusChange(selectedUser.id, "ACTIVE")}
+                >
+                  {statusMutation.isPending ? "Updating…" : "Activate"}
+                </PrimaryButton>
+              )}
+              {selectedUser.status !== "PENDING" && (
+                <GhostButton
+                  type="button"
+                  disabled={statusMutation.isPending}
+                  onClick={() => handleStatusChange(selectedUser.id, "PENDING")}
+                >
+                  Set pending
+                </GhostButton>
+              )}
+              {selectedUser.status !== "SUSPENDED" && (
+                <GhostButton
+                  type="button"
+                  disabled={statusMutation.isPending}
+                  onClick={() => handleStatusChange(selectedUser.id, "SUSPENDED")}
+                >
+                  Suspend
+                </GhostButton>
+              )}
+              <p className="self-center text-xs text-muted">
+                All status changes are logged to the audit trail.
+              </p>
             </div>
           </Panel>
         </div>
-      ) : isLoading ? (
-        <div className="mt-5 rounded-2xl border border-line bg-panel p-8 text-center text-sm text-muted">
-          Loading users...
-        </div>
       ) : null}
 
+      {/* Directory search overlay */}
       <DirectorySearchOverlay<UserRecord>
         open={searchOpen}
         onOpenChange={setSearchOpen}
         title="Find users"
-        description="Search and filter stay inside the overlay so the page shell stays minimal."
+        description="Search by name, email, or segment."
         items={users}
         selectedId={effectiveSelectedId}
         onSelect={(id) => {
@@ -332,7 +458,7 @@ export default function AdminUsersPage() {
           setSearchOpen(false);
         }}
         searchLabel="Search users"
-        searchPlaceholder="Search by name, email, or segment"
+        searchPlaceholder="Name, email, or segment"
         filters={[
           {
             key: "role",
@@ -349,6 +475,7 @@ export default function AdminUsersPage() {
             options: [
               { value: "ALL", label: "All statuses" },
               { value: "ACTIVE", label: "Active" },
+              { value: "PENDING", label: "Pending" },
               { value: "SUSPENDED", label: "Suspended" },
             ],
           },
@@ -363,8 +490,10 @@ export default function AdminUsersPage() {
             user.name.toLowerCase().includes(search) ||
             user.email.toLowerCase().includes(search) ||
             user.segment.toLowerCase().includes(search);
-          const matchesRole = state.filters.role === "ALL" || user.role === state.filters.role;
-          const matchesStatus = state.filters.status === "ALL" || user.status === state.filters.status;
+          const matchesRole =
+            state.filters.role === "ALL" || user.role === state.filters.role;
+          const matchesStatus =
+            state.filters.status === "ALL" || user.status === state.filters.status;
           return matchesQuery && matchesRole && matchesStatus;
         }}
         renderRow={(user) => (
@@ -374,7 +503,10 @@ export default function AdminUsersPage() {
                 <p className="truncate text-sm font-semibold text-foreground">{user.name}</p>
                 <p className="mt-1 truncate text-xs text-muted">{user.email}</p>
               </div>
-              <StatusPill tone={user.role === "ADMIN" ? "accent" : "lime"}>{user.role}</StatusPill>
+              <div className="flex shrink-0 items-center gap-1">
+                <StatusPill tone={STATUS_TONE[user.status] ?? "muted"}>{user.status}</StatusPill>
+                <StatusPill tone={user.role === "ADMIN" ? "accent" : "lime"}>{user.role}</StatusPill>
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
@@ -390,11 +522,16 @@ export default function AdminUsersPage() {
           <Panel className="min-w-0">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Profile preview</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">
+                  Profile preview
+                </p>
                 <h3 className="mt-2 text-lg font-semibold text-foreground">{user.name}</h3>
                 <p className="mt-1 text-sm text-muted">{user.email}</p>
               </div>
-              <StatusPill tone={user.role === "ADMIN" ? "accent" : "lime"}>{user.role}</StatusPill>
+              <div className="flex items-center gap-1">
+                <StatusPill tone={STATUS_TONE[user.status] ?? "muted"}>{user.status}</StatusPill>
+                <StatusPill tone={user.role === "ADMIN" ? "accent" : "lime"}>{user.role}</StatusPill>
+              </div>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
@@ -402,16 +539,10 @@ export default function AdminUsersPage() {
                 <p className="mt-1 text-sm font-semibold text-foreground">{user.segment}</p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Status</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{user.status}</p>
-              </div>
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Last active</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(user.lastActiveAt).toLocaleString()}</p>
-              </div>
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Access</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">Workspace ready</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Joined</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {new Date(user.lastActiveAt).toLocaleString()}
+                </p>
               </div>
             </div>
           </Panel>

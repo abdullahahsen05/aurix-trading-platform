@@ -21,15 +21,22 @@ import { SearchField, SelectField, TextField } from "@/components/app/FormFields
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 import type { TraderAccountSummary } from "@/lib/domain/types";
 
+// Dialog step state machine
+type ConnectStep = "setup" | "credentials" | "done";
+
 export default function AccountsPage() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [connectOpen, setConnectOpen] = useState(false);
+  const [step, setStep] = useState<ConnectStep>("setup");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  // Holds the accountId created in step 1, used in step 2
+  const [pendingAccountId, setPendingAccountId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const { data: tradingAccounts = [], isLoading } = useQuery<TraderAccountSummary[]>({
+  const { data: tradingAccounts = [], isLoading, isError } = useQuery<TraderAccountSummary[]>({
     queryKey: ["trading-accounts"],
     queryFn: async () => {
       const res = await fetch("/api/trading-accounts");
@@ -48,105 +55,332 @@ export default function AccountsPage() {
     return matchesQuery && matchesStatus;
   });
 
-  const handleConnect = async (event: FormEvent<HTMLFormElement>) => {
+  const resetDialog = () => {
+    setStep("setup");
+    setPendingAccountId(null);
+    setIsSubmitting(false);
+    setErrorMessage("");
+  };
+
+  // ── Step 1: create the trading account record ─────────────────────────────
+  const handleSetup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
-    setSuccessMessage("");
+    setErrorMessage("");
 
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const accountName = (formData.get("accountLabel") as string)?.trim();
+    const brokerName = formData.get("broker") as string;
+
+    if (!accountName) {
+      setErrorMessage("Account label is required.");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const res = await fetch("/api/trading-accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountName: formData.get("accountLabel") as string,
-          brokerName: formData.get("broker") as string,
-        }),
+        body: JSON.stringify({ accountName, brokerName }),
       });
       const json = await res.json();
       if (json.ok) {
-        await queryClient.invalidateQueries({ queryKey: ["trading-accounts"] });
-        setConnectOpen(false);
-        setSuccessMessage("Account connected successfully.");
+        setPendingAccountId(json.data.accountId);
+        setStep("credentials");
+        setErrorMessage("");
       } else {
-        setSuccessMessage(`Error: ${json.error?.message ?? "Failed to connect account"}`);
-        setConnectOpen(false);
+        setErrorMessage(json.error?.message ?? "Failed to create account.");
       }
     } catch {
-      setSuccessMessage("Connection request saved. Broker sync is queued.");
-      setConnectOpen(false);
+      setErrorMessage("Network error. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // ── Step 2: encrypt and submit broker credentials ─────────────────────────
+  const handleCredentials = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!pendingAccountId) return;
+    setIsSubmitting(true);
+    setErrorMessage("");
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const provider = formData.get("provider") as string;
+    const login = (formData.get("login") as string)?.trim();
+    const password = formData.get("password") as string;
+    const server = (formData.get("server") as string)?.trim();
+    const platform = formData.get("platform") as string;
+
+    if (!login || !password || !server || !platform) {
+      setErrorMessage("MT5 login, trading password, server, and platform are all required.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/trading-accounts/${pendingAccountId}/broker-credentials`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, login, password, server, platform }),
+        }
+      );
+
+      const json = await res.json();
+
+      // Clear the password from the form immediately — do not keep it in DOM
+      form.reset();
+
+      if (json.ok) {
+        await queryClient.invalidateQueries({ queryKey: ["trading-accounts"] });
+        setConnectOpen(false);
+        resetDialog();
+        setSuccessMessage(
+          `Account connected. Credentials stored securely. ` +
+            `Status: PENDING — an admin will trigger broker sync shortly.`
+        );
+      } else {
+        // If credential storage fails, the account was already created.
+        // Show a clear error so the trader knows they need to re-submit credentials.
+        setErrorMessage(
+          json.error?.message ??
+            "Credentials could not be stored. Your account was created (PENDING) " +
+              "but needs credentials. Try again from the account detail page."
+        );
+      }
+    } catch {
+      form.reset();
+      setErrorMessage("Network error while storing credentials. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Skip credentials step ─────────────────────────────────────────────────
+  const handleSkipCredentials = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["trading-accounts"] });
+    setConnectOpen(false);
+    resetDialog();
+    setSuccessMessage(
+      `Account created (PENDING). Add broker credentials later from the account detail page.`
+    );
+  };
+
   const connectedCount = tradingAccounts.filter((a) => a.status === "CONNECTED").length;
   const syncingCount = tradingAccounts.filter((a) => a.status === "SYNCING").length;
+  const pendingCount = tradingAccounts.filter((a) => a.status === "PENDING").length;
   const totalPnl = tradingAccounts.reduce((sum, a) => sum + a.floatingPnl.amount, 0);
 
   return (
     <WorkspacePage
       eyebrow="Trading accounts"
       title="Connected broker accounts"
-      description="Track broker status, challenge stage, equity, drawdown, and sync health before backend credentials are connected."
+      description="Track broker status, equity, drawdown, and connection health across your accounts."
       action={
         <PageActionGroup>
-          <Dialog.Root open={connectOpen} onOpenChange={setConnectOpen}>
-          <Dialog.Trigger asChild>
-            <PrimaryButton type="button">
-              <Plus className="mr-2 inline-block h-4 w-4" />
-              Connect account
-            </PrimaryButton>
-          </Dialog.Trigger>
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
-              <Dialog.Title className="text-xl font-semibold text-foreground">
-                Connect broker account
-              </Dialog.Title>
-              <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-                Add broker credentials and account metadata. The form is mock-backed for now, but the UI matches the real workflow.
-              </Dialog.Description>
-              <form className="mt-6 grid gap-4" onSubmit={handleConnect}>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <SelectField label="Broker" name="broker" defaultValue="MetaTrader 5 Demo">
-                    <option>MetaTrader 5 Demo</option>
-                    <option>MetaApi Sandbox</option>
-                    <option>MetaTrader 5 Live</option>
-                  </SelectField>
-                  <TextField label="Account label" name="accountLabel" defaultValue="New evaluation account" />
-                  <TextField label="MT5 login" placeholder="12345678" />
-                  <TextField label="Investor password" type="password" placeholder="••••••••" />
-                  <TextField label="Server" placeholder="Broker server name" />
-                  <TextField label="Challenge stage" defaultValue="Phase 2" />
+          <Dialog.Root
+            open={connectOpen}
+            onOpenChange={(open) => {
+              setConnectOpen(open);
+              if (!open) resetDialog();
+            }}
+          >
+            <Dialog.Trigger asChild>
+              <PrimaryButton type="button">
+                <Plus className="mr-2 inline-block h-4 w-4" />
+                Connect account
+              </PrimaryButton>
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
+              <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+
+                {/* Step indicator */}
+                <div className="mb-5 flex items-center gap-3">
+                  <span
+                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                      step === "setup" ? "bg-accent text-background" : "bg-accent-2 text-background"
+                    }`}
+                  >
+                    1
+                  </span>
+                  <span className="text-xs font-semibold text-muted">Account setup</span>
+                  <span className="text-muted">→</span>
+                  <span
+                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
+                      step === "credentials" ? "bg-accent text-background" : "bg-line text-muted"
+                    }`}
+                  >
+                    2
+                  </span>
+                  <span className="text-xs font-semibold text-muted">Broker credentials</span>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-                  <p className="text-sm text-muted">
-                    Connections are validated against the mock broker adapter until live credentials arrive.
-                  </p>
-                  <div className="flex gap-3">
-                    <Dialog.Close asChild>
-                      <GhostButton type="button">Cancel</GhostButton>
-                    </Dialog.Close>
-                    <PrimaryButton type="submit" disabled={isSubmitting}>
-                      {isSubmitting ? "Saving..." : "Connect account"}
-                    </PrimaryButton>
-                  </div>
-                </div>
-              </form>
-              <Dialog.Close asChild>
-                <button
-                  type="button"
-                  aria-label="Close dialog"
-                  className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </Dialog.Close>
-            </Dialog.Content>
-          </Dialog.Portal>
+
+                {/* ── STEP 1: Account setup ─────────────────────────────── */}
+                {step === "setup" && (
+                  <>
+                    <Dialog.Title className="text-xl font-semibold text-foreground">
+                      Connect broker account
+                    </Dialog.Title>
+                    <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
+                      Name your account and select your broker. Credentials are entered in the next
+                      step and stored with AES-256-GCM encryption.
+                    </Dialog.Description>
+
+                    {errorMessage ? (
+                      <div className="mt-4 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger">
+                        {errorMessage}
+                      </div>
+                    ) : null}
+
+                    <form className="mt-6 grid gap-4" onSubmit={handleSetup}>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <SelectField label="Broker" name="broker" defaultValue="MetaTrader 5">
+                          <option>MetaTrader 5</option>
+                          <option>MetaTrader 5 Demo</option>
+                          <option>cTrader</option>
+                          <option>Other</option>
+                        </SelectField>
+                        <TextField
+                          label="Account label"
+                          name="accountLabel"
+                          placeholder="e.g. Evaluation Phase 1"
+                          required
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+                        <p className="text-sm text-muted">
+                          Account starts as PENDING until credentials are verified.
+                        </p>
+                        <div className="flex gap-3">
+                          <Dialog.Close asChild>
+                            <GhostButton type="button">Cancel</GhostButton>
+                          </Dialog.Close>
+                          <PrimaryButton type="submit" disabled={isSubmitting}>
+                            {isSubmitting ? "Creating…" : "Next — add credentials"}
+                          </PrimaryButton>
+                        </div>
+                      </div>
+                    </form>
+                  </>
+                )}
+
+                {/* ── STEP 2: Broker credentials ───────────────────────── */}
+                {step === "credentials" && (
+                  <>
+                    <Dialog.Title className="text-xl font-semibold text-foreground">
+                      Trading account credentials
+                    </Dialog.Title>
+                    <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
+                      Enter your MT5 trading account credentials. Investor/read-only passwords
+                      cannot be used for trade execution or MetaAPI sync. Use your main trading password.
+                    </Dialog.Description>
+
+                    <div className="mt-3 rounded-2xl border border-accent/20 bg-accent/5 px-4 py-3 text-xs leading-5 text-muted">
+                      <span className="font-semibold text-accent-2">Demo testing:</span> Use your MT5 demo account number,
+                      main trading password, exact broker server name (e.g. <span className="font-mono">ICMarkets-Demo02</span>),
+                      and select platform MT5.
+                    </div>
+
+                    {errorMessage ? (
+                      <div className="mt-4 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger">
+                        {errorMessage}
+                      </div>
+                    ) : null}
+
+                    <form className="mt-4 grid gap-4" onSubmit={handleCredentials}>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <SelectField
+                          label="Provider"
+                          name="provider"
+                          defaultValue="MT5"
+                        >
+                          <option value="MT5">MetaTrader 5 (MT5)</option>
+                          <option value="METAAPI">MetaAPI</option>
+                          <option value="CTRADER">cTrader</option>
+                          <option value="OTHER">Other</option>
+                        </SelectField>
+                        <SelectField
+                          label="Platform"
+                          name="platform"
+                          defaultValue="mt5"
+                        >
+                          <option value="mt5">MT5 (MetaTrader 5)</option>
+                          <option value="mt4">MT4 (MetaTrader 4)</option>
+                        </SelectField>
+                        <TextField
+                          label="MT5 login / account number"
+                          name="login"
+                          placeholder="e.g. 12345678"
+                          required
+                          autoComplete="off"
+                        />
+                        <TextField
+                          label="MT5 trading password"
+                          name="password"
+                          type="password"
+                          placeholder="Main trading password (not investor)"
+                          required
+                          autoComplete="new-password"
+                        />
+                        <TextField
+                          label="Broker server"
+                          name="server"
+                          placeholder="e.g. ICMarkets-Demo02"
+                          required
+                          autoComplete="off"
+                        />
+                      </div>
+
+                      <div className="rounded-2xl border border-line bg-background px-4 py-3 text-sm text-muted">
+                        <span className="font-semibold text-accent-2">🔒 Secure</span> — Your
+                        trading password is encrypted with AES-256-GCM on the server. It is
+                        never stored in plaintext and never returned to the browser.
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+                        <button
+                          type="button"
+                          className="text-sm font-semibold text-muted hover:text-foreground"
+                          onClick={handleSkipCredentials}
+                        >
+                          Skip for now
+                        </button>
+                        <div className="flex gap-3">
+                          <GhostButton
+                            type="button"
+                            onClick={() => {
+                              setStep("setup");
+                              setErrorMessage("");
+                            }}
+                          >
+                            Back
+                          </GhostButton>
+                          <PrimaryButton type="submit" disabled={isSubmitting}>
+                            {isSubmitting ? "Encrypting & saving…" : "Connect account"}
+                          </PrimaryButton>
+                        </div>
+                      </div>
+                    </form>
+                  </>
+                )}
+
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    aria-label="Close dialog"
+                    className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </Dialog.Close>
+              </Dialog.Content>
+            </Dialog.Portal>
           </Dialog.Root>
         </PageActionGroup>
       }
@@ -154,7 +388,8 @@ export default function AccountsPage() {
       <InlineStatusStrip
         items={[
           { label: "Connected", value: connectedCount, helper: "Live adapter", tone: "lime" },
-          { label: "Syncing", value: syncingCount, helper: "MetaApi sandbox ready", tone: "accent" },
+          { label: "Syncing", value: syncingCount, helper: "Active sync", tone: "accent" },
+          { label: "Pending", value: pendingCount, helper: "Awaiting verification" },
           {
             label: "Open exposure",
             value: formatMoney({ amount: totalPnl, currency: "USD" }),
@@ -175,54 +410,46 @@ export default function AccountsPage() {
             label="Search accounts"
             placeholder="Search by account or broker"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(e) => setQuery(e.target.value)}
           />
-          <div className="flex flex-wrap gap-2">
-            <FilterChipRow
-              chips={[
-                { label: "All statuses", active: statusFilter === "ALL", onClick: () => setStatusFilter("ALL") },
-                {
-                  label: "Connected",
-                  active: statusFilter === "CONNECTED",
-                  onClick: () => setStatusFilter("CONNECTED"),
-                },
-                { label: "Syncing", active: statusFilter === "SYNCING", onClick: () => setStatusFilter("SYNCING") },
-                {
-                  label: "Disconnected",
-                  active: statusFilter === "DISCONNECTED",
-                  onClick: () => setStatusFilter("DISCONNECTED"),
-                },
-                {
-                  label: "Restricted",
-                  active: statusFilter === "RESTRICTED",
-                  onClick: () => setStatusFilter("RESTRICTED"),
-                },
-              ]}
-            />
-          </div>
+          <FilterChipRow
+            chips={[
+              { label: "All statuses", active: statusFilter === "ALL", onClick: () => setStatusFilter("ALL") },
+              { label: "Connected", active: statusFilter === "CONNECTED", onClick: () => setStatusFilter("CONNECTED") },
+              { label: "Syncing", active: statusFilter === "SYNCING", onClick: () => setStatusFilter("SYNCING") },
+              { label: "Pending", active: statusFilter === "PENDING", onClick: () => setStatusFilter("PENDING") },
+              { label: "Disconnected", active: statusFilter === "DISCONNECTED", onClick: () => setStatusFilter("DISCONNECTED") },
+              { label: "Restricted", active: statusFilter === "RESTRICTED", onClick: () => setStatusFilter("RESTRICTED") },
+            ]}
+          />
         </div>
       </div>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-2">
         {isLoading ? (
+          <div className="xl:col-span-2 space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-56 rounded-2xl border border-line bg-panel animate-pulse" />
+            ))}
+          </div>
+        ) : isError ? (
+          <div className="xl:col-span-2 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+            Failed to load accounts. Please refresh the page.
+          </div>
+        ) : filteredAccounts.length === 0 && tradingAccounts.length === 0 ? (
           <div className="xl:col-span-2">
-            <div className="rounded-2xl border border-line bg-panel p-8 text-center text-sm text-muted">
-              Loading accounts...
-            </div>
+            <EmptyState
+              title="No accounts connected yet"
+              description="Connect a broker account to start tracking your performance."
+            />
           </div>
         ) : filteredAccounts.length === 0 ? (
           <div className="xl:col-span-2">
             <EmptyState
               title="No accounts match your filters"
-              description="Try a different search term or clear the current status filter."
+              description="Try a different search term or clear the status filter."
               action={
-                <GhostButton
-                  type="button"
-                  onClick={() => {
-                    setQuery("");
-                    setStatusFilter("ALL");
-                  }}
-                >
+                <GhostButton type="button" onClick={() => { setQuery(""); setStatusFilter("ALL"); }}>
                   Reset filters
                 </GhostButton>
               }
@@ -236,7 +463,7 @@ export default function AccountsPage() {
                   <p className="text-sm font-semibold text-muted">{account.brokerName}</p>
                   <h2 className="mt-2 text-xl font-semibold text-foreground">{account.accountName}</h2>
                 </div>
-                <StatusPill tone={account.status === "CONNECTED" ? "lime" : "accent"}>
+                <StatusPill tone={account.status === "CONNECTED" ? "lime" : account.status === "PENDING" ? "accent" : "muted"}>
                   {account.status}
                 </StatusPill>
               </div>
@@ -251,13 +478,7 @@ export default function AccountsPage() {
                 </div>
                 <div>
                   <p className="text-xs font-semibold text-muted">Floating PnL</p>
-                  <p
-                    className={
-                      account.floatingPnl.amount >= 0
-                        ? "mt-2 font-semibold text-accent"
-                        : "mt-2 font-semibold text-danger"
-                    }
-                  >
+                  <p className={account.floatingPnl.amount >= 0 ? "mt-2 font-semibold text-accent" : "mt-2 font-semibold text-danger"}>
                     {formatMoney(account.floatingPnl)}
                   </p>
                 </div>
@@ -268,20 +489,12 @@ export default function AccountsPage() {
               </div>
               <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
                 <p className="text-sm text-muted">Updated {new Date(account.updatedAt).toLocaleString()}</p>
-                <div className="flex flex-wrap gap-3">
-                  <GhostButton
-                    type="button"
-                    onClick={() => setSuccessMessage(`Disconnect queued for ${account.accountName}.`)}
-                  >
-                    Disconnect
-                  </GhostButton>
-                  <Link
-                    href={`/accounts/${account.accountId}`}
-                    className="rounded-full bg-panel-strong px-5 py-2 text-sm font-semibold text-accent transition hover:scale-[1.02]"
-                  >
-                    View details
-                  </Link>
-                </div>
+                <Link
+                  href={`/accounts/${account.accountId}`}
+                  className="rounded-full bg-panel-strong px-5 py-2 text-sm font-semibold text-accent transition hover:scale-[1.02]"
+                >
+                  View details
+                </Link>
               </div>
             </Panel>
           ))
@@ -293,17 +506,11 @@ export default function AccountsPage() {
           <DataTable
             headers={["Account", "Broker", "Status", "Open Trades", "Equity", "Drawdown"]}
             rows={filteredAccounts.map((account) => [
-              <span key="name" className="font-semibold text-foreground">
-                {account.accountName}
-              </span>,
+              <span key="name" className="font-semibold text-foreground">{account.accountName}</span>,
               account.brokerName,
-              <StatusPill key="status" tone={account.status === "CONNECTED" ? "lime" : "accent"}>
-                {account.status}
-              </StatusPill>,
+              <StatusPill key="status" tone={account.status === "CONNECTED" ? "lime" : "accent"}>{account.status}</StatusPill>,
               account.openTradeCount,
-              <span key="equity" className="font-semibold text-accent-2">
-                {formatMoney(account.equity)}
-              </span>,
+              <span key="equity" className="font-semibold text-accent-2">{formatMoney(account.equity)}</span>,
               formatPercent(account.drawdownPercent),
             ])}
           />

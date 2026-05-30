@@ -1,17 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
-import { GhostButton, InlineStatusStrip, Panel, PageActionGroup, PrimaryButton, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
+import { EmptyState, GhostButton, InlineStatusStrip, Panel, PageActionGroup, PrimaryButton, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
 import { formatMoney } from "@/lib/utils/format";
 import type { TradeDto } from "@/lib/domain/types";
 
 export default function TradesPage() {
+  const queryClient = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const { data: tradeList = [], isLoading } = useQuery<TradeDto[]>({
+  const { data: tradeList = [], isLoading, isError } = useQuery<TradeDto[]>({
     queryKey: ["trades"],
     queryFn: async () => {
       const res = await fetch("/api/trades");
@@ -20,6 +23,35 @@ export default function TradesPage() {
       return json.data;
     },
   });
+
+  const handleSyncTrades = useCallback(async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/trader/sync-trades", { method: "POST" });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Sync failed");
+
+      const results: any[] = json.data?.results ?? [];
+      const totalTrades = results.reduce((sum, r) => sum + (r.tradesUpserted ?? 0), 0);
+      const totalOpen = results.reduce((sum, r) => sum + (r.openPositions ?? 0), 0);
+      const anyError = results.find(r => r.error);
+
+      if (anyError) {
+        setSyncResult({ type: "error", text: anyError.error });
+      } else {
+        setSyncResult({
+          type: "success",
+          text: `Synced ${totalOpen} open position${totalOpen !== 1 ? "s" : ""} and ${totalTrades} trade record${totalTrades !== 1 ? "s" : ""}.`,
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["trades"] });
+    } catch (err) {
+      setSyncResult({ type: "error", text: err instanceof Error ? err.message : "Sync failed" });
+    } finally {
+      setSyncing(false);
+    }
+  }, [queryClient]);
 
   // Set initial selectedId once trades load
   const effectiveSelectedId = selectedId || tradeList[0]?.id || "";
@@ -44,7 +76,9 @@ export default function TradesPage() {
           <GhostButton type="button" onClick={() => setSearchOpen(true)}>
             Search
           </GhostButton>
-          <PrimaryButton type="button">Sync trades</PrimaryButton>
+          <PrimaryButton type="button" disabled={syncing} onClick={handleSyncTrades}>
+            {syncing ? "Syncing…" : "Sync Trades"}
+          </PrimaryButton>
         </PageActionGroup>
       }
     >
@@ -66,12 +100,35 @@ export default function TradesPage() {
         ]}
       />
 
+      {syncResult && (
+        <div
+          className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-medium ${
+            syncResult.type === "success"
+              ? "border-accent/20 bg-accent/10 text-accent"
+              : "border-danger/20 bg-danger/10 text-danger"
+          }`}
+        >
+          {syncResult.text}
+        </div>
+      )}
+
       <div className="mt-5">
         {isLoading ? (
-          <Panel className="min-w-0">
-            <p className="text-sm text-muted">Loading trades...</p>
-          </Panel>
-        ) : selectedTrade ? (
+          <div className="space-y-2">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="h-12 rounded-xl border border-line bg-panel animate-pulse" />
+            ))}
+          </div>
+        ) : isError ? (
+          <div className="rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+            Failed to load trades. Please refresh the page.
+          </div>
+        ) : !selectedTrade ? (
+          <EmptyState
+            title="No trades yet"
+            description="Trades will appear here after your account syncs with your broker."
+          />
+        ) : (
           <Panel className="min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0">
@@ -113,12 +170,25 @@ export default function TradesPage() {
               <GhostButton type="button" onClick={() => setSearchOpen(true)}>
                 Search ledger
               </GhostButton>
-              <PrimaryButton type="button">Export</PrimaryButton>
+              <PrimaryButton
+                type="button"
+                onClick={async () => {
+                  const res = await fetch("/api/reports/trades");
+                  if (!res.ok) return;
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `aurix-trades-${new Date().toISOString().slice(0, 10)}.csv`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                Export CSV
+              </PrimaryButton>
             </div>
-          </Panel>
-        ) : (
-          <Panel className="min-w-0">
-            <p className="text-sm text-muted">No trades found.</p>
           </Panel>
         )}
       </div>
