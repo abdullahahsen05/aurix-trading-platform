@@ -62,44 +62,49 @@ export async function evaluateAndPersistRiskEvents(
   }
 
   // 2. Latest snapshot (may be null if market never connected)
-  const { data: snapshots } = await supabase
+  const { data: snapshots, error: snapshotErr } = await supabase
     .from('account_snapshots')
     .select('balance, equity, drawdown_percent')
     .eq('trading_account_id', accountId)
     .order('captured_at', { ascending: false })
     .limit(1);
+  if (snapshotErr) console.warn('[RISK_EVAL] Snapshot query failed, using defaults:', snapshotErr.message);
   const snapshot = snapshots?.[0] ?? null;
 
   // 3. Today's closed trade PnL (UTC day boundary)
   const todayStart = new Date();
   todayStart.setUTCHours(0, 0, 0, 0);
-  const { data: closedToday } = await supabase
+  const { data: closedToday, error: closedErr } = await supabase
     .from('trades')
     .select('profit')
     .eq('trading_account_id', accountId)
     .eq('status', 'CLOSED')
     .gte('closed_at', todayStart.toISOString());
+  if (closedErr) console.warn('[RISK_EVAL] Closed trades query failed, daily PnL defaults to 0:', closedErr.message);
   const dailyProfit = computeDailyPnl(closedToday ?? []);
 
   // 4. Open trade count
-  const { count: openCount } = await supabase
+  const { count: openCount, error: countErr } = await supabase
     .from('trades')
     .select('id', { count: 'exact', head: true })
     .eq('trading_account_id', accountId)
     .eq('status', 'OPEN');
+  if (countErr) console.warn('[RISK_EVAL] Open trade count query failed, defaulting to 0:', countErr.message);
 
   // 5. Risk rules (platform + account-specific)
-  const { data: platformRules } = await supabase
+  const { data: platformRules, error: platformErr } = await supabase
     .from('risk_rules')
     .select('id, trading_account_id, name, severity, metric, threshold, enabled')
     .is('trading_account_id', null)
     .eq('enabled', true);
+  if (platformErr) console.warn('[RISK_EVAL] Platform rules query failed:', platformErr.message);
 
-  const { data: accountRules } = await supabase
+  const { data: accountRules, error: accountRulesErr } = await supabase
     .from('risk_rules')
     .select('id, trading_account_id, name, severity, metric, threshold, enabled')
     .eq('trading_account_id', accountId)
     .eq('enabled', true);
+  if (accountRulesErr) console.warn('[RISK_EVAL] Account rules query failed:', accountRulesErr.message);
 
   const rules = [...(platformRules ?? []), ...(accountRules ?? [])].map(mapRiskRuleToDto);
 
@@ -112,7 +117,7 @@ export async function evaluateAndPersistRiskEvents(
     account.broker_name,
     account.status,
     snapshot,
-    openCount ?? 0,
+    openCount ?? 0,   // null when count query fails; defaults to 0 (safe)
   );
 
   const events = evaluateRiskRules({
