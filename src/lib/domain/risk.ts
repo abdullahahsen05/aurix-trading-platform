@@ -8,7 +8,7 @@ export interface RiskEvaluationInput {
 }
 
 export function evaluateRiskRules(input: RiskEvaluationInput): RiskEventDto[] {
-  const { account, trades, rules, dailyProfit } = input;
+  const { account, rules, dailyProfit } = input;
   const openTradeCount = account.openTradeCount;
 
   return rules
