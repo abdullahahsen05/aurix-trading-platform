@@ -237,20 +237,9 @@ export function Topbar({
               </div>
             </div>
           </div>
-          <div className="hidden rounded-full border border-line bg-panel p-1 sm:flex">
-            <Link
-              href="/dashboard"
-              className={`btn-dark rounded-full text-xs ${role === "TRADER" ? "btn-active" : ""}`}
-            >
-              User
-            </Link>
-            <Link
-              href="/admin"
-              className={`btn-dark rounded-full text-xs ${role === "ADMIN" ? "btn-active" : ""}`}
-            >
-              Admin
-            </Link>
-          </div>
+          <span className="hidden rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent sm:inline-flex items-center">
+            {role === "ADMIN" ? "Admin" : "Trader"}
+          </span>
           <select className="h-10 rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong px-4 text-sm font-semibold text-foreground outline-none">
             {tradingAccounts.map((account) => (
               <option key={account.accountId}>{account.accountName}</option>
@@ -259,18 +248,6 @@ export function Topbar({
         </div>
       </div>
       <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-        <Link
-          href="/dashboard"
-          className={`btn-dark h-9 shrink-0 px-4 text-xs ${role === "TRADER" ? "btn-active" : ""}`}
-        >
-          User
-        </Link>
-        <Link
-          href="/admin"
-          className={`btn-dark h-9 shrink-0 px-4 text-xs ${role === "ADMIN" ? "btn-active" : ""}`}
-        >
-          Admin
-        </Link>
         {mobileItems.map((item) => (
           <Link
             key={item.href}
