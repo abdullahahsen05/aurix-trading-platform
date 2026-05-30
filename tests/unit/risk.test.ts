@@ -88,51 +88,11 @@ describe("risk", () => {
       enabled: true,
     };
 
-    const openTrades: TradeDto[] = [
-      {
-        id: "open-1",
-        accountId: "a1",
-        symbol: "XAUUSD",
-        side: "BUY",
-        status: "OPEN",
-        volume: 1,
-        openPrice: 2300,
-        closePrice: null,
-        profit: { amount: 0, currency: "USD" },
-        openedAt: "2026-05-11T00:00:00.000Z",
-        closedAt: null,
-      },
-      {
-        id: "open-2",
-        accountId: "a1",
-        symbol: "EURUSD",
-        side: "SELL",
-        status: "OPEN",
-        volume: 1,
-        openPrice: 1.1,
-        closePrice: null,
-        profit: { amount: 0, currency: "USD" },
-        openedAt: "2026-05-11T00:00:00.000Z",
-        closedAt: null,
-      },
-      {
-        id: "open-3",
-        accountId: "a1",
-        symbol: "GBPUSD",
-        side: "BUY",
-        status: "OPEN",
-        volume: 1,
-        openPrice: 1.27,
-        closePrice: null,
-        profit: { amount: 0, currency: "USD" },
-        openedAt: "2026-05-11T00:00:00.000Z",
-        closedAt: null,
-      },
-    ];
-
+    // openTradeCount comes from account, not from trades array
+    const accountWith3Trades = { ...account, openTradeCount: 3 };
     const events = evaluateRiskRules({
-      account,
-      trades: openTrades,
+      account: accountWith3Trades,
+      trades: [],  // trades array is not used for OPEN_TRADES metric
       rules: [openTradesRule],
       dailyProfit: 0,
     });
