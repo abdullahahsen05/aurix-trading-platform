@@ -18,6 +18,7 @@ vi.mock("@/lib/services/auditService", () => ({
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createRiskEvent, findActiveRiskEvent } from "@/lib/services/riskService";
 import { createNotification } from "@/lib/services/notificationService";
+import { writeAuditLog } from "@/lib/services/auditService";
 import {
   computeDailyPnl,
   buildAccountInput,
@@ -212,5 +213,65 @@ describe("evaluateAndPersistRiskEvents", () => {
     expect(createRiskEvent).toHaveBeenCalledWith(
       expect.objectContaining({ ruleName: "Daily Loss 500", severity: "CRITICAL" }),
     );
+  });
+
+  test("continues gracefully when createRiskEvent throws", async () => {
+    setupMockClient({});
+    vi.mocked(findActiveRiskEvent).mockResolvedValue(null);
+    vi.mocked(createRiskEvent).mockRejectedValue(new Error("DB write failed"));
+
+    await expect(evaluateAndPersistRiskEvents("acc1", null)).resolves.not.toThrow();
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  test("writes audit log with RISK_EVENT_CREATED when new event is persisted", async () => {
+    setupMockClient({});
+    vi.mocked(findActiveRiskEvent).mockResolvedValue(null);
+    vi.mocked(createRiskEvent).mockResolvedValue("evt-audit");
+
+    await evaluateAndPersistRiskEvents("acc1", "admin-1");
+
+    // writeAuditLog is fire-and-forget; give it a tick to run
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(vi.mocked(writeAuditLog)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "RISK_EVENT_CREATED",
+        entityId: "evt-audit",
+      }),
+    );
+  });
+
+  test("does not create events for DAILY_LOSS when loss is below threshold", async () => {
+    const dailyLossRule = {
+      id: "daily",
+      trading_account_id: null,
+      name: "Daily Loss 500",
+      severity: "CRITICAL",
+      metric: "DAILY_LOSS",
+      threshold: 500,
+      enabled: true,
+    };
+    setupMockClient({
+      snapshots: [{ balance: 10000, equity: 10000, drawdown_percent: 0 }],
+      closedTrades: [{ profit: "-400" }], // -400 loss, threshold is -500 → no breach
+      platformRules: [dailyLossRule],
+    });
+
+    await evaluateAndPersistRiskEvents("acc1", null);
+
+    expect(createRiskEvent).not.toHaveBeenCalled();
+  });
+
+  test("returns early without evaluation when no rules exist", async () => {
+    setupMockClient({
+      platformRules: [],
+      accountRules: [],
+    });
+
+    await evaluateAndPersistRiskEvents("acc1", "admin-user");
+
+    expect(findActiveRiskEvent).not.toHaveBeenCalled();
+    expect(createRiskEvent).not.toHaveBeenCalled();
   });
 });
