@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { Import, Plus, Search, X } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
 import {
@@ -16,7 +16,6 @@ import {
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
-import { SelectField, TextField } from "@/components/app/FormFields";
 
 type ApiUserRecord = {
   id: string;
@@ -63,11 +62,11 @@ export default function AdminUsersPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState("");
   const [profileFilter, setProfileFilter] = useState<"ALL" | "TRADER" | "ADMIN" | "SUSPENDED" | "PENDING">("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 20;
 
   const { data: rawUsers = [], isLoading, isError } = useQuery<ApiUserRecord[]>({
     queryKey: ["admin-users"],
@@ -88,11 +87,14 @@ export default function AdminUsersPage() {
     return user.role === profileFilter;
   });
 
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const pagedUsers = filteredUsers.slice((currentPageSafe - 1) * PAGE_SIZE, currentPageSafe * PAGE_SIZE);
+
   const effectiveSelectedId = selectedId || users[0]?.id || "";
   const selectedUser =
-    filteredUsers.find((u) => u.id === effectiveSelectedId) ??
-    filteredUsers[0] ??
-    users[0];
+    pagedUsers.find((u) => u.id === effectiveSelectedId) ??
+    pagedUsers[0];
 
   // ── Real status change mutation ─────────────────────────────────────────────
   const statusMutation = useMutation({
@@ -132,32 +134,6 @@ export default function AdminUsersPage() {
     statusMutation.mutate({ userId, status: newStatus });
   };
 
-  // ── Add user (UI stub — Phase 3 will implement Supabase admin auth invite) ──
-  const handleAddUser = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsSaving(true);
-    setNotice(null);
-    window.setTimeout(() => {
-      setIsSaving(false);
-      setAddOpen(false);
-      setNotice({
-        type: "success",
-        text: "Invite flow will be wired in Phase 3 (Supabase admin auth).",
-      });
-    }, 400);
-  };
-
-  // ── Import (stub — Phase 3) ───────────────────────────────────────────────
-  const handleImportUsers = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsImporting(true);
-    window.setTimeout(() => {
-      setIsImporting(false);
-      setImportOpen(false);
-      setNotice({ type: "success", text: "CSV import will be wired in Phase 3." });
-    }, 400);
-  };
-
   const pendingCount = users.filter((u) => u.status === "PENDING").length;
   const suspendedCount = users.filter((u) => u.status === "SUSPENDED").length;
 
@@ -185,27 +161,19 @@ export default function AdminUsersPage() {
               <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
               <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
                 <Dialog.Title className="text-xl font-semibold text-foreground">
-                  Import users
+                  Bulk user import
                 </Dialog.Title>
                 <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-                  Bulk user import via CSV — available in Phase 3.
+                  CSV bulk import is not yet available. This feature requires additional backend configuration.
                 </Dialog.Description>
-                <form className="mt-6 grid gap-4" onSubmit={handleImportUsers}>
-                  <div className="rounded-2xl border border-dashed border-line bg-background p-6 text-center text-sm text-muted">
-                    Drop CSV here or click browse
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-                    <p className="text-sm text-muted">Full CSV import wired in Phase 3.</p>
-                    <div className="flex gap-3">
-                      <Dialog.Close asChild>
-                        <GhostButton type="button">Cancel</GhostButton>
-                      </Dialog.Close>
-                      <PrimaryButton type="submit" disabled={isImporting}>
-                        {isImporting ? "Processing…" : "Queue import"}
-                      </PrimaryButton>
-                    </div>
-                  </div>
-                </form>
+                <div className="mt-5 rounded-2xl border border-line bg-background px-4 py-4 text-sm text-muted">
+                  To onboard multiple users, have them register individually. Use the status management below to activate accounts.
+                </div>
+                <div className="mt-5 flex justify-end border-t border-line pt-4">
+                  <Dialog.Close asChild>
+                    <GhostButton type="button">Close</GhostButton>
+                  </Dialog.Close>
+                </div>
                 <Dialog.Close asChild>
                   <button
                     type="button"
@@ -231,38 +199,19 @@ export default function AdminUsersPage() {
               <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
               <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
                 <Dialog.Title className="text-xl font-semibold text-foreground">
-                  Add user
+                  User invite
                 </Dialog.Title>
                 <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-                  Create a trader or admin account. Full invite flow wired in Phase 3.
+                  Inviting users directly from the platform requires email provider configuration. This feature will be available in a future release.
                 </Dialog.Description>
-                <form className="mt-6 grid gap-4" onSubmit={handleAddUser}>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <TextField label="Full name" name="fullName" placeholder="Full name" />
-                    <TextField label="Email" name="email" type="email" placeholder="user@example.com" />
-                    <SelectField label="Role" name="role" defaultValue="TRADER">
-                      <option value="TRADER">Trader</option>
-                      <option value="ADMIN">Admin</option>
-                    </SelectField>
-                    <SelectField label="Initial status" name="status" defaultValue="ACTIVE">
-                      <option value="ACTIVE">Active</option>
-                      <option value="PENDING">Pending</option>
-                    </SelectField>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-                    <p className="text-sm text-muted">
-                      User invite via Supabase auth available in Phase 3.
-                    </p>
-                    <div className="flex gap-3">
-                      <Dialog.Close asChild>
-                        <GhostButton type="button">Cancel</GhostButton>
-                      </Dialog.Close>
-                      <PrimaryButton type="submit" disabled={isSaving}>
-                        {isSaving ? "Creating…" : "Create user"}
-                      </PrimaryButton>
-                    </div>
-                  </div>
-                </form>
+                <div className="mt-5 rounded-2xl border border-line bg-background px-4 py-4 text-sm text-muted">
+                  To add a user, have them register at the sign-up page. An admin can then update their status and role from this page.
+                </div>
+                <div className="mt-5 flex justify-end border-t border-line pt-4">
+                  <Dialog.Close asChild>
+                    <GhostButton type="button">Close</GhostButton>
+                  </Dialog.Close>
+                </div>
                 <Dialog.Close asChild>
                   <button
                     type="button"
@@ -295,27 +244,27 @@ export default function AdminUsersPage() {
             {
               label: `All (${users.length})`,
               active: profileFilter === "ALL",
-              onClick: () => setProfileFilter("ALL"),
+              onClick: () => { setProfileFilter("ALL"); setCurrentPage(1); },
             },
             {
               label: `Traders (${users.filter((u) => u.role === "TRADER").length})`,
               active: profileFilter === "TRADER",
-              onClick: () => setProfileFilter("TRADER"),
+              onClick: () => { setProfileFilter("TRADER"); setCurrentPage(1); },
             },
             {
               label: `Admins (${users.filter((u) => u.role === "ADMIN").length})`,
               active: profileFilter === "ADMIN",
-              onClick: () => setProfileFilter("ADMIN"),
+              onClick: () => { setProfileFilter("ADMIN"); setCurrentPage(1); },
             },
             {
               label: `Pending (${pendingCount})`,
               active: profileFilter === "PENDING",
-              onClick: () => setProfileFilter("PENDING"),
+              onClick: () => { setProfileFilter("PENDING"); setCurrentPage(1); },
             },
             {
               label: `Suspended (${suspendedCount})`,
               active: profileFilter === "SUSPENDED",
-              onClick: () => setProfileFilter("SUSPENDED"),
+              onClick: () => { setProfileFilter("SUSPENDED"); setCurrentPage(1); },
             },
           ]}
         />
@@ -446,6 +395,36 @@ export default function AdminUsersPage() {
           </Panel>
         </div>
       ) : null}
+
+      {/* Pagination */}
+      {filteredUsers.length > PAGE_SIZE && (
+        <div className="mt-5 flex items-center justify-between rounded-2xl border border-line bg-panel px-4 py-3">
+          <p className="text-sm text-muted">
+            Showing {(currentPageSafe - 1) * PAGE_SIZE + 1}–{Math.min(currentPageSafe * PAGE_SIZE, filteredUsers.length)} of {filteredUsers.length} users
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={currentPageSafe <= 1}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              className="rounded-full border border-line bg-panel px-4 py-1.5 text-sm font-semibold text-muted disabled:opacity-40 hover:text-foreground"
+            >
+              Previous
+            </button>
+            <span className="text-sm font-semibold text-foreground">
+              {currentPageSafe} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={currentPageSafe >= totalPages}
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              className="rounded-full border border-line bg-panel px-4 py-1.5 text-sm font-semibold text-muted disabled:opacity-40 hover:text-foreground"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Directory search overlay */}
       <DirectorySearchOverlay<UserRecord>
