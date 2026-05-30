@@ -77,6 +77,16 @@ export interface RiskEventDto {
   createdAt: string;
 }
 
+export interface NotificationDto {
+  id: string;
+  accountId: string | null;
+  type: string | null;
+  title: string;
+  message: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
 export interface CrmNoteDto {
   id: string;
   traderId: string;
@@ -100,6 +110,20 @@ export interface AdminSummaryDto {
   connectedAccounts: number;
   openRiskEvents: number;
   monthlyRecurringRevenue: MoneyValue;
+}
+
+export type SubscriptionStatus = "ACTIVE" | "PAUSED" | "TRIAL" | "CANCELLED";
+
+export interface SubscriptionDto {
+  id: string;
+  traderProfileId: string;
+  traderName: string;
+  traderEmail: string;
+  planName: string;
+  status: SubscriptionStatus;
+  startedAt: string;
+  endsAt: string | null;
+  createdAt: string;
 }
 
 export interface ApiSuccess<T> {
