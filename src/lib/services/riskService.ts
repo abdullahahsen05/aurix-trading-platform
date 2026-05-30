@@ -130,12 +130,12 @@ export async function acknowledgeRiskEvent(eventId: string, adminUserId: string)
     .update({ acknowledged_at: new Date().toISOString() })
     .eq('id', eventId)
   if (error) throw new Error(`Failed to acknowledge risk event: ${error.message}`)
-  void writeAuditLog({
+  await writeAuditLog({
     actorUserId: adminUserId,
     action: 'RISK_EVENT_ACKNOWLEDGED',
     entityType: 'risk_event',
     entityId: eventId,
-    metadata: { eventId },
+    metadata: {},
   })
 }
 
@@ -165,12 +165,13 @@ export async function findActiveRiskEvent(
   ruleName: string
 ): Promise<string | null> {
   const supabase = createAdminClient()
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('risk_events')
     .select('id')
     .eq('trading_account_id', accountId)
     .eq('rule_name', ruleName)
     .is('acknowledged_at', null)
     .limit(1)
+  if (error) throw new Error(`Failed to query active risk event: ${error.message}`)
   return data?.[0]?.id ?? null
 }
