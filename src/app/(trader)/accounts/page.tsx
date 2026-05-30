@@ -22,7 +22,7 @@ import { formatMoney, formatPercent } from "@/lib/utils/format";
 import type { TraderAccountSummary } from "@/lib/domain/types";
 
 // Dialog step state machine
-type ConnectStep = "setup" | "credentials" | "done";
+type ConnectStep = "setup" | "credentials";
 
 export default function AccountsPage() {
   const [query, setQuery] = useState("");
@@ -508,7 +508,7 @@ export default function AccountsPage() {
             rows={filteredAccounts.map((account) => [
               <span key="name" className="font-semibold text-foreground">{account.accountName}</span>,
               account.brokerName,
-              <StatusPill key="status" tone={account.status === "CONNECTED" ? "lime" : "accent"}>{account.status}</StatusPill>,
+              <StatusPill key="status" tone={account.status === "CONNECTED" ? "lime" : account.status === "PENDING" ? "accent" : "muted"}>{account.status}</StatusPill>,
               account.openTradeCount,
               <span key="equity" className="font-semibold text-accent-2">{formatMoney(account.equity)}</span>,
               formatPercent(account.drawdownPercent),

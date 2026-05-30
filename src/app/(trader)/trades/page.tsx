@@ -32,13 +32,14 @@ export default function TradesPage() {
       const json = await res.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Sync failed");
 
-      const results: any[] = json.data?.results ?? [];
+      type SyncResultItem = { tradesUpserted?: number; openPositions?: number; error?: string };
+      const results: SyncResultItem[] = json.data?.results ?? [];
       const totalTrades = results.reduce((sum, r) => sum + (r.tradesUpserted ?? 0), 0);
       const totalOpen = results.reduce((sum, r) => sum + (r.openPositions ?? 0), 0);
       const anyError = results.find(r => r.error);
 
       if (anyError) {
-        setSyncResult({ type: "error", text: anyError.error });
+        setSyncResult({ type: "error", text: anyError.error ?? "Unknown sync error" });
       } else {
         setSyncResult({
           type: "success",

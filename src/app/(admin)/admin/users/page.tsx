@@ -44,7 +44,9 @@ function toUserRecord(raw: ApiUserRecord): UserRecord {
     email: raw.email,
     role: raw.role === "ADMIN" ? "ADMIN" : "TRADER",
     // Preserve all three statuses — do not collapse PENDING → ACTIVE
-    status: (raw.status as "ACTIVE" | "SUSPENDED" | "PENDING") ?? "ACTIVE",
+    status: (["ACTIVE", "SUSPENDED", "PENDING"] as const).includes(raw.status as "ACTIVE" | "SUSPENDED" | "PENDING")
+      ? (raw.status as "ACTIVE" | "SUSPENDED" | "PENDING")
+      : "ACTIVE",
     segment: raw.role === "ADMIN" ? "OPERATIONS" : "EVALUATION",
     lastActiveAt: raw.created_at,
   };
