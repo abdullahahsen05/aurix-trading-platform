@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   DataTable,
@@ -54,8 +53,6 @@ function RiskBar({
 }
 
 export default function RiskPage() {
-  const [notice, setNotice] = useState("");
-
   const { data: riskRules = [] } = useQuery<RiskRuleDto[]>({
     queryKey: ["risk-rules"],
     queryFn: async () => {
@@ -131,12 +128,6 @@ export default function RiskPage() {
           { label: "Restricted", value: "0", helper: "No account locked", tone: "lime" },
         ]}
       />
-
-      {notice ? (
-        <div className="mt-5 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-medium text-accent">
-          {notice}
-        </div>
-      ) : null}
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.35fr_0.65fr]">
         {/* ── Left: gauges + events ─────────────────────────────────────── */}
