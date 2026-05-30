@@ -7,9 +7,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAdmin();
+    const user = await requireAdmin();
     const { id } = await params;
-    await acknowledgeRiskEvent(id);
+    await acknowledgeRiskEvent(id, user.id);
     return jsonOk({ acknowledged: true });
   } catch (err) {
     if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);
