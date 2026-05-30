@@ -28,7 +28,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
     if (existing && existing.length > 0) return;
   }
 
-  await supabase.from('notifications').insert({
+  const { error: insertError } = await supabase.from('notifications').insert({
     user_id: params.userId,
     trading_account_id: params.accountId ?? null,
     type: params.type,
@@ -36,6 +36,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
     message: params.message,
     risk_event_id: params.riskEventId ?? null,
   });
+  if (insertError) throw new Error(`Failed to create notification: ${insertError.message}`);
 }
 
 export async function listNotifications(userId: string): Promise<NotificationDto[]> {
@@ -60,28 +61,31 @@ export async function listNotifications(userId: string): Promise<NotificationDto
 
 export async function getUnreadCount(userId: string): Promise<number> {
   const supabase = createAdminClient();
-  const { count } = await supabase
+  const { count, error } = await supabase
     .from('notifications')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .is('read_at', null);
+  if (error) throw new Error(`Failed to get unread count: ${error.message}`);
   return count ?? 0;
 }
 
 export async function markNotificationRead(id: string, userId: string): Promise<void> {
   const supabase = createAdminClient();
-  await supabase
+  const { error } = await supabase
     .from('notifications')
     .update({ read_at: new Date().toISOString() })
     .eq('id', id)
     .eq('user_id', userId); // ownership enforced here
+  if (error) throw new Error(`Failed to mark notification as read: ${error.message}`);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
   const supabase = createAdminClient();
-  await supabase
+  const { error } = await supabase
     .from('notifications')
     .update({ read_at: new Date().toISOString() })
     .eq('user_id', userId)
     .is('read_at', null);
+  if (error) throw new Error(`Failed to mark all notifications as read: ${error.message}`);
 }
