@@ -52,6 +52,7 @@ export async function listRiskEvents(
     .select('id, trading_account_id, rule_name, severity, message, created_at')
     .is('acknowledged_at', null)
     .order('created_at', { ascending: false })
+    .limit(100)
 
   if (role !== 'ADMIN') {
     // Get user's accounts

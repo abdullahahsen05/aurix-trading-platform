@@ -18,7 +18,7 @@ export async function listTrades(params: {
     .from('trades')
     .select('id, trading_account_id, symbol, side, status, volume, open_price, close_price, profit, currency, opened_at, closed_at')
     .order('opened_at', { ascending: false })
-    .limit(params.limit ?? 500)
+    .limit(params.limit ?? 200)
 
   if (params.accountId) {
     query = query.eq('trading_account_id', params.accountId)

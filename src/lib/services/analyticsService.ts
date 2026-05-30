@@ -27,6 +27,7 @@ export async function getAnalyticsSummary(
     .from('trades')
     .select('id, trading_account_id, symbol, side, status, volume, open_price, close_price, profit, currency, opened_at, closed_at')
     .eq('trading_account_id', accountId)
+    .limit(1000)
 
   if (tradeError) throw new Error(`Failed to fetch trades: ${tradeError.message}`)
 
@@ -35,6 +36,7 @@ export async function getAnalyticsSummary(
     .select('balance, equity, captured_at')
     .eq('trading_account_id', accountId)
     .order('captured_at', { ascending: true })
+    .limit(730)
 
   if (snapError) throw new Error(`Failed to fetch snapshots: ${snapError.message}`)
 
@@ -70,6 +72,7 @@ export async function getEquityCurve(
     .select('balance, equity, captured_at')
     .eq('trading_account_id', accountId)
     .order('captured_at', { ascending: true })
+    .limit(730)
 
   if (error) throw new Error(`Failed to fetch equity curve: ${error.message}`)
 
