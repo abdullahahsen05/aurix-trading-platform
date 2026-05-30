@@ -5,13 +5,13 @@ import type { TraderAccountSummary } from '@/lib/domain/types'
 import type { UserRole } from '@/lib/auth/rbac'
 
 export async function listTradingAccounts(userId: string, role: UserRole): Promise<TraderAccountSummary[]> {
-  // Admin bypasses RLS to see all accounts; traders see only their own via SSR client.
   const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
 
   let query = supabase
     .from('trading_accounts')
     .select('id, account_name, broker_name, status, currency, updated_at, user_id')
     .order('created_at', { ascending: false })
+    .limit(500)
 
   if (role !== 'ADMIN') {
     query = query.eq('user_id', userId)
@@ -20,30 +20,35 @@ export async function listTradingAccounts(userId: string, role: UserRole): Promi
   const { data: accounts, error } = await query
   if (error) throw new Error(`Failed to fetch trading accounts: ${error.message}`)
 
-  const results: TraderAccountSummary[] = []
+  const accountIds = (accounts ?? []).map(a => a.id)
+  if (accountIds.length === 0) return []
 
-  for (const account of accounts ?? []) {
-    // Get latest snapshot
-    const { data: snapshots } = await supabase
-      .from('account_snapshots')
-      .select('balance, equity, floating_pnl, drawdown_percent')
-      .eq('trading_account_id', account.id)
-      .order('captured_at', { ascending: false })
-      .limit(1)
+  // Batch: 2 parallel view queries instead of 2N sequential queries
+  const [{ data: snapshots }, { data: counts }] = await Promise.all([
+    supabase
+      .from('latest_account_snapshots')
+      .select('trading_account_id, balance, equity, floating_pnl, drawdown_percent')
+      .in('trading_account_id', accountIds),
+    supabase
+      .from('account_open_trade_counts')
+      .select('trading_account_id, open_trade_count')
+      .in('trading_account_id', accountIds),
+  ])
 
-    const snapshot = snapshots?.[0] ?? null
+  const snapshotMap = new Map(
+    (snapshots ?? []).map(s => [s.trading_account_id, s])
+  )
+  const countMap = new Map(
+    (counts ?? []).map(c => [c.trading_account_id, c.open_trade_count as number])
+  )
 
-    // Count open trades
-    const { count } = await supabase
-      .from('trades')
-      .select('id', { count: 'exact', head: true })
-      .eq('trading_account_id', account.id)
-      .eq('status', 'OPEN')
-
-    results.push(mapAccountToDto(account, snapshot, count ?? 0))
-  }
-
-  return results
+  return (accounts ?? []).map(account =>
+    mapAccountToDto(
+      account,
+      snapshotMap.get(account.id) ?? null,
+      countMap.get(account.id) ?? 0,
+    )
+  )
 }
 
 export async function getTradingAccount(
@@ -65,20 +70,21 @@ export async function getTradingAccount(
   const { data, error } = await query.single()
   if (error || !data) return null
 
-  const { data: snapshots } = await supabase
-    .from('account_snapshots')
-    .select('balance, equity, floating_pnl, drawdown_percent')
-    .eq('trading_account_id', accountId)
-    .order('captured_at', { ascending: false })
-    .limit(1)
+  const [{ data: snapshots }, { data: counts }] = await Promise.all([
+    supabase
+      .from('latest_account_snapshots')
+      .select('trading_account_id, balance, equity, floating_pnl, drawdown_percent')
+      .eq('trading_account_id', accountId),
+    supabase
+      .from('account_open_trade_counts')
+      .select('trading_account_id, open_trade_count')
+      .eq('trading_account_id', accountId),
+  ])
 
-  const { count } = await supabase
-    .from('trades')
-    .select('id', { count: 'exact', head: true })
-    .eq('trading_account_id', accountId)
-    .eq('status', 'OPEN')
+  const snapshot = snapshots?.[0] ?? null
+  const openTradeCount = counts?.[0]?.open_trade_count ?? 0
 
-  return mapAccountToDto(data, snapshots?.[0] ?? null, count ?? 0)
+  return mapAccountToDto(data, snapshot, openTradeCount)
 }
 
 export async function createTradingAccount(userId: string, data: {
