@@ -6,10 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
 import {
   GhostButton,
-  FilterChipRow,
   InlineStatusStrip,
   Panel,
-  StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 
@@ -29,7 +27,6 @@ type AuditRecord = {
   action: string;
   entity: string;
   entityId: string;
-  result: "Success" | "Failure";
   createdAt: string;
 };
 
@@ -40,7 +37,6 @@ function toAuditRecord(raw: ApiAuditRecord): AuditRecord {
     action: raw.action,
     entity: raw.entity_type,
     entityId: raw.entity_id ?? "—",
-    result: "Success",
     createdAt: raw.created_at,
   };
 }
@@ -48,7 +44,6 @@ function toAuditRecord(raw: ApiAuditRecord): AuditRecord {
 export default function AdminAuditPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
-  const [resultFilter, setResultFilter] = useState<"ALL" | "Success" | "Failure">("ALL");
 
   const { data: rawLogs = [], isLoading } = useQuery<ApiAuditRecord[]>({
     queryKey: ["admin-audit"],
@@ -61,7 +56,7 @@ export default function AdminAuditPage() {
   });
 
   const logs = useMemo<AuditRecord[]>(() => rawLogs.map(toAuditRecord), [rawLogs]);
-  const filteredLogs = logs.filter((log) => resultFilter === "ALL" || log.result === resultFilter);
+  const filteredLogs = logs;
   const effectiveSelectedId = selectedId || logs[0]?.id || "";
   const selectedLog = filteredLogs.find((log) => log.id === effectiveSelectedId) ?? filteredLogs[0] ?? logs[0];
 
@@ -80,41 +75,9 @@ export default function AdminAuditPage() {
       <InlineStatusStrip
         items={[
           { label: "Events today", value: isLoading ? "..." : logs.length },
-          { label: "Failures", value: logs.filter((log) => log.result === "Failure").length, tone: "lime" },
           { label: "Retention", value: "365 days", helper: "Production policy target" },
         ]}
       />
-
-      <div className="mt-5 rounded-2xl border border-line bg-panel p-4">
-        <FilterChipRow
-          chips={[
-            {
-              label: `All events (${logs.length})`,
-              active: resultFilter === "ALL",
-              onClick: () => {
-                setResultFilter("ALL");
-                setSelectedId(logs[0]?.id ?? "");
-              },
-            },
-            {
-              label: `Success (${logs.filter((log) => log.result === "Success").length})`,
-              active: resultFilter === "Success",
-              onClick: () => {
-                setResultFilter("Success");
-                setSelectedId(logs.find((log) => log.result === "Success")?.id ?? logs[0]?.id ?? "");
-              },
-            },
-            {
-              label: `Failure (${logs.filter((log) => log.result === "Failure").length})`,
-              active: resultFilter === "Failure",
-              onClick: () => {
-                setResultFilter("Failure");
-                setSelectedId(logs.find((log) => log.result === "Failure")?.id ?? logs[0]?.id ?? "");
-              },
-            },
-          ]}
-        />
-      </div>
 
       {selectedLog ? (
         <div className="mt-5">
@@ -137,10 +100,6 @@ export default function AdminAuditPage() {
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Entity ID</p>
                 <p className="mt-1 text-sm font-semibold text-foreground truncate">{selectedLog.entityId}</p>
-              </div>
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Result</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{selectedLog.result}</p>
               </div>
             </div>
           </Panel>
@@ -178,8 +137,7 @@ export default function AdminAuditPage() {
             log.actor.toLowerCase().includes(search) ||
             log.action.toLowerCase().includes(search) ||
             log.entity.toLowerCase().includes(search) ||
-            log.entityId.toLowerCase().includes(search) ||
-            log.result.toLowerCase().includes(search)
+            log.entityId.toLowerCase().includes(search)
           );
         }}
         renderRow={(log) => (
@@ -189,7 +147,6 @@ export default function AdminAuditPage() {
                 <p className="truncate text-sm font-semibold text-foreground">{log.actor}</p>
                 <p className="mt-1 truncate text-xs text-muted">{log.action}</p>
               </div>
-              <StatusPill tone={log.result === "Success" ? "lime" : "danger"}>{log.result}</StatusPill>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
@@ -211,7 +168,6 @@ export default function AdminAuditPage() {
                   {log.actor} - {log.entity}
                 </p>
               </div>
-              <StatusPill tone={log.result === "Success" ? "lime" : "danger"}>{log.result}</StatusPill>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
