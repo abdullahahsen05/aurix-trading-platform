@@ -14,7 +14,13 @@ import {
   calculateProfitFactor,
   calculateWinRate,
 } from "@/lib/domain/metrics";
-import { computePeriodStats, type DashboardView, type Period, type PeriodStats } from "@/lib/domain/dashboard";
+import {
+  computePeriodStats,
+  filterClosedTradesForPeriod,
+  type DashboardView,
+  type Period,
+  type PeriodStats,
+} from "@/lib/domain/dashboard";
 import type { TraderAccountSummary, TradeDto, RiskRuleDto } from "@/lib/domain/types";
 import { useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
 
@@ -46,20 +52,11 @@ const dashboardTabs: Array<{ id: DashboardView; label: string }> = [
   { id: "CALENDAR_TRACKER", label: "Calendar Tracker" },
 ];
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function getPeriodCutoff(period: Period, now = new Date()) {
-  if (period === "DAILY") {
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  }
-
-  return new Date(now.getTime() - (period === "WEEKLY" ? 7 : 30) * DAY_MS);
-}
-
 export default function TraderDashboardPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("DAILY");
   const [selectedView, setSelectedView] = useState<DashboardView>("CURRENT_EQUITY");
   const [activeOverlay, setActiveOverlay] = useState<DashboardView | null>(null);
+  const [statsNow, setStatsNow] = useState(() => new Date());
 
   // Fetch trading accounts
   const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({
@@ -102,6 +99,11 @@ export default function TraderDashboardPage() {
   // Subscribe to realtime updates
   useRealtimeUpdates();
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setStatsNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const baseAccount = accounts[0];
 
   const [live, setLive] = useState({
@@ -125,21 +127,22 @@ export default function TraderDashboardPage() {
 
   const openTrades = useMemo(() => trades.filter((trade) => trade.status === "OPEN"), [trades]);
   const closedTrades = useMemo(() => trades.filter((trade) => trade.status === "CLOSED"), [trades]);
-  const periodStats = useMemo<PeriodStats>(
-    () => computePeriodStats(closedTrades, selectedPeriod),
-    [closedTrades, selectedPeriod],
+  const periodTrades = useMemo(
+    () => filterClosedTradesForPeriod(trades, selectedPeriod, statsNow),
+    [trades, selectedPeriod, statsNow],
   );
-  const periodTrades = useMemo(() => {
-    const cutoff = getPeriodCutoff(selectedPeriod);
-    return closedTrades.filter((trade) => trade.closedAt !== null && new Date(trade.closedAt) >= cutoff);
-  }, [closedTrades, selectedPeriod]);
+  const periodStats = useMemo<PeriodStats>(
+    () => computePeriodStats(trades, selectedPeriod, statsNow),
+    [trades, selectedPeriod, statsNow],
+  );
   const dailyLossLimit = riskRules.find((rule) => rule.metric === "DAILY_LOSS")?.threshold ?? 2500;
   const maxDrawdownLimit = riskRules.find((rule) => rule.metric === "MAX_DRAWDOWN")?.threshold ?? 5;
   const openTradeLimit = riskRules.find((rule) => rule.metric === "OPEN_TRADES")?.threshold ?? 5;
 
   const tradeWinRate = useMemo(() => calculateWinRate(closedTrades), [closedTrades]);
-  const profitFactor = useMemo(() => calculateProfitFactor(closedTrades), [closedTrades]);
-  const avgWinLoss = useMemo(() => calculateAverageWinLossRatio(closedTrades), [closedTrades]);
+  const periodProfitFactor = useMemo(() => calculateProfitFactor(periodTrades), [periodTrades]);
+  const periodAvgWinLoss = useMemo(() => calculateAverageWinLossRatio(periodTrades), [periodTrades]);
+  const periodConsistency = useMemo(() => calculateConsistencyScore(periodTrades), [periodTrades]);
   const pnlPositive = live.pnl >= 0;
   const pnlPrefix = pnlPositive ? "↑" : "↓";
   const baseBalance = baseAccount?.balance.amount ?? 0;
@@ -154,9 +157,9 @@ export default function TraderDashboardPage() {
     () => ({
       ...periodStats,
       drawdown: accountDrawdown,
-      consistency: calculateConsistencyScore(periodTrades),
+      consistency: periodConsistency,
     }),
-    [accountDrawdown, periodStats, periodTrades],
+    [accountDrawdown, periodConsistency, periodStats],
   );
 
   const performanceRings = useMemo<PerformanceRingItem[]>(
@@ -171,22 +174,22 @@ export default function TraderDashboardPage() {
       },
       {
         label: "Profit Factor",
-        value: profitFactor.toFixed(2),
-        status: profitFactor >= 2 ? "Excellent" : profitFactor >= 1.4 ? "Good" : "Average",
-        statusTone: profitFactor >= 2 ? ("lime" as const) : profitFactor >= 1.4 ? ("accent" as const) : ("muted" as const),
-        progress: Math.min(profitFactor / 4, 1),
+        value: periodProfitFactor.toFixed(2),
+        status: periodProfitFactor >= 2 ? "Excellent" : periodProfitFactor >= 1.4 ? "Good" : "Average",
+        statusTone: periodProfitFactor >= 2 ? ("lime" as const) : periodProfitFactor >= 1.4 ? ("accent" as const) : ("muted" as const),
+        progress: Math.min(periodProfitFactor / 4, 1),
         tone: "lime" as const,
       },
       {
         label: "Win/Loss",
-        value: avgWinLoss.toFixed(2),
-        status: avgWinLoss >= 1.8 ? "Good" : "Average",
-        statusTone: avgWinLoss >= 1.8 ? ("accent" as const) : ("muted" as const),
-        progress: Math.min(avgWinLoss / 4, 1),
+        value: periodAvgWinLoss.toFixed(2),
+        status: periodAvgWinLoss >= 1.8 ? "Good" : "Average",
+        statusTone: periodAvgWinLoss >= 1.8 ? ("accent" as const) : ("muted" as const),
+        progress: Math.min(periodAvgWinLoss / 4, 1),
         tone: "yellow" as const,
       },
     ],
-    [avgWinLoss, profitFactor, tradeWinRate],
+    [periodAvgWinLoss, periodProfitFactor, tradeWinRate],
   );
 
   const kpiItems = [
@@ -228,7 +231,7 @@ export default function TraderDashboardPage() {
     },
     {
       label: "Trend Bias",
-      value: periodStats.winRate >= 58 && profitFactor >= 1.4 ? "Bullish" : "Balanced",
+      value: periodStats.winRate >= 58 && periodProfitFactor >= 1.4 ? "Bullish" : "Balanced",
       helper: "Price structure is stable",
       tone: "lime" as const,
     },
@@ -240,7 +243,7 @@ export default function TraderDashboardPage() {
     },
     {
       label: "Fear & Greed",
-      value: `${Math.round((periodStats.winRate * 0.8 + profitFactor * 10) / 1.1)}`,
+      value: `${Math.round((periodStats.winRate * 0.8 + periodProfitFactor * 10) / 1.1)}`,
       helper: "Calculated from period performance",
       tone: "accent" as const,
     },
@@ -327,8 +330,8 @@ export default function TraderDashboardPage() {
         dailyLossLimit={dailyLossLimit}
         maxDrawdownLimit={maxDrawdownLimit}
         openTradeLimit={openTradeLimit}
-        profitFactor={profitFactor}
-        avgWinLoss={avgWinLoss}
+        profitFactor={periodProfitFactor}
+        avgWinLoss={periodAvgWinLoss}
       />
     </WorkspacePage>
   );
