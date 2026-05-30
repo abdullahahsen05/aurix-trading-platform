@@ -28,6 +28,7 @@ AS
   ORDER BY trading_account_id, captured_at DESC;
 
 -- Open trade count per account (replaces per-account COUNT queries)
+-- Note: accounts with no open trades have no row — always default to 0 when joining
 CREATE OR REPLACE VIEW public.account_open_trade_counts
   WITH (security_invoker = true)
 AS
@@ -40,15 +41,14 @@ AS
 
 -- ── New performance indexes ────────────────────────────────────────────────
 
--- trading_accounts: sort by last sync time in admin supervision
-CREATE INDEX IF NOT EXISTS idx_trading_accounts_last_synced
+-- trading_accounts: sort by last sync time DESC in admin supervision
+-- (idx_trading_accounts_last_synced from migration 004 covers ASC; this adds DESC)
+CREATE INDEX IF NOT EXISTS idx_trading_accounts_last_synced_desc
   ON public.trading_accounts(last_synced_at DESC)
   WHERE last_synced_at IS NOT NULL;
 
 -- trading_accounts: MetaAPI lookup by provider account ID
-CREATE INDEX IF NOT EXISTS idx_trading_accounts_provider_id
-  ON public.trading_accounts(provider_account_id)
-  WHERE provider_account_id IS NOT NULL;
+-- idx_trading_accounts_provider_account_id from migration 004 already covers this
 
 -- trades: closed_at filter for daily PnL and analytics closed-trade queries
 CREATE INDEX IF NOT EXISTS idx_trades_account_closed
@@ -61,15 +61,16 @@ CREATE INDEX IF NOT EXISTS idx_risk_events_open_queue
   WHERE acknowledged_at IS NULL;
 
 -- notifications: sort by created_at per user (list + Topbar feed)
-CREATE INDEX IF NOT EXISTS idx_notifications_user_created
-  ON public.notifications(user_id, created_at DESC);
+-- idx_notifications_user_created from migration 003 already covers this
 
 -- audit_logs: filter by actor + sort (admin audit page)
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_created
   ON public.audit_logs(actor_user_id, created_at DESC);
 
--- audit_logs: entity lookup (entity_type + entity_id)
-CREATE INDEX IF NOT EXISTS idx_audit_logs_entity
+-- audit_logs: entity lookup with created_at sort (admin entity drill-down)
+-- (idx_audit_logs_entity from migration 003 covers entity_type+entity_id only;
+--  this wider version adds created_at DESC for time-ordered entity queries)
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity_created
   ON public.audit_logs(entity_type, entity_id, created_at DESC);
 
 -- crm_notes: trader timeline
@@ -81,8 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_crm_activities_trader_created
   ON public.crm_activities(trader_profile_id, created_at DESC);
 
 -- subscriptions: lookup per trader + filter by status (admin subscriptions page)
-CREATE INDEX IF NOT EXISTS idx_subscriptions_trader
-  ON public.subscriptions(trader_profile_id);
+-- idx_subscriptions_trader from migration 003 already covers this
 
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status
   ON public.subscriptions(status);
@@ -90,3 +90,9 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_status
 -- profiles: admin user filter by role + status
 CREATE INDEX IF NOT EXISTS idx_profiles_role_status
   ON public.profiles(role, status);
+
+-- ── View grants ────────────────────────────────────────────────────────────
+-- Grant SELECT on views to authenticated role so RLS-respecting trader
+-- queries can read these views via the Supabase client.
+GRANT SELECT ON public.latest_account_snapshots TO authenticated;
+GRANT SELECT ON public.account_open_trade_counts TO authenticated;
