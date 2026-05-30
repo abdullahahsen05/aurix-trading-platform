@@ -47,6 +47,7 @@ export async function listUsers() {
     .from('profiles')
     .select('id, email, full_name, role, status, created_at')
     .order('created_at', { ascending: false })
+    .limit(200)
 
   if (error) throw new Error(`Failed to fetch users: ${error.message}`)
   return data ?? []
@@ -69,31 +70,44 @@ export async function listAllAccounts(): Promise<TraderAccountSummary[]> {
     .from('trading_accounts')
     .select('id, account_name, broker_name, status, currency, updated_at, user_id')
     .order('created_at', { ascending: false })
+    .limit(500)
 
   if (error) throw new Error(`Failed to fetch accounts: ${error.message}`)
 
-  const results: TraderAccountSummary[] = []
+  const accountIds = (accounts ?? []).map(account => account.id)
+  if (accountIds.length === 0) return []
 
-  for (const account of accounts ?? []) {
-    const { data: snapshots } = await supabase
-      .from('account_snapshots')
-      .select('balance, equity, floating_pnl, drawdown_percent')
-      .eq('trading_account_id', account.id)
-      .order('captured_at', { ascending: false })
-      .limit(1)
+  const [
+    { data: snapshots, error: snapshotError },
+    { data: counts, error: countError },
+  ] = await Promise.all([
+    supabase
+      .from('latest_account_snapshots')
+      .select('trading_account_id, balance, equity, floating_pnl, drawdown_percent')
+      .in('trading_account_id', accountIds),
+    supabase
+      .from('account_open_trade_counts')
+      .select('trading_account_id, open_trade_count')
+      .in('trading_account_id', accountIds),
+  ])
 
-    const snapshot = snapshots?.[0] ?? null
+  if (snapshotError) throw new Error(`Failed to fetch latest account snapshots: ${snapshotError.message}`)
+  if (countError) throw new Error(`Failed to fetch open trade counts: ${countError.message}`)
 
-    const { count } = await supabase
-      .from('trades')
-      .select('id', { count: 'exact', head: true })
-      .eq('trading_account_id', account.id)
-      .eq('status', 'OPEN')
+  const snapshotMap = new Map(
+    (snapshots ?? []).map(snapshot => [snapshot.trading_account_id, snapshot])
+  )
+  const countMap = new Map(
+    (counts ?? []).map(count => [count.trading_account_id, count.open_trade_count as number])
+  )
 
-    results.push(mapAccountToDto(account, snapshot, count ?? 0))
-  }
-
-  return results
+  return accounts.map(account =>
+    mapAccountToDto(
+      account,
+      snapshotMap.get(account.id) ?? null,
+      countMap.get(account.id) ?? 0,
+    )
+  )
 }
 
 export async function listAuditLogs() {
