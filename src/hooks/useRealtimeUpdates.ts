@@ -22,6 +22,7 @@ export function useRealtimeUpdates(accountIds?: string[]) {
         table: 'account_snapshots',
       }, () => {
         queryClient.invalidateQueries({ queryKey: ['trading-accounts'] })
+        queryClient.invalidateQueries({ queryKey: ['equity-curve'] })
       })
       .subscribe()
 
@@ -32,8 +33,13 @@ export function useRealtimeUpdates(accountIds?: string[]) {
         event: '*',
         schema: 'public',
         table: 'trades',
-      }, () => {
+      }, (payload) => {
         queryClient.invalidateQueries({ queryKey: ['trades'] })
+        const oldStatus = 'old' in payload ? (payload.old as { status?: string } | null)?.status : undefined
+        const newStatus = 'new' in payload ? (payload.new as { status?: string } | null)?.status : undefined
+        if (oldStatus === 'OPEN' || newStatus === 'OPEN') {
+          queryClient.invalidateQueries({ queryKey: ['trading-accounts'] })
+        }
       })
       .subscribe()
 
