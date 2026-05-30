@@ -27,6 +27,7 @@ export async function getAnalyticsSummary(
     .from('trades')
     .select('id, trading_account_id, symbol, side, status, volume, open_price, close_price, profit, currency, opened_at, closed_at')
     .eq('trading_account_id', accountId)
+    .order('opened_at', { ascending: false })
     .limit(1000)
 
   if (tradeError) throw new Error(`Failed to fetch trades: ${tradeError.message}`)
@@ -35,13 +36,13 @@ export async function getAnalyticsSummary(
     .from('account_snapshots')
     .select('balance, equity, captured_at')
     .eq('trading_account_id', accountId)
-    .order('captured_at', { ascending: true })
+    .order('captured_at', { ascending: false })
     .limit(730)
 
   if (snapError) throw new Error(`Failed to fetch snapshots: ${snapError.message}`)
 
   const trades = (tradeRows ?? []).map(mapTradeToDto)
-  const equityCurve: EquityPoint[] = (snapshots ?? []).map(s => ({
+  const equityCurve: EquityPoint[] = [...(snapshots ?? [])].reverse().map(s => ({
     capturedAt: s.captured_at,
     balance: Number(s.balance),
     equity: Number(s.equity),
@@ -71,12 +72,12 @@ export async function getEquityCurve(
     .from('account_snapshots')
     .select('balance, equity, captured_at')
     .eq('trading_account_id', accountId)
-    .order('captured_at', { ascending: true })
+    .order('captured_at', { ascending: false })
     .limit(730)
 
   if (error) throw new Error(`Failed to fetch equity curve: ${error.message}`)
 
-  return (snapshots ?? []).map(s => ({
+  return [...(snapshots ?? [])].reverse().map(s => ({
     capturedAt: s.captured_at,
     balance: Number(s.balance),
     equity: Number(s.equity),
