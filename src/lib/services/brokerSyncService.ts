@@ -66,13 +66,6 @@ async function markFailed(
     .from('trading_accounts')
     .update({ status: 'DISCONNECTED', sync_error: message.slice(0, 500) })
     .eq('id', accountId);
-  void writeAuditLog({
-    actorUserId,
-    action: 'ACCOUNT_SYNC_FAILED',
-    entityType: 'trading_account',
-    entityId: accountId,
-    metadata: { error: message.slice(0, 200) },
-  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -368,7 +361,7 @@ export async function syncTradingAccount(
       console.error('[SYNC_RISK_EVAL_ERROR]', { accountId, err })
     );
 
-    // Notify trader on first-time connection (was not CONNECTED before)
+    // account.status is the pre-sync value — intentionally stale to detect first-time connections
     if (account.status !== 'CONNECTED') {
       void createNotification({
         userId: account.user_id,
