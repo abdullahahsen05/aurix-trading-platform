@@ -28,6 +28,7 @@ export async function getAnalyticsSummary(
     .select('id, trading_account_id, symbol, side, status, volume, open_price, close_price, profit, currency, opened_at, closed_at')
     .eq('trading_account_id', accountId)
     .order('opened_at', { ascending: false })
+    .order('id', { ascending: false })
     .limit(1000)
 
   if (tradeError) throw new Error(`Failed to fetch trades: ${tradeError.message}`)
