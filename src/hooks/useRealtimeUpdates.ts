@@ -22,7 +22,6 @@ export function useRealtimeUpdates(accountIds?: string[]) {
         table: 'account_snapshots',
       }, () => {
         queryClient.invalidateQueries({ queryKey: ['trading-accounts'] })
-        queryClient.invalidateQueries({ queryKey: ['equity-curve'] })
       })
       .subscribe()
 
@@ -35,7 +34,6 @@ export function useRealtimeUpdates(accountIds?: string[]) {
         table: 'trades',
       }, () => {
         queryClient.invalidateQueries({ queryKey: ['trades'] })
-        queryClient.invalidateQueries({ queryKey: ['trading-accounts'] })
       })
       .subscribe()
 
