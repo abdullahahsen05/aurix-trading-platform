@@ -76,4 +76,77 @@ describe("risk", () => {
 
     expect(events).toEqual([]);
   });
+
+  test("creates event for open trade count breach", () => {
+    const openTradesRule: RiskRuleDto = {
+      id: "open-trades",
+      scope: "PLATFORM",
+      name: "Max 3 open trades",
+      severity: "INFO",
+      metric: "OPEN_TRADES",
+      threshold: 3,
+      enabled: true,
+    };
+
+    const openTrades: TradeDto[] = [
+      {
+        id: "open-1",
+        accountId: "a1",
+        symbol: "XAUUSD",
+        side: "BUY",
+        status: "OPEN",
+        volume: 1,
+        openPrice: 2300,
+        closePrice: null,
+        profit: { amount: 0, currency: "USD" },
+        openedAt: "2026-05-11T00:00:00.000Z",
+        closedAt: null,
+      },
+      {
+        id: "open-2",
+        accountId: "a1",
+        symbol: "EURUSD",
+        side: "SELL",
+        status: "OPEN",
+        volume: 1,
+        openPrice: 1.1,
+        closePrice: null,
+        profit: { amount: 0, currency: "USD" },
+        openedAt: "2026-05-11T00:00:00.000Z",
+        closedAt: null,
+      },
+      {
+        id: "open-3",
+        accountId: "a1",
+        symbol: "GBPUSD",
+        side: "BUY",
+        status: "OPEN",
+        volume: 1,
+        openPrice: 1.27,
+        closePrice: null,
+        profit: { amount: 0, currency: "USD" },
+        openedAt: "2026-05-11T00:00:00.000Z",
+        closedAt: null,
+      },
+    ];
+
+    const events = evaluateRiskRules({
+      account,
+      trades: openTrades,
+      rules: [openTradesRule],
+      dailyProfit: 0,
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0].ruleName).toBe("Max 3 open trades");
+    expect(events[0].message).toContain("Open trades: 3");
+  });
+
+  test("message includes account name, metric, threshold, and observed value", () => {
+    const events = evaluateRiskRules({ account, trades, rules, dailyProfit: -1200 });
+    const ddEvent = events.find((e) => e.ruleName === "Max drawdown");
+    expect(ddEvent?.message).toContain("Evaluation 100K");
+    expect(ddEvent?.message).toContain("Drawdown:");
+    expect(ddEvent?.message).toContain("threshold:");
+  });
 });

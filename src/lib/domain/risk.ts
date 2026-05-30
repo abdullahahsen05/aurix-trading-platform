@@ -21,12 +21,19 @@ export function evaluateRiskRules(input: RiskEvaluationInput): RiskEventDto[] {
 
       if (!breached) return [];
 
+      const observed =
+        rule.metric === "DAILY_LOSS"
+          ? `Daily P&L: ${dailyProfit.toFixed(2)} (threshold: -${Math.abs(rule.threshold)})`
+          : rule.metric === "MAX_DRAWDOWN"
+            ? `Drawdown: ${account.drawdownPercent.toFixed(2)}% (threshold: ${rule.threshold}%)`
+            : `Open trades: ${openTradeCount} (limit: ${rule.threshold})`;
+
       return {
         id: `${account.accountId}-${rule.id}`,
         accountId: account.accountId,
         ruleName: rule.name,
         severity: rule.severity,
-        message: `${rule.name} breached for ${account.accountName}`,
+        message: `[${rule.severity}] ${rule.name} breached for ${account.accountName}. ${observed}.`,
         createdAt: account.updatedAt,
       };
     });
