@@ -1,8 +1,30 @@
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = 'https://brtdyxidblyimqteduph.supabase.co'
-const SERVICE_ROLE_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJydGR5eGlkYmx5aW1xdGVkdXBoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTI4Mjc2OCwiZXhwIjoyMDk0ODU4NzY4fQ.EFLsksKXVMXsXEzCQwMzvgTQVY5Z3eapjfKofz58NhE'
+// Load credentials from .env.local (never hardcode secrets — this file is committed).
+function loadEnvLocal(): Record<string, string> {
+  const out: Record<string, string> = {}
+  try {
+    const raw = readFileSync(join(process.cwd(), '.env.local'), 'utf-8')
+    for (const line of raw.split('\n')) {
+      const t = line.trim()
+      if (!t || t.startsWith('#')) continue
+      const i = t.indexOf('=')
+      if (i > -1) out[t.slice(0, i).trim()] = t.slice(i + 1).trim()
+    }
+  } catch {
+    /* fall back to process.env */
+  }
+  return out
+}
+
+const env = loadEnvLocal()
+const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+const SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local')
+}
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
