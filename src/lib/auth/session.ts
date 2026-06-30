@@ -78,6 +78,17 @@ export async function requireTrader(): Promise<SessionUser> {
 }
 
 /**
+ * Require PARTNER role.
+ */
+export async function requirePartner(): Promise<SessionUser> {
+  const user = await requireAuth()
+  if (user.role !== 'PARTNER') {
+    throw new AuthError('FORBIDDEN', 'Partner access required', 403)
+  }
+  return user
+}
+
+/**
  * Get role of current user without throwing.
  */
 export async function getUserRole(): Promise<UserRole | null> {

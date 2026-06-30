@@ -45,7 +45,8 @@ export default function LoginPage() {
     }
 
     setMessage("Signed in successfully. Redirecting...");
-    router.push(role === "ADMIN" ? "/admin" : "/dashboard");
+    const home = role === "ADMIN" ? "/admin" : role === "PARTNER" ? "/partner" : "/dashboard";
+    router.push(home);
   };
 
   return (

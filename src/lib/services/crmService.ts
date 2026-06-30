@@ -7,16 +7,21 @@ export async function listTraderProfiles(): Promise<TraderProfileDto[]> {
   // admin API routes that already gate access via requireAdmin().
   const supabase = createAdminClient()
 
+  // trading_accounts.user_id → profiles.id, not trader_profiles.id.
+  // Traverse: trader_profiles → profiles → trading_accounts.
   const { data, error } = await supabase
     .from('trader_profiles')
     .select(`
       id,
       user_id,
       segment,
-      profiles!inner(full_name, email),
-      trading_accounts(
-        id,
-        account_snapshots(equity)
+      profiles!user_id(
+        full_name,
+        email,
+        trading_accounts(
+          id,
+          account_snapshots(equity)
+        )
       )
     `)
     .order('created_at', { ascending: false })

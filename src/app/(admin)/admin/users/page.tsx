@@ -16,6 +16,9 @@ import {
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
+import { SelectField } from "@/components/app/FormFields";
+
+type PartnerRel = { partner_id: string | null };
 
 type ApiUserRecord = {
   id: string;
@@ -24,29 +27,41 @@ type ApiUserRecord = {
   role: string;
   status: string;
   created_at: string;
+  trader_profiles?: PartnerRel | PartnerRel[] | null;
 };
+
+type UserRole = "TRADER" | "ADMIN" | "PARTNER";
 
 type UserRecord = {
   id: string;
   name: string;
   email: string;
-  role: "TRADER" | "ADMIN";
+  role: UserRole;
   status: "ACTIVE" | "SUSPENDED" | "PENDING";
   segment: string;
+  partnerId: string | null;
   lastActiveAt: string;
 };
 
+function extractPartnerId(tp: ApiUserRecord["trader_profiles"]): string | null {
+  if (!tp) return null;
+  if (Array.isArray(tp)) return tp[0]?.partner_id ?? null;
+  return tp.partner_id ?? null;
+}
+
 function toUserRecord(raw: ApiUserRecord): UserRecord {
+  const role: UserRole = raw.role === "ADMIN" ? "ADMIN" : raw.role === "PARTNER" ? "PARTNER" : "TRADER";
   return {
     id: raw.id,
     name: raw.full_name ?? raw.email,
     email: raw.email,
-    role: raw.role === "ADMIN" ? "ADMIN" : "TRADER",
+    role,
     // Preserve all three statuses — do not collapse PENDING → ACTIVE
     status: (["ACTIVE", "SUSPENDED", "PENDING"] as const).includes(raw.status as "ACTIVE" | "SUSPENDED" | "PENDING")
       ? (raw.status as "ACTIVE" | "SUSPENDED" | "PENDING")
       : "ACTIVE",
-    segment: raw.role === "ADMIN" ? "OPERATIONS" : "EVALUATION",
+    segment: role === "ADMIN" ? "OPERATIONS" : role === "PARTNER" ? "PARTNER" : "EVALUATION",
+    partnerId: extractPartnerId(raw.trader_profiles),
     lastActiveAt: raw.created_at,
   };
 }
@@ -57,6 +72,14 @@ const STATUS_TONE: Record<string, "lime" | "accent" | "danger" | "muted"> = {
   SUSPENDED: "danger",
 };
 
+const ROLE_TONE: Record<UserRole, "lime" | "accent" | "danger" | "muted"> = {
+  ADMIN: "accent",
+  PARTNER: "accent",
+  TRADER: "lime",
+};
+
+type PartnerOption = { userId: string; name: string };
+
 export default function AdminUsersPage() {
   const queryClient = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -64,7 +87,7 @@ export default function AdminUsersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [selectedId, setSelectedId] = useState("");
-  const [profileFilter, setProfileFilter] = useState<"ALL" | "TRADER" | "ADMIN" | "SUSPENDED" | "PENDING">("ALL");
+  const [profileFilter, setProfileFilter] = useState<"ALL" | "TRADER" | "ADMIN" | "PARTNER" | "SUSPENDED" | "PENDING">("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 20;
 
@@ -134,8 +157,62 @@ export default function AdminUsersPage() {
     statusMutation.mutate({ userId, status: newStatus });
   };
 
+  // ── Partner options for assignment dropdown ─────────────────────────────────
+  const { data: partners = [] } = useQuery<PartnerOption[]>({
+    queryKey: ["admin-partner-options"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/partners");
+      const json = await res.json();
+      if (!json.ok) return [];
+      return (json.data as Array<{ userId: string; name: string }>).map((p) => ({
+        userId: p.userId,
+        name: p.name,
+      }));
+    },
+  });
+
+  // ── Role change ─────────────────────────────────────────────────────────────
+  const roleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: string; role: UserRole }) => {
+      const res = await fetch(`/api/admin/users/${userId}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to update role");
+      return json.data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-partner-options"] });
+      setNotice({ type: "success", text: `Role updated to ${variables.role}.` });
+    },
+    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  });
+
+  // ── Partner assignment (trader → partner) ───────────────────────────────────
+  const partnerMutation = useMutation({
+    mutationFn: async ({ traderId, partnerId }: { traderId: string; partnerId: string | null }) => {
+      const res = await fetch(`/api/admin/traders/${traderId}/partner`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerId }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to assign partner");
+      return json.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      setNotice({ type: "success", text: "Partner assignment updated." });
+    },
+    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  });
+
   const pendingCount = users.filter((u) => u.status === "PENDING").length;
   const suspendedCount = users.filter((u) => u.status === "SUSPENDED").length;
+  const partnerCount = users.filter((u) => u.role === "PARTNER").length;
 
   return (
     <WorkspacePage
@@ -232,6 +309,7 @@ export default function AdminUsersPage() {
           { label: "Total users", value: isLoading ? "…" : users.length },
           { label: "Admins", value: users.filter((u) => u.role === "ADMIN").length, tone: "accent" },
           { label: "Traders", value: users.filter((u) => u.role === "TRADER").length, tone: "lime" },
+          { label: "Partners", value: partnerCount, tone: "accent" },
           { label: "Pending", value: pendingCount, tone: pendingCount > 0 ? "accent" : undefined },
           { label: "Suspended", value: suspendedCount, tone: suspendedCount > 0 ? "danger" : undefined },
         ]}
@@ -255,6 +333,11 @@ export default function AdminUsersPage() {
               label: `Admins (${users.filter((u) => u.role === "ADMIN").length})`,
               active: profileFilter === "ADMIN",
               onClick: () => { setProfileFilter("ADMIN"); setCurrentPage(1); },
+            },
+            {
+              label: `Partners (${partnerCount})`,
+              active: profileFilter === "PARTNER",
+              onClick: () => { setProfileFilter("PARTNER"); setCurrentPage(1); },
             },
             {
               label: `Pending (${pendingCount})`,
@@ -318,7 +401,7 @@ export default function AdminUsersPage() {
                 <StatusPill tone={STATUS_TONE[selectedUser.status] ?? "muted"}>
                   {selectedUser.status}
                 </StatusPill>
-                <StatusPill tone={selectedUser.role === "ADMIN" ? "accent" : "lime"}>
+                <StatusPill tone={ROLE_TONE[selectedUser.role]}>
                   {selectedUser.role}
                 </StatusPill>
               </div>
@@ -392,6 +475,51 @@ export default function AdminUsersPage() {
                 All status changes are logged to the audit trail.
               </p>
             </div>
+
+            {/* ── Role management ───────────────────────────────────────── */}
+            <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+                Role
+              </span>
+              {(["TRADER", "PARTNER", "ADMIN"] as UserRole[]).map((r) => (
+                <GhostButton
+                  key={r}
+                  type="button"
+                  disabled={roleMutation.isPending || selectedUser.role === r}
+                  onClick={() => {
+                    setNotice(null);
+                    roleMutation.mutate({ userId: selectedUser.id, role: r });
+                  }}
+                >
+                  {selectedUser.role === r ? `${r} ✓` : `Make ${r}`}
+                </GhostButton>
+              ))}
+            </div>
+
+            {/* ── Partner assignment (traders only) ─────────────────────── */}
+            {selectedUser.role === "TRADER" ? (
+              <div className="mt-4 grid gap-2 border-t border-line pt-4 sm:max-w-sm">
+                <SelectField
+                  label="Assigned partner"
+                  value={selectedUser.partnerId ?? ""}
+                  disabled={partnerMutation.isPending}
+                  onChange={(e) => {
+                    setNotice(null);
+                    partnerMutation.mutate({
+                      traderId: selectedUser.id,
+                      partnerId: e.target.value || null,
+                    });
+                  }}
+                >
+                  <option value="">Unassigned</option>
+                  {partners.map((p) => (
+                    <option key={p.userId} value={p.userId}>
+                      {p.name}
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+            ) : null}
           </Panel>
         </div>
       ) : null}
@@ -447,6 +575,7 @@ export default function AdminUsersPage() {
             options: [
               { value: "ALL", label: "All roles" },
               { value: "TRADER", label: "Trader" },
+              { value: "PARTNER", label: "Partner" },
               { value: "ADMIN", label: "Admin" },
             ],
           },
@@ -486,7 +615,7 @@ export default function AdminUsersPage() {
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <StatusPill tone={STATUS_TONE[user.status] ?? "muted"}>{user.status}</StatusPill>
-                <StatusPill tone={user.role === "ADMIN" ? "accent" : "lime"}>{user.role}</StatusPill>
+                <StatusPill tone={ROLE_TONE[user.role]}>{user.role}</StatusPill>
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -511,7 +640,7 @@ export default function AdminUsersPage() {
               </div>
               <div className="flex items-center gap-1">
                 <StatusPill tone={STATUS_TONE[user.status] ?? "muted"}>{user.status}</StatusPill>
-                <StatusPill tone={user.role === "ADMIN" ? "accent" : "lime"}>{user.role}</StatusPill>
+                <StatusPill tone={ROLE_TONE[user.role]}>{user.role}</StatusPill>
               </div>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">

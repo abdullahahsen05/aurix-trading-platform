@@ -16,8 +16,9 @@ interface TraderProfileRow {
   profiles?: {
     full_name: string
     email: string
+    // trading_accounts joined through profiles (profiles.id = trading_accounts.user_id)
+    trading_accounts?: { id: string; account_snapshots?: { equity: number }[] }[]
   }
-  trading_accounts?: { id: string; account_snapshots?: { equity: number }[] }[]
 }
 
 export function mapCrmNoteToDto(row: CrmNoteRow): CrmNoteDto {
@@ -31,7 +32,7 @@ export function mapCrmNoteToDto(row: CrmNoteRow): CrmNoteDto {
 }
 
 export function mapTraderProfileToDto(row: TraderProfileRow): TraderProfileDto {
-  const accounts = row.trading_accounts ?? []
+  const accounts = row.profiles?.trading_accounts ?? []
   const totalEquity = accounts.reduce((sum, acc) => {
     const latestSnapshot = acc.account_snapshots?.[0]
     return sum + (latestSnapshot ? Number(latestSnapshot.equity) : 0)

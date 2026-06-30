@@ -65,9 +65,11 @@ export function Sidebar({
         <div className="mb-3 px-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Workspace</p>
         </div>
-        <div className="mt-2 flex flex-1 flex-col">
-          {renderNav()}
-          <div className="mt-auto border-t border-line/70 pt-4">
+        <div className="mt-2 flex min-h-0 flex-1 flex-col">
+          <div className="flex-1 overflow-y-auto">
+            {renderNav()}
+          </div>
+          <div className="border-t border-line/70 pt-4">
             <button
               type="button"
               onClick={handleLogout}
@@ -102,8 +104,10 @@ export function Sidebar({
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Workspace</p>
             </div>
             <div className="mt-2 flex min-h-0 flex-1 flex-col">
-              {renderNav(() => onMobileNavOpenChange(false))}
-              <div className="mt-auto border-t border-line/70 pt-4">
+              <div className="flex-1 overflow-y-auto">
+                {renderNav(() => onMobileNavOpenChange(false))}
+              </div>
+              <div className="border-t border-line/70 pt-4">
                 <button
                   type="button"
                   onClick={() => {

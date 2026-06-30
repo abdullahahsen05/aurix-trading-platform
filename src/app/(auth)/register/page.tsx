@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { PrimaryButton } from "@/components/app/WorkspaceUI";
 import { SelectField, TextField } from "@/components/app/FormFields";
@@ -11,7 +11,18 @@ export default function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const router = useRouter();
+
+  // Capture a partner referral code from the URL (?partner=CODE) on the client,
+  // avoiding the useSearchParams Suspense requirement during prerender.
+  useEffect(() => {
+    // One-time read of the client-only URL param on mount. Initial render (server
+    // + hydration) shows no code, so there is no hydration mismatch.
+    const code = new URLSearchParams(window.location.search).get("partner");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (code) setReferralCode(code.trim());
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -46,6 +57,20 @@ export default function RegisterPage() {
       return;
     }
 
+    // Attribute to a partner if a valid referral code was present. Tied to the
+    // new session server-side; invalid codes are ignored. Never blocks signup.
+    if (referralCode) {
+      try {
+        await fetch("/api/auth/referral", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: referralCode }),
+        });
+      } catch {
+        // ignore — referral attribution is best-effort
+      }
+    }
+
     setMessage("Account created. Redirecting to workspace...");
     router.push("/dashboard");
   };
@@ -60,6 +85,12 @@ export default function RegisterPage() {
             Enter your details to create your trader account and access the dashboard.
           </p>
         </div>
+
+        {referralCode ? (
+          <div className="mb-5 rounded-2xl border border-accent-2/20 bg-accent-2/10 px-4 py-3 text-sm font-medium text-accent-2">
+            Referral code applied: <span className="font-bold">{referralCode}</span>
+          </div>
+        ) : null}
 
         {message ? (
           <div className="mb-5 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-medium text-accent">

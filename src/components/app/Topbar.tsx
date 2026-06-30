@@ -238,13 +238,15 @@ export function Topbar({
             </div>
           </div>
           <span className="hidden rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent sm:inline-flex items-center">
-            {role === "ADMIN" ? "Admin" : "Trader"}
+            {role === "ADMIN" ? "Admin" : role === "PARTNER" ? "Partner" : "Trader"}
           </span>
-          <select className="h-10 rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong px-4 text-sm font-semibold text-foreground outline-none">
-            {tradingAccounts.map((account) => (
-              <option key={account.accountId}>{account.accountName}</option>
-            ))}
-          </select>
+          {role !== "PARTNER" ? (
+            <select className="h-10 rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong px-4 text-sm font-semibold text-foreground outline-none">
+              {tradingAccounts.map((account) => (
+                <option key={account.accountId}>{account.accountName}</option>
+              ))}
+            </select>
+          ) : null}
         </div>
       </div>
       <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">

@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password', '/reset-password']
 const TRADER_ROUTES = ['/dashboard', '/accounts', '/trades', '/analytics', '/risk', '/reports', '/settings']
 const ADMIN_ROUTES = ['/admin']
+const PARTNER_ROUTES = ['/partner']
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -48,6 +49,7 @@ export async function proxy(request: NextRequest) {
   const isPublicRoute = PUBLIC_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
   const isAdminRoute = ADMIN_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
   const isTraderRoute = TRADER_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
+  const isPartnerRoute = PARTNER_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
   const isApiRoute = pathname.startsWith('/api/')
 
   // Not authenticated
@@ -77,9 +79,24 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
+  const home = role === 'ADMIN' ? '/admin' : role === 'PARTNER' ? '/partner' : '/dashboard'
+
   // Authenticated user on public/auth route -> redirect to their home
   if (isPublicRoute) {
-    const home = role === 'ADMIN' ? '/admin' : '/dashboard'
+    return NextResponse.redirect(new URL(home, request.url))
+  }
+
+  // Partner isolation: partners may only use /partner/* pages. API routes are
+  // left to their own requirePartner() guards (never redirect /api/* here, or
+  // the partner's own data fetches would be bounced to an HTML page).
+  if (role === 'PARTNER') {
+    if (isApiRoute) return response
+    if (!isPartnerRoute) return NextResponse.redirect(new URL('/partner', request.url))
+    return response
+  }
+
+  // Non-partners may never enter the partner workspace.
+  if (isPartnerRoute) {
     return NextResponse.redirect(new URL(home, request.url))
   }
 

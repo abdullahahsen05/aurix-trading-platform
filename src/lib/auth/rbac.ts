@@ -1,4 +1,4 @@
-export type UserRole = 'TRADER' | 'ADMIN'
+export type UserRole = 'TRADER' | 'ADMIN' | 'PARTNER'
 export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'PENDING'
 
 export interface UserProfile {
@@ -20,6 +20,10 @@ export function isTrader(role: UserRole): boolean {
   return role === 'TRADER'
 }
 
+export function isPartner(role: UserRole): boolean {
+  return role === 'PARTNER'
+}
+
 export function isActive(status: UserStatus): boolean {
   return status === 'ACTIVE'
 }
@@ -30,4 +34,8 @@ export function canAccessAdminRoutes(role: UserRole, status: UserStatus): boolea
 
 export function canAccessTraderRoutes(role: UserRole, status: UserStatus): boolean {
   return (role === 'TRADER' || role === 'ADMIN') && status === 'ACTIVE'
+}
+
+export function canAccessPartnerRoutes(role: UserRole, status: UserStatus): boolean {
+  return role === 'PARTNER' && status === 'ACTIVE'
 }

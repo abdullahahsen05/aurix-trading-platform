@@ -45,7 +45,7 @@ export async function listUsers() {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, full_name, role, status, created_at')
+    .select('id, email, full_name, role, status, created_at, trader_profiles!user_id(partner_id)')
     .order('created_at', { ascending: false })
     .limit(200)
 

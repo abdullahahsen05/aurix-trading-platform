@@ -11,7 +11,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isAuthRoute = ["/login", "/register", "/forgot-password"].includes(pathname);
-  const role: UserRole = pathname.startsWith("/admin") ? "ADMIN" : "TRADER";
+  const role: UserRole = pathname.startsWith("/admin")
+    ? "ADMIN"
+    : pathname.startsWith("/partner")
+      ? "PARTNER"
+      : "TRADER";
 
   if (isAuthRoute) {
     return <div className="min-h-screen bg-background">{children}</div>;
