@@ -17,6 +17,16 @@ const ALL_MIGRATIONS = [
   '004_broker_sync.sql',
   '005_risk_notifications.sql',
   '006_performance_indexes.sql',
+  '007_ai_assistant.sql',
+  '008_partner_dashboard.sql',
+  '009_copy_trading.sql',
+  '010_broker_integration.sql',
+  '011_performance_indexes.sql',
+  '012_background_jobs.sql',
+  '013_bot_marketplace.sql',
+  '014_academy.sql',
+  '015_evaluations.sql',
+  '016_terminal.sql',
 ]
 
 async function runMigrations() {

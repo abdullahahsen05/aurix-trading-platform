@@ -1,0 +1,461 @@
+================================================================
+AURIX TRADING PLATFORM — PROJECT CONTEXT FOR AI ASSISTANTS
+================================================================
+
+----------------------------------------------------------------
+WHAT IS AURIX?
+----------------------------------------------------------------
+Aurix is a prop trading firm management platform. It is a web
+application where traders connect their MetaTrader 5 (MT5) broker
+accounts and get a full dashboard: performance analytics, equity
+tracking, risk monitoring, and portfolio overview. Admins (the
+firm's staff) oversee all traders from a separate admin workspace,
+manage risk rules, handle CRM, and supervise accounts.
+
+Think of it as a white-label back-office for a funded trader program
+(like FTMO, MyForexFunds, etc.). Multiple traders use the platform
+simultaneously under one firm's admin.
+
+----------------------------------------------------------------
+TECH STACK
+----------------------------------------------------------------
+Framework:       Next.js 16.2.6 (App Router, React Server Components)
+Language:        TypeScript 5, React 19
+Styling:         Tailwind CSS v4 with custom CSS variables
+UI Components:   Radix UI (Dialog, Dropdown, Tabs, Tooltip)
+Animations:      Framer Motion
+Icons:           Lucide React
+Charts:          Recharts + Lightweight Charts (TradingView-style)
+Server State:    TanStack React Query v5
+Local State:     Zustand v5
+Database:        Supabase (PostgreSQL 15) with Row Level Security
+Auth:            Supabase Auth (email/password)
+Realtime:        Supabase Realtime (postgres_changes) + Socket.io (scaffolded)
+Broker:          MetaAPI (adapter scaffolded, not yet implemented)
+Validation:      Zod v4
+Encryption:      AES-256-GCM for broker credentials
+Testing:         Vitest (unit) + Playwright (E2E)
+
+----------------------------------------------------------------
+DESIGN SYSTEM
+----------------------------------------------------------------
+Theme:           Dark only
+Background:      Near-black (#050606)
+Foreground:      Off-white (#f6f4ea)
+Primary Accent:  Yellow (#ffcf00)
+Secondary Accent: Lime (#d7ff32)
+Danger:          Red (#ff5d4d)
+Typography:      Aptos / Segoe UI Variable (UI), Cascadia Code (mono)
+Border Radius:   Cards 16px, Sections 20px
+Animations:      Framer Motion page transitions and item reveals
+
+Key CSS custom classes:
+- .card-surface, .section-surface, .inner-surface
+- .status-pill, .status-pill-green
+- .btn-dark, .btn-active
+- .label-text
+
+----------------------------------------------------------------
+PROJECT STRUCTURE
+----------------------------------------------------------------
+src/
+  app/
+    (auth)/           Auth pages: login, register, forgot-password, reset-password
+    (trader)/         Trader workspace pages
+    (admin)/          Admin workspace pages
+    api/              All API route handlers
+    layout.tsx        Root layout (QueryProvider + AppShell)
+    globals.css       Tailwind CSS + design tokens
+
+  components/
+    app/              AppShell, Sidebar, Topbar, WorkspaceUI, navigation
+    dashboard/        KPI strip, equity curve, performance rings, trading chart
+    admin/            Admin overview overlay
+    crm/              Trader profile panel, notes timeline, note editor
+    risk/             Risk status panel, rule editor
+    charts/           Trading chart components
+    accounts/         Account connection actions
+
+  lib/
+    auth/             session.ts (getCurrentUser, requireAuth, requireAdmin)
+                      rbac.ts (isAdmin, isTrader, canAccessAdminRoutes)
+    api/              envelope.ts (ApiEnvelope, jsonOk, jsonFail)
+    domain/           types.ts (all core types/enums)
+                      metrics.ts (profit factor, win rate, drawdown, etc.)
+                      risk.ts (evaluateRiskRules, shouldRestrictAccount)
+                      dashboard.ts (period filtering, PeriodStats)
+    services/         tradeService, tradingAccountService, analyticsService,
+                      riskService, crmService, adminService, etc.
+    mappers/          accountMapper, tradeMapper, riskMapper, crmMapper
+    data/             mockData.ts (deterministic mock data for development)
+                      queryKeys.ts (React Query key constants)
+    supabase/         client.ts, server.ts, admin.ts (3 Supabase client types)
+    broker/           BrokerAdapter.ts (interface)
+                      MockBrokerAdapter.ts (returns mock data)
+                      MetaApiBrokerAdapter.ts (stub - throws not implemented)
+    realtime/         client.ts, server.ts, events.ts (Socket.io scaffold)
+    validation/       schemas.ts (Zod schemas)
+    utils/            format.ts (number/currency/date formatting)
+
+  hooks/
+    useRealtimeUpdates.ts   Subscribes to Supabase Realtime, invalidates queries
+
+  providers/
+    QueryProvider.tsx       TanStack React Query provider wrapper
+
+----------------------------------------------------------------
+USER ROLES
+----------------------------------------------------------------
+Two roles: TRADER and ADMIN
+
+TRADER:
+- Can only access their own accounts and trades
+- Sees trader-specific pages in sidebar
+- Cannot access /admin/* routes
+
+ADMIN:
+- Can access all traders' data (bypasses RLS via service role)
+- Sees admin-specific pages in sidebar
+- Can also preview trader workspace
+
+Role is stored in the `profiles` table (Supabase) alongside the
+Supabase Auth user. Role-based access is enforced via:
+  1. requireAuth() / requireAdmin() / requireTrader() in every API route
+  2. assertCanAccessAccount() for account-level ownership checks
+  3. Supabase RLS policies on every table
+
+----------------------------------------------------------------
+PAGES — TRADER WORKSPACE
+----------------------------------------------------------------
+/dashboard
+  - KPI strip: Balance, Equity, Floating PnL
+  - Market Sentiment bar: Session, Trend Bias, Volatility, Fear & Greed, Spread
+  - Performance Rings: Win %, Profit Factor, Win/Loss ratio
+  - Interactive trading candlestick chart with timeframe selector
+  - Overlay tabs: Current Equity, Check Limits, Profit Summary, Calendar Tracker
+  - Empty state shown if no accounts connected
+
+/accounts
+  - List of all broker accounts with status filters (Connected/Syncing/Pending/Disconnected/Restricted)
+  - Account cards showing Balance, Equity, Floating PnL, Drawdown %
+  - Two-step "Connect Account" dialog:
+      Step 1: Account name + broker name
+      Step 2: MT5 login, password, server, platform (encrypted AES-256-GCM)
+  - Data table listing all accounts
+
+/accounts/[accountId]
+  - Server-side rendered (SSR) using cookies for auth
+  - Shows: Balance, Equity, Floating PnL, Drawdown
+  - Reconnect / Sync buttons
+  - Recent Trades table
+  - Equity Curve graph
+  - Latest balance snapshots (last 7 days)
+
+/trades
+  - Trade ledger with status strip (Open/Closed count, Net PnL, Symbols)
+  - Selected trade detail panel (Volume, Open Price, Profit, Date)
+  - Search overlay with OPEN/CLOSED filter
+  - Export CSV button
+  - Sync Trades button (calls broker API)
+
+/analytics
+  - Period selector: DAILY / WEEKLY / MONTHLY / ALL_TIME
+  - Equity curve chart
+  - Drawdown meter
+  - Performance metrics: Profit Factor, Win Rate, Consistency, Avg Win, Avg Loss
+  - KPI dashboard: Net Profit, Win Rate, Risk Utilization, Avg R
+  - Historical growth graph
+  - Risk-to-reward summary (winning/losing/closed trades count)
+  - Export PDF / Excel buttons (currently mock)
+
+/risk
+  - Status strip: Active Rules, Open Events, Highest Drawdown, Restricted accounts
+  - Today's Closed P&L progress bar
+  - Max Drawdown bar
+  - Warning notification list (read-only, set by admin)
+  - Rule set table (Rule, Scope, Metric, Threshold, Severity, State)
+  - Rule-based Account Monitoring table
+
+/reports
+  - Scaffold (not yet functional)
+
+/settings
+  - Display name, Email (disabled), Timezone selector
+  - Broker access info (read-only), MT5 server, login, investor password
+  - Test Connection / Connect buttons
+
+----------------------------------------------------------------
+PAGES — ADMIN WORKSPACE
+----------------------------------------------------------------
+/admin (Overview)
+  - Performance Rings (5): Active Traders, Connected Accounts,
+    Open Risk Events, MRR, Accounts Under Supervision
+  - Platform Oversight equity curve
+  - Platform Health: Net Profit, Closed Trades, Max Drawdown, Consistency
+  - Trader Watchlist (name, segment, accounts, equity, last active)
+  - Risk Queue (triggered events with severity)
+  - Overlay tabs: OVERVIEW, ACCOUNTS, RISK_QUEUE, CRM
+
+/admin/traders
+  - Segment filter chips: All / Funded / Evaluation / At Risk / VIP
+  - Search overlay (name, email)
+  - Selected trader panel: name, segment, account count, equity, last active
+  - Latest CRM notes section
+  - "New Note" dialog to add CRM notes
+
+/admin/accounts
+  - All accounts (across all traders) in table/card view
+  - Status filters + search
+  - Sync, Restrict, Manage actions per account
+
+/admin/crm
+  - CRM notes and activity timeline
+
+/admin/users
+  - List all users with role/status filters
+  - Search overlay
+  - Bulk import + Add User dialogs
+  - Suspend / Activate user
+  - Pagination (20 per page)
+
+/admin/risk
+  - Create/edit risk rules (metric, threshold, severity, scope)
+  - Active rules table
+  - Triggered risk events list
+  - Acknowledge/moderate events
+
+/admin/subscriptions
+  - Scaffold (not yet functional)
+
+/admin/audit
+  - Scaffold — table exists in DB but page is not built out
+
+----------------------------------------------------------------
+API ROUTES
+----------------------------------------------------------------
+All routes return ApiEnvelope<T>:
+  Success: { ok: true, data: T }
+  Failure: { ok: false, error: { code: string, message: string } }
+
+Auth:
+  GET  /api/auth/session                   Current user info
+  PATCH /api/auth/profile                  Update profile (name, timezone)
+
+Trading Accounts:
+  GET  /api/trading-accounts               List accounts (trader: own, admin: all)
+  POST /api/trading-accounts               Create new account
+  GET  /api/trading-accounts/[id]          Account detail
+  POST /api/trading-accounts/[id]/broker-credentials   Store encrypted MT5 creds
+
+Trades:
+  GET  /api/trades                         List trades (?accountId, ?status)
+  POST /api/trader/sync-trades             Trigger broker sync (via MetaAPI)
+  GET  /api/trader/daily-pnl              Today's closed P&L
+
+Analytics:
+  GET  /api/analytics/summary             AnalyticsSummary (?accountId, ?period)
+  GET  /api/analytics/equity-curve        EquityPoint[] for chart (?accountId)
+
+Risk:
+  GET  /api/risk/rules                    List risk rules
+  POST /api/risk/rules                    Create rule (admin only)
+  PATCH /api/risk/rules/[id]             Update rule
+  DELETE /api/risk/rules/[id]            Delete rule
+  GET  /api/risk/events                   List unacknowledged events
+  POST /api/risk/events/[id]/acknowledge  Mark event resolved
+
+CRM:
+  GET  /api/crm/traders                   Trader profiles list
+  GET  /api/crm/notes                     Notes (?traderId)
+  POST /api/crm/notes                     Create note
+
+Admin:
+  GET  /api/admin/summary                 Platform KPIs
+  GET  /api/admin/users                   User list (paginated)
+  PATCH /api/admin/users/[id]/status      Suspend/Activate user
+  GET  /api/admin/accounts                All accounts
+  PATCH /api/admin/accounts/[id]/status   Change account status
+  GET  /api/admin/audit                   Audit log
+
+Notifications:
+  GET  /api/notifications                 User notifications
+  POST /api/notifications/[id]/read       Mark read
+  POST /api/notifications/read-all        Mark all read
+
+Realtime:
+  GET  /api/realtime/token               WebSocket auth token
+
+----------------------------------------------------------------
+DATABASE (15 TABLES)
+----------------------------------------------------------------
+profiles                 Auth user extension (role, status, full_name)
+trader_profiles          Trader segment, CRM metadata
+trading_accounts         Broker account records (user_id, status, currency)
+broker_credentials       AES-256-GCM encrypted MT5 credentials
+account_snapshots        Balance/equity time series (for equity curves)
+trades                   Trade ledger (symbol, side, volume, prices, P&L)
+daily_account_metrics    Analytics cache per account per day
+risk_rules               Platform & account-level thresholds
+risk_events              Triggered risk violations
+crm_notes                Trader profile notes (author + timestamp)
+crm_activities           Activity timeline entries
+subscriptions            Subscription plan records
+notifications            Alert queue per user
+audit_logs               Admin action audit trail
+user_settings            User preferences (timezone, etc.)
+
+Views:
+  latest_account_snapshots       Most recent snapshot per account
+  account_open_trade_counts      Count of open trades per account
+
+----------------------------------------------------------------
+CORE DOMAIN TYPES (src/lib/domain/types.ts)
+----------------------------------------------------------------
+UserRole:          "TRADER" | "ADMIN"
+AccountStatus:     "PENDING" | "CONNECTED" | "SYNCING" | "DISCONNECTED" | "RESTRICTED"
+TradeStatus:       "OPEN" | "CLOSED"
+TradeSide:         "BUY" | "SELL"
+RiskSeverity:      "INFO" | "WARNING" | "CRITICAL"
+SubscriptionStatus: "ACTIVE" | "PAUSED" | "TRIAL" | "CANCELLED"
+
+MoneyValue:             { amount: number; currency: string }
+TraderAccountSummary:   { accountId, accountName, brokerName, status, balance, equity,
+                          floatingPnl, openTradeCount, drawdownPercent, updatedAt }
+TradeDto:               { id, accountId, symbol, side, status, volume, openPrice,
+                          closePrice, profit: MoneyValue, openedAt, closedAt }
+AnalyticsSummary:       { accountId, totalProfit, winRatePercent, maxDrawdownPercent,
+                          riskRewardRatio, consistencyScore, tradeCount, period }
+EquityPoint:            { capturedAt, balance, equity }
+RiskRuleDto:            { id, scope, name, severity, metric, threshold, enabled }
+RiskEventDto:           { id, accountId, ruleName, severity, message, createdAt }
+NotificationDto:        { id, accountId, type, title, message, readAt, createdAt }
+CrmNoteDto:             { id, traderId, authorName, note, createdAt }
+TraderProfileDto:       { traderId, name, email, segment, accountCount, totalEquity,
+                          lastActivityAt }
+AdminSummaryDto:        { activeTraders, connectedAccounts, openRiskEvents,
+                          monthlyRecurringRevenue }
+
+----------------------------------------------------------------
+BUSINESS LOGIC (src/lib/domain/metrics.ts + risk.ts)
+----------------------------------------------------------------
+Metrics calculated from raw trades array:
+  calculateTotalProfit()       Sum of closed trade profits
+  calculateWinRate()           % of profitable closed trades
+  calculateMaxDrawdown()       Peak-to-trough equity % decline
+  calculateRiskRewardRatio()   Avg win / avg loss
+  calculateProfitFactor()      Gross profit / gross loss
+  calculateConsistencyScore()  % of trading days that were profitable
+  buildAnalyticsSummary()      Combines all into AnalyticsSummary DTO
+
+Risk evaluation:
+  evaluateRiskRules()          Checks if account breaches DAILY_LOSS,
+                               MAX_DRAWDOWN, or OPEN_TRADES thresholds.
+                               Returns array of RiskEventDto.
+  shouldRestrictAccount()      Returns true if any CRITICAL severity event found.
+
+----------------------------------------------------------------
+BROKER INTEGRATION (current state)
+----------------------------------------------------------------
+The broker adapter interface (BrokerAdapter.ts) defines:
+  verifyConnection()
+  fetchSnapshot()           Account balance/equity snapshot
+  fetchOpenTrades()         Currently open positions
+  fetchTradeHistory()       Closed trade history
+
+Two implementations:
+  MockBrokerAdapter:        Returns deterministic mock data (dev use)
+  MetaApiBrokerAdapter:     Checks for METAAPI_TOKEN env var.
+                            All data methods throw "not implemented".
+                            THIS IS THE NEXT THING TO BE WIRED UP.
+
+Target broker: MetaTrader 5 via MetaAPI (https://metaapi.cloud)
+Env var needed: METAAPI_TOKEN
+
+----------------------------------------------------------------
+REALTIME (current state)
+----------------------------------------------------------------
+Supabase Realtime:
+  useRealtimeUpdates() hook subscribes to postgres_changes on:
+  - account_snapshots   → invalidates account + equity-curve queries
+  - trades             → invalidates trades + accounts queries
+  - risk_events        → invalidates risk-events queries
+  - notifications      → invalidates notifications queries
+
+Socket.io:
+  Server scaffolded in src/lib/realtime/server.ts
+  Events defined in src/lib/realtime/events.ts:
+    account.snapshot.updated
+    trade.opened, trade.closed
+    risk.event.created
+    notification.created
+  NOT YET MOUNTED or wired into the app lifecycle.
+
+----------------------------------------------------------------
+WHAT IS COMPLETE vs. INCOMPLETE
+----------------------------------------------------------------
+COMPLETE:
+  - Full UI across all 16 pages (polished, consistent design system)
+  - Supabase Auth (login, logout, session management)
+  - RBAC (role checks on every API route and server component)
+  - Database schema (15 tables, views, RLS policies)
+  - Service layer (all services querying Supabase)
+  - API routes (all routes implemented with envelope pattern)
+  - Data mapper pattern (DB rows → typed DTOs)
+  - Broker credential encryption (AES-256-GCM)
+  - React Query setup (keys, stale times, window focus refetch)
+  - Supabase Realtime query invalidation
+
+INCOMPLETE / SCAFFOLD:
+  - MetaAPI broker adapter (not implemented)
+  - Background sync worker (doesn't exist yet)
+  - Socket.io server mounting + event emission
+  - Reports page (export buttons are mock)
+  - Subscriptions page (no payment processor)
+  - Audit log admin page (DB table exists, page is scaffold)
+  - Email / push notifications (endpoints exist, no delivery)
+  - Forgot password / reset password (pages exist, untested)
+  - Calendar Tracker (UI exists, no real data)
+  - Market sentiment data (all synthetic/mock)
+  - Trading chart price data (sine-wave mock, updates every 2.4s)
+
+----------------------------------------------------------------
+ENVIRONMENT VARIABLES
+----------------------------------------------------------------
+NEXT_PUBLIC_SUPABASE_URL=         Supabase project URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY=    Supabase anon key (public)
+SUPABASE_SERVICE_ROLE_KEY=        Service role key (server only, bypasses RLS)
+SUPABASE_DB_PASSWORD=             DB password for migration scripts
+NEXT_PUBLIC_SITE_URL=             App base URL (e.g. http://localhost:3000)
+METAAPI_TOKEN=                    MetaAPI token for broker integration
+ENCRYPTION_KEY=                   32-char hex key for AES-256-GCM credential encryption
+
+----------------------------------------------------------------
+IMPORTANT CONVENTIONS
+----------------------------------------------------------------
+1. API response format: always { ok: true, data } or { ok: false, error: { code, message } }
+   Use helpers: jsonOk(data) and jsonFail(code, message, status)
+
+2. Auth in API routes: always call requireAuth(), requireAdmin(),
+   or requireTrader() at the top of every handler.
+
+3. Supabase clients:
+   - Browser: createClient() from lib/supabase/client.ts — RLS enforced
+   - Server SSR: createClient() from lib/supabase/server.ts — cookie-based, RLS enforced
+   - Admin bypass: createAdminClient() from lib/supabase/admin.ts — bypasses RLS
+
+4. Data types: DB uses snake_case columns, DTOs use camelCase.
+   All mapping happens in src/lib/mappers/.
+
+5. Path alias: @/* maps to src/* (e.g. import from "@/lib/auth/session")
+
+6. Mock data: all live data currently comes from src/lib/data/mockData.ts.
+   Services are written to query Supabase but fall back to / are supplemented
+   by mock data during development.
+
+7. Next.js 16 note (from AGENTS.md): This version has breaking changes —
+   APIs, conventions, and file structure may differ from training data.
+   Read node_modules/next/dist/docs/ before writing any Next.js-specific code.
+
+----------------------------------------------------------------
+END OF CONTEXT FILE
+================================================================

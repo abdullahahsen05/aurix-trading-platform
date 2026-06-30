@@ -5,4 +5,7 @@ export const queryKeys = {
   equityCurve: (accountId: string) => ["analytics", "equity-curve", accountId] as const,
   riskEvents: (accountId?: string) => ["risk", "events", accountId ?? "all"] as const,
   crmTraders: ["crm", "traders"] as const,
+  economicCalendar: ["economic-calendar"] as const,
+  adminAiUsage: ["admin", "ai", "usage"] as const,
+  adminAiUsers: ["admin", "ai", "users"] as const,
 };

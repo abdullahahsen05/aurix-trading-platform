@@ -11,9 +11,11 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "seed:supabase": "tsx scripts/seed-supabase.ts",
+    "seed:client-demo": "tsx scripts/seed-client-demo.ts",
     "migrate": "tsx scripts/run-migrations.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.8.0",
     "@playwright/test": "^1.59.1",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
@@ -31,6 +33,7 @@
     "jsdom": "^29.1.1",
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.14.0",
+    "metaapi.cloud-sdk": "^29.3.3",
     "next": "16.2.6",
     "pg": "^8.21.0",
     "react": "19.2.4",

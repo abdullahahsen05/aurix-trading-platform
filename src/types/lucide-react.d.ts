@@ -54,4 +54,24 @@ declare module 'lucide-react' {
   export const TrendingUp: LucideIcon
   export const X: LucideIcon
   export const ZoomIn: LucideIcon
+
+  // Icons used in AURIX — AI assistant module
+  export const Bot: LucideIcon
+  export const CalendarClock: LucideIcon
+  export const Send: LucideIcon
+  export const Upload: LucideIcon
+  export const ImagePlus: LucideIcon
+  export const Loader2: LucideIcon
+  export const MessageSquare: LucideIcon
+  export const Pencil: LucideIcon
+  export const Trash2: LucideIcon
+  export const Newspaper: LucideIcon
+
+  // Icons used in AURIX — copy trading module
+  export const Copy: LucideIcon
+  export const Repeat: LucideIcon
+  export const Play: LucideIcon
+  export const Power: LucideIcon
+  export const ShieldOff: LucideIcon
+  export const Clock: LucideIcon
 }
