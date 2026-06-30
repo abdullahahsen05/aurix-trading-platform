@@ -1,0 +1,364 @@
+"use client";
+
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, RefreshCcw, ShieldCheck, X } from "lucide-react";
+import { GhostButton, Panel, PrimaryButton, StatusPill } from "@/components/app/WorkspaceUI";
+
+interface CredentialStatus {
+  accountId: string;
+  credentialsStored: boolean;
+  provider: string | null;
+  providerAccountId: string | null;
+  lastSyncedAt: string | null;
+  syncError: string | null;
+  status: string | null;
+}
+
+interface SyncResult {
+  accountId: string;
+  status: string;
+  snapshotStored: boolean;
+  tradesUpserted: number;
+  lastSyncedAt?: string;
+  message?: string;
+}
+
+interface VerifyResult {
+  connected: boolean;
+  provider: string;
+  accountId: string;
+  checkedAt: string;
+  needsSync?: boolean;
+  message?: string | null;
+}
+
+async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
+  const res = await fetch(url, opts);
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error?.message ?? "Request failed");
+  return json.data as T;
+}
+
+export function BrokerConnectPanel({ accountId }: { accountId: string }) {
+  const queryClient = useQueryClient();
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState({
+    platform: "MT5",
+    login: "",
+    password: "",
+    server: "",
+    brokerName: "",
+  });
+  const [notice, setNotice] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+
+  const { data: credStatus, isLoading } = useQuery<CredentialStatus>({
+    queryKey: ["broker-cred-status", accountId],
+    queryFn: () => apiFetch(`/api/trading-accounts/${accountId}/broker-credentials`),
+    refetchOnWindowFocus: false,
+  });
+
+  const storeMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/trading-accounts/${accountId}/broker-credentials`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: form.platform,
+          login: form.login.trim(),
+          password: form.password,
+          server: form.server.trim(),
+          brokerName: form.brokerName.trim() || undefined,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["broker-cred-status", accountId] });
+      setFormOpen(false);
+      setForm({ platform: "MT5", login: "", password: "", server: "", brokerName: "" });
+      setNotice({ type: "success", text: "Credentials stored. You can now sync the account." });
+    },
+    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<VerifyResult>(`/api/trading-accounts/${accountId}/broker-credentials/verify`, {
+        method: "POST",
+      }),
+    onSuccess: (data) => {
+      setVerifyResult(data);
+      if (data.needsSync) {
+        setNotice({ type: "info", text: "Account has not been synced yet. Run Sync Account first." });
+      } else if (data.connected) {
+        setNotice({ type: "success", text: "Connection verified. MetaAPI is connected to your broker account." });
+      } else {
+        setNotice({ type: "error", text: data.message ?? "Connection verification failed." });
+      }
+    },
+    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<SyncResult>(`/api/trading-accounts/${accountId}/sync`, {
+        method: "POST",
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["broker-cred-status", accountId] });
+      if (data.status === "PENDING") {
+        setNotice({
+          type: "info",
+          text: data.message ?? "MetaAPI is still deploying. Check back in a moment.",
+        });
+      } else {
+        setNotice({
+          type: "success",
+          text: `Account synced. ${data.tradesUpserted} trades upserted${data.snapshotStored ? ", snapshot captured" : ""}.`,
+        });
+      }
+    },
+    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  });
+
+  const busy = storeMutation.isPending || verifyMutation.isPending || syncMutation.isPending;
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setNotice(null);
+    storeMutation.mutate();
+  }
+
+  if (isLoading) {
+    return (
+      <Panel>
+        <div className="h-6 w-48 animate-pulse rounded-lg bg-panel" />
+      </Panel>
+    );
+  }
+
+  const statusTone =
+    credStatus?.status === "CONNECTED"
+      ? ("lime" as const)
+      : credStatus?.status === "SYNCING"
+        ? ("accent" as const)
+        : ("muted" as const);
+
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">
+            Broker connection
+          </p>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">MT5 credentials</h2>
+          <p className="mt-1 text-sm text-muted">
+            Store your demo MT5 login to enable account sync and copy trading.
+          </p>
+        </div>
+        {credStatus?.status ? (
+          <StatusPill tone={statusTone}>{credStatus.status}</StatusPill>
+        ) : null}
+      </div>
+
+      {/* Status indicators */}
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-line bg-background px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+            Credentials
+          </p>
+          <div className="mt-1 flex items-center gap-1.5">
+            {credStatus?.credentialsStored ? (
+              <CheckCircle2 className="h-4 w-4 text-accent-2" />
+            ) : (
+              <div className="h-4 w-4 rounded-full border-2 border-line" />
+            )}
+            <span className="text-sm font-semibold text-foreground">
+              {credStatus?.credentialsStored ? "Stored" : "Not stored"}
+            </span>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-line bg-background px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+            MetaAPI account
+          </p>
+          <p className="mt-1 text-sm font-semibold text-foreground">
+            {credStatus?.providerAccountId ? "Provisioned" : "Not yet synced"}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-line bg-background px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+            Last synced
+          </p>
+          <p className="mt-1 text-sm font-semibold text-foreground">
+            {credStatus?.lastSyncedAt
+              ? new Date(credStatus.lastSyncedAt).toLocaleString()
+              : "Never"}
+          </p>
+        </div>
+      </div>
+
+      {/* Sync error */}
+      {credStatus?.syncError ? (
+        <div className="mt-3 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+          <strong>Sync error:</strong> {credStatus.syncError}
+        </div>
+      ) : null}
+
+      {/* Notice */}
+      {notice ? (
+        <div
+          className={`mt-3 rounded-2xl border px-4 py-3 text-sm font-medium ${
+            notice.type === "success"
+              ? "border-accent/20 bg-accent/10 text-accent"
+              : notice.type === "error"
+                ? "border-danger/20 bg-danger/10 text-danger"
+                : "border-line bg-panel text-muted"
+          }`}
+        >
+          {notice.text}
+        </div>
+      ) : null}
+
+      {/* Verify result */}
+      {verifyResult && !notice?.type.startsWith("e") ? (
+        <div className="mt-3 flex items-center gap-2 rounded-2xl border border-line bg-background px-4 py-3 text-sm">
+          {verifyResult.connected ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-accent-2" />
+          ) : (
+            <X className="h-4 w-4 shrink-0 text-danger" />
+          )}
+          <span className="text-muted">
+            Checked {new Date(verifyResult.checkedAt).toLocaleTimeString()}
+          </span>
+        </div>
+      ) : null}
+
+      {/* Actions */}
+      <div className="mt-4 flex flex-wrap gap-3">
+        <GhostButton type="button" onClick={() => { setFormOpen((o) => !o); setNotice(null); }}>
+          {credStatus?.credentialsStored ? "Update credentials" : "Store MT5 credentials"}
+        </GhostButton>
+        {credStatus?.credentialsStored ? (
+          <>
+            <GhostButton
+              type="button"
+              disabled={busy}
+              onClick={() => { setNotice(null); verifyMutation.mutate(); }}
+            >
+              <ShieldCheck className="mr-1.5 inline-block h-3.5 w-3.5" />
+              {verifyMutation.isPending ? "Verifying…" : "Verify connection"}
+            </GhostButton>
+            <PrimaryButton
+              type="button"
+              disabled={busy}
+              onClick={() => { setNotice(null); syncMutation.mutate(); }}
+            >
+              <RefreshCcw className={`mr-1.5 inline-block h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+              {syncMutation.isPending ? "Syncing…" : "Sync account"}
+            </PrimaryButton>
+          </>
+        ) : null}
+      </div>
+
+      {/* Credential form */}
+      {formOpen ? (
+        <form onSubmit={handleSubmit} className="mt-5 grid gap-4 border-t border-line pt-5">
+          <p className="text-sm text-muted">
+            Your password is encrypted (AES-256-GCM) before storage. It is never returned or logged.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                Platform
+              </label>
+              <select
+                value={form.platform}
+                onChange={(e) => setForm((f) => ({ ...f, platform: e.target.value }))}
+                className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
+              >
+                <option value="MT5">MT5</option>
+                <option value="MT4">MT4</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                Broker name (optional)
+              </label>
+              <input
+                type="text"
+                value={form.brokerName}
+                onChange={(e) => setForm((f) => ({ ...f, brokerName: e.target.value }))}
+                placeholder="e.g. ICMarkets, Pepperstone"
+                maxLength={100}
+                className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+              Login <span className="text-danger">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={form.login}
+              onChange={(e) => setForm((f) => ({ ...f, login: e.target.value }))}
+              placeholder="MT5 account number"
+              maxLength={50}
+              className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                Password <span className="text-danger">*</span>
+              </label>
+              <input
+                type="password"
+                required
+                value={form.password}
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder="Investor or main password"
+                maxLength={200}
+                autoComplete="new-password"
+                className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                Server <span className="text-danger">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={form.server}
+                onChange={(e) => setForm((f) => ({ ...f, server: e.target.value }))}
+                placeholder="e.g. ICMarketsSC-Demo02"
+                maxLength={100}
+                className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+            <p className="text-xs text-muted">
+              Saving new credentials replaces existing ones for this account.
+            </p>
+            <div className="flex gap-3">
+              <GhostButton
+                type="button"
+                onClick={() => { setFormOpen(false); setNotice(null); }}
+              >
+                Cancel
+              </GhostButton>
+              <PrimaryButton type="submit" disabled={busy}>
+                {storeMutation.isPending ? "Storing…" : "Store credentials"}
+              </PrimaryButton>
+            </div>
+          </div>
+        </form>
+      ) : null}
+    </Panel>
+  );
+}

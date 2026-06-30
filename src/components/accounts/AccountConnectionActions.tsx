@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { GhostButton, PrimaryButton } from "@/components/app/WorkspaceUI";
+import { StatusPill } from "@/components/app/WorkspaceUI";
+
+const STATUS_TONE: Record<string, "lime" | "accent" | "danger" | "muted"> = {
+  CONNECTED: "lime",
+  SYNCING: "accent",
+  DISCONNECTED: "danger",
+  RESTRICTED: "danger",
+  PENDING: "muted",
+};
 
 export function AccountConnectionActions({
-  accountName,
   status,
   compact = false,
 }: {
@@ -12,40 +18,16 @@ export function AccountConnectionActions({
   status: string;
   compact?: boolean;
 }) {
-  const [message, setMessage] = useState("");
+  const tone = STATUS_TONE[status] ?? "muted";
 
-  const handleDisconnect = () => {
-    setMessage(`Disconnect queued for ${accountName}.`);
-  };
-
-  const handleRefresh = () => {
-    setMessage(
-      status === "CONNECTED"
-        ? `Connection health check sent for ${accountName}.`
-        : `Reconnection queued for ${accountName}.`,
-    );
-  };
+  if (compact) {
+    return <StatusPill tone={tone}>{status}</StatusPill>;
+  }
 
   return (
-    <div className={`grid ${compact ? "gap-3" : "gap-4"}`}>
-      {message ? (
-        <div className="rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-medium text-accent">
-          {message}
-        </div>
-      ) : null}
-      <div className="flex flex-wrap gap-3">
-        <GhostButton type="button" onClick={handleDisconnect}>
-          Disconnect account
-        </GhostButton>
-        <PrimaryButton type="button" onClick={handleRefresh}>
-          {status === "CONNECTED" ? "Refresh status" : "Reconnect"}
-        </PrimaryButton>
-      </div>
-      {compact ? null : (
-        <p className="text-xs font-medium leading-5 text-muted">
-          These controls are wired to mock feedback only until broker integration is connected.
-        </p>
-      )}
+    <div className="flex items-center gap-3">
+      <StatusPill tone={tone}>{status}</StatusPill>
+      <p className="text-xs text-muted">Use the Broker connection panel below to sync or verify.</p>
     </div>
   );
 }

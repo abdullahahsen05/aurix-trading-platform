@@ -3,7 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { CheckCircle2, Search, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
 import {
   GhostButton,
@@ -20,14 +20,23 @@ import type { TraderAccountSummary } from "@/lib/domain/types";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 
 export default function AdminAccountsPage() {
+  const queryClient = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
+  const [credOpen, setCredOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "CONNECTED" | "SYNCING" | "DISCONNECTED" | "RESTRICTED" | "PENDING">(
     "ALL",
   );
+  const [credForm, setCredForm] = useState({
+    platform: "MT5",
+    login: "",
+    password: "",
+    server: "",
+    brokerName: "",
+  });
 
   const { data: accounts = [], isLoading } = useQuery<TraderAccountSummary[]>({
     queryKey: ["admin-accounts"],
@@ -53,6 +62,52 @@ export default function AdminAccountsPage() {
     setVerifyOpen(false);
     setSuccessMessage("Selected account verification queued in supervision.");
   };
+
+  const storeCreds = useMutation({
+    mutationFn: async () => {
+      if (!effectiveSelectedId) throw new Error("No account selected.");
+      const res = await fetch(`/api/trading-accounts/${effectiveSelectedId}/broker-credentials`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: credForm.platform,
+          login: credForm.login.trim(),
+          password: credForm.password,
+          server: credForm.server.trim(),
+          brokerName: credForm.brokerName.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to store credentials");
+      return json.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-accounts"] });
+      setCredOpen(false);
+      setCredForm({ platform: "MT5", login: "", password: "", server: "", brokerName: "" });
+      setSuccessMessage("Credentials stored for the selected account.");
+    },
+    onError: (err: Error) => setAccountMessage(err.message),
+  });
+
+  const syncAccount = useMutation({
+    mutationFn: async () => {
+      if (!effectiveSelectedId) throw new Error("No account selected.");
+      const res = await fetch(`/api/trading-accounts/${effectiveSelectedId}/sync`, { method: "POST" });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Sync failed");
+      return json.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-accounts"] });
+      setSuccessMessage(
+        data.status === "PENDING"
+          ? `Sync pending: ${data.message ?? "MetaAPI still deploying."}`
+          : `Sync complete. ${data.tradesUpserted} trades upserted.`,
+      );
+    },
+    onError: (err: Error) => setAccountMessage(err.message),
+  });
 
   return (
     <WorkspacePage
@@ -238,6 +293,19 @@ export default function AdminAccountsPage() {
             <div className="mt-5 flex flex-wrap gap-3">
               <GhostButton
                 type="button"
+                onClick={() => { setAccountMessage(""); setSuccessMessage(""); setCredOpen(true); }}
+              >
+                Store MT5 credentials
+              </GhostButton>
+              <GhostButton
+                type="button"
+                disabled={syncAccount.isPending}
+                onClick={() => { setAccountMessage(""); setSuccessMessage(""); syncAccount.mutate(); }}
+              >
+                {syncAccount.isPending ? "Syncing…" : "Sync account"}
+              </GhostButton>
+              <GhostButton
+                type="button"
                 onClick={() => setAccountMessage(`${selectedAccount.accountName} queued for removal from supervision.`)}
               >
                 Remove from queue
@@ -339,6 +407,103 @@ export default function AdminAccountsPage() {
           </Panel>
         )}
       />
+
+      {/* Store MT5 credentials dialog for selected account */}
+      <Dialog.Root open={credOpen} onOpenChange={setCredOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+            <Dialog.Title className="text-xl font-semibold text-foreground">Store MT5 credentials</Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
+              For: <strong>{selectedAccount?.accountName ?? "selected account"}</strong>. Credentials are encrypted with AES-256-GCM and never returned or logged.
+            </Dialog.Description>
+            <form
+              className="mt-5 grid gap-4"
+              onSubmit={(e) => { e.preventDefault(); storeCreds.mutate(); }}
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">Platform</label>
+                  <select
+                    value={credForm.platform}
+                    onChange={(e) => setCredForm((f) => ({ ...f, platform: e.target.value }))}
+                    className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  >
+                    <option value="MT5">MT5</option>
+                    <option value="MT4">MT4</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">Broker name (optional)</label>
+                  <input
+                    type="text"
+                    value={credForm.brokerName}
+                    onChange={(e) => setCredForm((f) => ({ ...f, brokerName: e.target.value }))}
+                    placeholder="e.g. ICMarkets"
+                    maxLength={100}
+                    className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">Login *</label>
+                <input
+                  type="text"
+                  required
+                  value={credForm.login}
+                  onChange={(e) => setCredForm((f) => ({ ...f, login: e.target.value }))}
+                  placeholder="MT5 account number"
+                  maxLength={50}
+                  className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">Password *</label>
+                  <input
+                    type="password"
+                    required
+                    value={credForm.password}
+                    onChange={(e) => setCredForm((f) => ({ ...f, password: e.target.value }))}
+                    placeholder="Investor or main password"
+                    maxLength={200}
+                    autoComplete="new-password"
+                    className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">Server *</label>
+                  <input
+                    type="text"
+                    required
+                    value={credForm.server}
+                    onChange={(e) => setCredForm((f) => ({ ...f, server: e.target.value }))}
+                    placeholder="e.g. ICMarketsSC-Demo02"
+                    maxLength={100}
+                    className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+                <p className="text-xs text-muted">Storing new credentials replaces existing ones.</p>
+                <div className="flex gap-3">
+                  <Dialog.Close asChild>
+                    <GhostButton type="button">Cancel</GhostButton>
+                  </Dialog.Close>
+                  <PrimaryButton type="submit" disabled={storeCreds.isPending}>
+                    {storeCreds.isPending ? "Storing…" : "Store credentials"}
+                  </PrimaryButton>
+                </div>
+              </div>
+            </form>
+            <Dialog.Close asChild>
+              <button type="button" aria-label="Close" className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </WorkspacePage>
   );
 }

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 import { DataTable, InlineStatusStrip, Panel, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
 import { AccountConnectionActions } from "@/components/accounts/AccountConnectionActions";
+import { BrokerConnectPanel } from "@/components/accounts/BrokerConnectPanel";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 import type { TraderAccountSummary, TradeDto, EquityPoint } from "@/lib/domain/types";
 
@@ -92,6 +93,10 @@ export default async function AccountDetailPage({
           { label: "Drawdown", value: formatPercent(account.drawdownPercent), helper: "Current max" },
         ]}
       />
+
+      <div className="mt-5">
+        <BrokerConnectPanel accountId={accountId} />
+      </div>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.62fr_0.38fr]">
         <Panel>
