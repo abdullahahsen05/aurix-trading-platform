@@ -463,7 +463,7 @@ export default function AccountsPage() {
                   <p className="text-sm font-semibold text-muted">{account.brokerName}</p>
                   <h2 className="mt-2 text-xl font-semibold text-foreground">{account.accountName}</h2>
                 </div>
-                <StatusPill tone={account.status === "CONNECTED" ? "lime" : account.status === "PENDING" ? "accent" : "muted"}>
+                <StatusPill tone={account.status === "CONNECTED" ? "lime" : account.status === "RESTRICTED" ? "danger" : account.status === "PENDING" || account.status === "SYNCING" ? "accent" : "muted"}>
                   {account.status}
                 </StatusPill>
               </div>
@@ -501,21 +501,6 @@ export default function AccountsPage() {
         )}
       </div>
 
-      {filteredAccounts.length > 0 ? (
-        <div className="mt-5">
-          <DataTable
-            headers={["Account", "Broker", "Status", "Open Trades", "Equity", "Drawdown"]}
-            rows={filteredAccounts.map((account) => [
-              <span key="name" className="font-semibold text-foreground">{account.accountName}</span>,
-              account.brokerName,
-              <StatusPill key="status" tone={account.status === "CONNECTED" ? "lime" : account.status === "PENDING" ? "accent" : "muted"}>{account.status}</StatusPill>,
-              account.openTradeCount,
-              <span key="equity" className="font-semibold text-accent-2">{formatMoney(account.equity)}</span>,
-              formatPercent(account.drawdownPercent),
-            ])}
-          />
-        </div>
-      ) : null}
     </WorkspacePage>
   );
 }

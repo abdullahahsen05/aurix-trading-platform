@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, X } from "lucide-react";
 import {
   DataTable,
   EmptyState,
@@ -41,14 +43,24 @@ interface AiUser {
   effectiveChartLimit: number;
   chatUsedToday: number;
   chartUsedToday: number;
+  aiTokenCredits: number;
 }
 
 export default function AdminAiPage() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState("");
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [disableAiUser, setDisableAiUser] = useState<AiUser | null>(null);
+
+  useEffect(() => {
+    if (!notice || notice.type !== "success") return;
+    const t = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(t);
+  }, [notice]);
   const [chatLimitInput, setChatLimitInput] = useState("");
   const [chartLimitInput, setChartLimitInput] = useState("");
+  const [creditInput, setCreditInput] = useState("");
+  const [creditMode, setCreditMode] = useState<"add" | "set">("add");
 
   const { data: usage, isLoading: usageLoading } = useQuery<UsageSummary>({
     queryKey: queryKeys.adminAiUsage,
@@ -100,7 +112,11 @@ export default function AdminAiPage() {
 
   function toggleEnabled(u: AiUser) {
     setNotice(null);
-    mutation.mutate({ userId: u.userId, body: { aiEnabled: !u.aiEnabled } });
+    if (u.aiEnabled) {
+      setDisableAiUser(u);
+    } else {
+      mutation.mutate({ userId: u.userId, body: { aiEnabled: true } });
+    }
   }
 
   function saveLimits(u: AiUser) {
@@ -111,10 +127,36 @@ export default function AdminAiPage() {
     mutation.mutate({ userId: u.userId, body });
   }
 
+  const creditMutation = useMutation({
+    mutationFn: async (payload: { userId: string; amount: number; mode: "add" | "set" }) => {
+      const res = await fetch(`/api/admin/ai/users/${payload.userId}/credits`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: payload.amount, mode: payload.mode }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to update credits");
+      return json.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminAiUsers });
+      setCreditInput("");
+      setNotice({ type: "success", text: "Token credits updated." });
+    },
+    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  });
+
+  function saveCredits(u: AiUser) {
+    setNotice(null);
+    const amount = Math.max(0, Number.parseInt(creditInput, 10) || 0);
+    creditMutation.mutate({ userId: u.userId, amount, mode: creditMode });
+  }
+
   function selectUser(u: AiUser) {
     setSelectedId(u.userId);
     setChatLimitInput(u.chatDailyLimit === null ? "" : String(u.chatDailyLimit));
     setChartLimitInput(u.chartDailyLimit === null ? "" : String(u.chartDailyLimit));
+    setCreditInput("");
   }
 
   return (
@@ -165,7 +207,7 @@ export default function AdminAiPage() {
               <EmptyState title="No users" description="No users to manage yet." />
             ) : (
               <DataTable
-                headers={["User", "Access", "Chat (used/limit)", "Chart (used/limit)", ""]}
+                headers={["User", "Access", "Chat (used/limit)", "Chart (used/limit)", "Credits", ""]}
                 rows={users.map((u) => [
                   <div key="u" className="min-w-0">
                     <p className="truncate text-sm font-semibold text-foreground">{u.name}</p>
@@ -176,6 +218,9 @@ export default function AdminAiPage() {
                   </StatusPill>,
                   <span key="c">{u.chatUsedToday}/{u.effectiveChatLimit}</span>,
                   <span key="ch">{u.chartUsedToday}/{u.effectiveChartLimit}</span>,
+                  <span key="cr" className={u.aiTokenCredits === 0 ? "text-danger font-semibold" : u.aiTokenCredits < 5000 ? "text-amber-400 font-semibold" : "text-foreground"}>
+                    {u.aiTokenCredits.toLocaleString()}
+                  </span>,
                   <GhostButton key="b" type="button" onClick={() => selectUser(u)}>
                     Manage
                   </GhostButton>,
@@ -237,6 +282,43 @@ export default function AdminAiPage() {
                   {mutation.isPending ? "Saving…" : "Save limits"}
                 </PrimaryButton>
               </div>
+
+              <div className="mt-5 border-t border-line pt-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Token credits</p>
+                <p className="mt-1 text-sm text-muted">
+                  Balance: <span className={selected.aiTokenCredits === 0 ? "font-bold text-danger" : selected.aiTokenCredits < 5000 ? "font-bold text-amber-400" : "font-semibold text-foreground"}>{selected.aiTokenCredits.toLocaleString()}</span>
+                </p>
+                <div className="mt-3 flex flex-wrap items-end gap-3">
+                  <div className="flex-1 min-w-[140px]">
+                    <TextField
+                      label="Amount"
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 50000"
+                      value={creditInput}
+                      onChange={(e) => setCreditInput(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[120px]">
+                    <label className="block text-xs font-medium text-muted mb-1">Mode</label>
+                    <select
+                      value={creditMode}
+                      onChange={(e) => setCreditMode(e.target.value as "add" | "set")}
+                      className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                    >
+                      <option value="add">Add</option>
+                      <option value="set">Set exact</option>
+                    </select>
+                  </div>
+                  <GhostButton
+                    type="button"
+                    disabled={creditMutation.isPending || !creditInput.trim()}
+                    onClick={() => saveCredits(selected)}
+                  >
+                    {creditMutation.isPending ? "Updating…" : "Update credits"}
+                  </GhostButton>
+                </div>
+              </div>
             </Panel>
           ) : null}
 
@@ -264,6 +346,43 @@ export default function AdminAiPage() {
           </Panel>
         </div>
       </div>
+      {/* Disable AI confirmation */}
+      <Dialog.Root open={Boolean(disableAiUser)} onOpenChange={(o) => !o && setDisableAiUser(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-danger/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+            <Dialog.Title className="flex items-center gap-2 text-xl font-semibold text-foreground">
+              <AlertTriangle className="h-5 w-5 text-danger" />
+              Disable AI for {disableAiUser?.name}?
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
+              This will immediately block <strong className="text-foreground">{disableAiUser?.name}</strong> from using the AI assistant. Their chat history is preserved. You can re-enable at any time.
+            </Dialog.Description>
+            <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
+              <Dialog.Close asChild>
+                <GhostButton type="button">Cancel</GhostButton>
+              </Dialog.Close>
+              <GhostButton
+                type="button"
+                disabled={mutation.isPending}
+                onClick={() => {
+                  if (disableAiUser) {
+                    mutation.mutate({ userId: disableAiUser.userId, body: { aiEnabled: false } });
+                    setDisableAiUser(null);
+                  }
+                }}
+              >
+                {mutation.isPending ? "Disabling…" : "Yes, disable AI"}
+              </GhostButton>
+            </div>
+            <Dialog.Close asChild>
+              <button type="button" aria-label="Close" className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </WorkspacePage>
   );
 }

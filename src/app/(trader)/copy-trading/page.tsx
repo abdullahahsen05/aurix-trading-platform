@@ -7,6 +7,7 @@ import { AlertTriangle, Repeat, X } from "lucide-react";
 import {
   DataTable,
   EmptyState,
+  FilterChipRow,
   GhostButton,
   Panel,
   PrimaryButton,
@@ -44,6 +45,8 @@ export default function CopyTradingPage() {
   const [followStrategy, setFollowStrategy] = useState<StrategyDto | null>(null);
   const [followAccountId, setFollowAccountId] = useState("");
   const [consent, setConsent] = useState(false);
+  const [revokeSubId, setRevokeSubId] = useState<string | null>(null);
+  const [logStatusFilter, setLogStatusFilter] = useState<"ALL" | "SUCCESS" | "SKIPPED" | "FAILED">("ALL");
 
   const { data: strategies = [], isLoading } = useQuery<StrategyDto[]>({
     queryKey: ["copy-strategies"],
@@ -147,9 +150,16 @@ export default function CopyTradingPage() {
                 <div key={s.id} className="rounded-xl border border-line bg-background px-4 py-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-foreground">{s.name}</p>
-                    <StatusPill tone={s.mode === "LIVE" ? "danger" : "muted"}>{s.mode}</StatusPill>
+                    <span title={s.mode === "LIVE" ? "Live mode: trades may execute on your account" : "Simulation mode: trades are tracked but not executed"}>
+                      <StatusPill tone={s.mode === "LIVE" ? "danger" : "muted"}>{s.mode}</StatusPill>
+                    </span>
                   </div>
                   {s.description ? <p className="mt-1 text-xs text-muted">{s.description}</p> : null}
+                  {s.mode === "LIVE" ? (
+                    <p className="mt-1 text-xs text-danger">Live mode — copied trades may execute on your connected account.</p>
+                  ) : (
+                    <p className="mt-1 text-xs text-muted">Simulation mode — no real trades are placed.</p>
+                  )}
                   <div className="mt-3">
                     <GhostButton type="button" onClick={() => { setFollowStrategy(s); setNotice(null); }}>
                       <Repeat className="mr-2 inline-block h-4 w-4" /> Follow
@@ -177,6 +187,9 @@ export default function CopyTradingPage() {
                     </div>
                     <StatusPill tone={STATUS_TONE[sub.status] ?? "muted"}>{sub.status}</StatusPill>
                   </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <StatusPill tone={sub.tier === "PREMIUM" ? "accent" : "muted"}>{sub.tier}</StatusPill>
+                  </div>
                   {sub.status !== "REVOKED" ? (
                     <div className="mt-3 flex flex-wrap gap-2">
                       {sub.status === "ACTIVE" ? (
@@ -188,7 +201,7 @@ export default function CopyTradingPage() {
                           Resume
                         </GhostButton>
                       )}
-                      <GhostButton type="button" disabled={updateSub.isPending} onClick={() => updateSub.mutate({ id: sub.id, status: "REVOKED" })}>
+                      <GhostButton type="button" disabled={updateSub.isPending} onClick={() => setRevokeSubId(sub.id)}>
                         Stop following
                       </GhostButton>
                     </div>
@@ -202,23 +215,83 @@ export default function CopyTradingPage() {
 
       {/* My copy logs */}
       <Panel className="mt-5 min-w-0">
-        <h2 className="mb-4 text-lg font-semibold text-foreground">My copy logs</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold text-foreground">My copy logs</h2>
+          {logs.length > 0 ? (
+            <FilterChipRow
+              chips={(["ALL", "SUCCESS", "SKIPPED", "FAILED"] as const).map((s) => ({
+                label: s === "ALL" ? `All (${logs.length})` : s,
+                active: logStatusFilter === s,
+                onClick: () => setLogStatusFilter(s),
+              }))}
+            />
+          ) : null}
+        </div>
         {logs.length === 0 ? (
           <p className="text-sm text-muted">No copy activity yet. Logs appear after simulation or live copy runs.</p>
-        ) : (
-          <DataTable
-            headers={["Date", "Symbol", "Action", "Mode", "Lot", "Status"]}
-            rows={logs.slice(0, 50).map((l) => [
-              <span key="d">{new Date(l.createdAt).toLocaleString()}</span>,
-              <span key="s">{l.symbol ?? "—"}</span>,
-              <span key="a">{l.action}</span>,
-              <span key="m">{l.mode}</span>,
-              <span key="l">{l.calculatedLot ?? "—"}</span>,
-              <StatusPill key="st" tone={STATUS_TONE[l.status] ?? "muted"}>{l.status}</StatusPill>,
-            ])}
-          />
-        )}
+        ) : (() => {
+          const filtered = logStatusFilter === "ALL" ? logs : logs.filter((l) => l.status === logStatusFilter);
+          const shown = filtered.slice(0, 50);
+          return (
+            <>
+              {filtered.length !== logs.length || filtered.length > 50 ? (
+                <p className="mb-3 text-xs text-muted">
+                  Showing {shown.length} of {filtered.length}{logStatusFilter !== "ALL" ? ` ${logStatusFilter}` : ""} logs
+                </p>
+              ) : null}
+              <DataTable
+                headers={["Date", "Symbol", "Action", "Mode", "Lot", "Status"]}
+                rows={shown.map((l) => [
+                  <span key="d">{new Date(l.createdAt).toLocaleString()}</span>,
+                  <span key="s">{l.symbol ?? "—"}</span>,
+                  <span key="a">{l.action}</span>,
+                  <span key="m">{l.mode}</span>,
+                  <span key="l">{l.calculatedLot ?? "—"}</span>,
+                  <StatusPill key="st" tone={STATUS_TONE[l.status] ?? "muted"}>{l.status}</StatusPill>,
+                ])}
+              />
+            </>
+          );
+        })()}
       </Panel>
+
+      {/* Stop following confirmation */}
+      <Dialog.Root open={Boolean(revokeSubId)} onOpenChange={(o) => !o && setRevokeSubId(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-danger/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+            <Dialog.Title className="flex items-center gap-2 text-xl font-semibold text-foreground">
+              <AlertTriangle className="h-5 w-5 text-danger" />
+              Stop following?
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
+              This will revoke your subscription. Open positions copied to your account are <strong className="text-foreground">not</strong> automatically closed — you are responsible for managing them.
+            </Dialog.Description>
+            <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
+              <Dialog.Close asChild>
+                <GhostButton type="button">Keep following</GhostButton>
+              </Dialog.Close>
+              <GhostButton
+                type="button"
+                disabled={updateSub.isPending}
+                onClick={() => {
+                  if (revokeSubId) {
+                    updateSub.mutate({ id: revokeSubId, status: "REVOKED" });
+                    setRevokeSubId(null);
+                  }
+                }}
+              >
+                {updateSub.isPending ? "Stopping…" : "Yes, stop following"}
+              </GhostButton>
+            </div>
+            <Dialog.Close asChild>
+              <button type="button" aria-label="Close" className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       {/* Follow dialog */}
       <Dialog.Root open={Boolean(followStrategy)} onOpenChange={(o) => !o && setFollowStrategy(null)}>

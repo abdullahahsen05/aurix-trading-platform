@@ -1,7 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Play, Plus, Power, Repeat, ShieldOff, X } from "lucide-react";
 import {
@@ -22,6 +22,20 @@ import type {
   CopyStrategyDto,
   MasterEventDto,
 } from "@/lib/copy/types";
+
+interface AdminFollowerDto {
+  id: string;
+  followerAccountId: string;
+  followerAccountName: string | null;
+  traderId: string;
+  status: string;
+  tier: "NORMAL" | "PREMIUM";
+  scalingMode: string | null;
+  riskMultiplier: number | null;
+  fixedLot: number | null;
+  maxLot: number | null;
+  createdAt: string;
+}
 import type { TraderAccountSummary } from "@/lib/domain/types";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -47,6 +61,12 @@ export default function AdminCopyPage() {
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+
+  useEffect(() => {
+    if (!notice || notice.type !== "success") return;
+    const t = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(t);
+  }, [notice]);
   const [selectedId, setSelectedId] = useState("");
   const [form, setForm] = useState({ name: "", masterAccountId: "", riskMultiplier: "1" });
 
@@ -55,6 +75,7 @@ export default function AdminCopyPage() {
     queryFn: () => getJson("/api/admin/copy/settings"),
   });
   const [executeEventId, setExecuteEventId] = useState<string | null>(null);
+  const [confirmLiveCopyOpen, setConfirmLiveCopyOpen] = useState(false);
   const { data: strategies = [], isLoading } = useQuery<CopyStrategyDto[]>({
     queryKey: ["admin-copy-strategies"],
     queryFn: () => getJson("/api/admin/copy/strategies"),
@@ -86,10 +107,17 @@ export default function AdminCopyPage() {
     refetchOnWindowFocus: false,
   });
 
+  const { data: followers = [] } = useQuery<AdminFollowerDto[]>({
+    queryKey: ["admin-copy-followers", selectedStrategyId],
+    queryFn: () => getJson(`/api/admin/copy/strategies/${selectedStrategyId}/followers`),
+    enabled: Boolean(selectedStrategyId),
+  });
+
   function invalidateAll() {
     queryClient.invalidateQueries({ queryKey: ["admin-copy-strategies"] });
     queryClient.invalidateQueries({ queryKey: ["admin-copy-events", selectedStrategyId] });
     queryClient.invalidateQueries({ queryKey: ["admin-copy-logs", selectedStrategyId] });
+    queryClient.invalidateQueries({ queryKey: ["admin-copy-followers", selectedStrategyId] });
     queryClient.invalidateQueries({ queryKey: ["admin-copy-settings"] });
   }
 
@@ -138,13 +166,15 @@ export default function AdminCopyPage() {
         </PageActionGroup>
       }
     >
-      <div className="mb-5 flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
+      <div className={`mb-5 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm ${settings?.executionConfigured ? "border-danger/30 bg-danger/10 text-danger" : "border-accent/30 bg-accent/10 text-accent"}`}>
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <p>
-          Live execution is <strong>disabled by default</strong>. Always use simulation before enabling live copy.
-          Live order execution is not yet connected to a broker — live attempts return{" "}
-          <code>COPY_EXECUTION_NOT_CONFIGURED</code>.
-        </p>
+        <div>
+          {settings?.executionConfigured ? (
+            <p><strong>BROKER_EXECUTION_ENABLED=true</strong> — Live orders can be placed on follower accounts. Confirm all safety checks before executing.</p>
+          ) : (
+            <p>Execution mode: <strong>SIMULATION</strong> — Live order execution is disabled (<code>BROKER_EXECUTION_ENABLED=false</code>). Safe to test.</p>
+          )}
+        </div>
       </div>
 
       <InlineStatusStrip
@@ -188,14 +218,13 @@ export default function AdminCopyPage() {
         <div className="mt-4 flex flex-wrap gap-3">
           <GhostButton
             type="button"
-            onClick={() =>
-              action.mutate({
-                url: "/api/admin/copy/settings",
-                method: "PATCH",
-                body: { liveCopyEnabled: !settings?.liveCopyEnabled },
-                label: "global live toggle",
-              })
-            }
+            onClick={() => {
+              if (!settings?.liveCopyEnabled) {
+                setConfirmLiveCopyOpen(true);
+              } else {
+                action.mutate({ url: "/api/admin/copy/settings", method: "PATCH", body: { liveCopyEnabled: false }, label: "disable live copy" });
+              }
+            }}
           >
             <Power className="mr-2 inline-block h-4 w-4" />
             {settings?.liveCopyEnabled ? "Disable live copy" : "Enable live copy"}
@@ -372,7 +401,10 @@ export default function AdminCopyPage() {
       {selectedStrategyId ? (
         <div className="mt-5 grid gap-5 xl:grid-cols-2">
           <Panel>
-            <h3 className="mb-3 text-sm font-semibold text-foreground">Master events</h3>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-foreground">Master events</h3>
+              {events.length > 15 ? <span className="text-xs text-muted">Showing 15 of {events.length}</span> : events.length > 0 ? <span className="text-xs text-muted">{events.length} events</span> : null}
+            </div>
             {events.length === 0 ? (
               <p className="text-sm text-muted">No master events detected yet. Click Monitor.</p>
             ) : (
@@ -402,7 +434,10 @@ export default function AdminCopyPage() {
             )}
           </Panel>
           <Panel>
-            <h3 className="mb-3 text-sm font-semibold text-foreground">Execution logs</h3>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-foreground">Execution logs</h3>
+              {logs.length > 15 ? <span className="text-xs text-muted">Showing 15 of {logs.length}</span> : logs.length > 0 ? <span className="text-xs text-muted">{logs.length} logs</span> : null}
+            </div>
             {logs.length === 0 ? (
               <p className="text-sm text-muted">No simulation/execution logs yet.</p>
             ) : (
@@ -422,6 +457,57 @@ export default function AdminCopyPage() {
             )}
           </Panel>
         </div>
+      ) : null}
+
+      {/* Followers panel */}
+      {selectedStrategyId ? (
+        <Panel className="mt-5">
+          <h3 className="mb-3 text-sm font-semibold text-foreground">
+            Followers
+            <span className="ml-2 text-xs font-normal text-muted">
+              PREMIUM are processed before NORMAL
+            </span>
+          </h3>
+          {followers.length === 0 ? (
+            <p className="text-sm text-muted">No followers on this strategy yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {followers.map((f) => (
+                <div
+                  key={f.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-background px-3 py-2 text-xs"
+                >
+                  <div className="min-w-0">
+                    <span className="font-semibold text-foreground">
+                      {f.followerAccountName ?? f.followerAccountId.slice(0, 8)}
+                    </span>
+                    <span className="ml-2 text-muted">{f.status}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusPill tone={f.tier === "PREMIUM" ? "accent" : "muted"}>
+                      {f.tier}
+                    </StatusPill>
+                    <select
+                      value={f.tier}
+                      onChange={(e) =>
+                        action.mutate({
+                          url: `/api/admin/copy/strategies/${selectedStrategyId}/followers`,
+                          method: "PATCH",
+                          body: { followerId: f.id, tier: e.target.value },
+                          label: `set tier ${e.target.value}`,
+                        })
+                      }
+                      className="rounded border border-line bg-panel px-2 py-0.5 text-xs text-foreground"
+                    >
+                      <option value="NORMAL">NORMAL</option>
+                      <option value="PREMIUM">PREMIUM</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
       ) : null}
 
       {/* Create strategy dialog */}
@@ -484,6 +570,36 @@ export default function AdminCopyPage() {
                 <X className="h-4 w-4" />
               </button>
             </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Enable live copy confirmation */}
+      <Dialog.Root open={confirmLiveCopyOpen} onOpenChange={setConfirmLiveCopyOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-danger/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+            <Dialog.Title className="flex items-center gap-2 text-xl font-semibold text-foreground">
+              <AlertTriangle className="h-5 w-5 text-danger" />
+              Enable live copy trading?
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
+              This enables the live copy flag globally. Trades will still only execute if <code>BROKER_EXECUTION_ENABLED=true</code> is set in the environment. All per-strategy and per-follower guards remain in effect.
+            </Dialog.Description>
+            <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
+              <Dialog.Close asChild>
+                <GhostButton type="button">Cancel</GhostButton>
+              </Dialog.Close>
+              <GhostButton
+                type="button"
+                onClick={() => {
+                  action.mutate({ url: "/api/admin/copy/settings", method: "PATCH", body: { liveCopyEnabled: true }, label: "enable live copy" });
+                  setConfirmLiveCopyOpen(false);
+                }}
+              >
+                Confirm enable
+              </GhostButton>
+            </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

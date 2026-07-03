@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { CheckCircle2, Search, X } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
 import {
@@ -19,6 +19,15 @@ import { SelectField } from "@/components/app/FormFields";
 import type { TraderAccountSummary } from "@/lib/domain/types";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 
+const STATUS_TONE: Record<string, "lime" | "accent" | "danger" | "muted"> = {
+  CONNECTED: "lime",
+  SYNCING: "accent",
+  PENDING: "accent",
+  DISCONNECTED: "muted",
+  RESTRICTED: "danger",
+  INACTIVE: "muted",
+};
+
 export default function AdminAccountsPage() {
   const queryClient = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -26,8 +35,17 @@ export default function AdminAccountsPage() {
   const [credOpen, setCredOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [accountMessage, setAccountMessage] = useState("");
+
+  // Auto-dismiss success messages after 6 seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const t = setTimeout(() => setSuccessMessage(""), 6000);
+    return () => clearTimeout(t);
+  }, [successMessage]);
   const [selectedId, setSelectedId] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "CONNECTED" | "SYNCING" | "DISCONNECTED" | "RESTRICTED" | "PENDING">(
+  const [confirmDeactivateOpen, setConfirmDeactivateOpen] = useState(false);
+  const [confirmReactivateOpen, setConfirmReactivateOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "CONNECTED" | "SYNCING" | "DISCONNECTED" | "RESTRICTED" | "PENDING" | "INACTIVE">(
     "ALL",
   );
   const [credForm, setCredForm] = useState({
@@ -60,7 +78,7 @@ export default function AdminAccountsPage() {
   const handleVerify = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setVerifyOpen(false);
-    setSuccessMessage("Selected account verification queued in supervision.");
+    setSuccessMessage("Verification queued (feature coming soon — no API call made).");
   };
 
   const storeCreds = useMutation({
@@ -102,8 +120,42 @@ export default function AdminAccountsPage() {
       queryClient.invalidateQueries({ queryKey: ["admin-accounts"] });
       setSuccessMessage(
         data.status === "PENDING"
-          ? `Sync pending: ${data.message ?? "MetaAPI still deploying."}`
-          : `Sync complete. ${data.tradesUpserted} trades upserted.`,
+          ? `MetaAPI is still deploying — sync will complete automatically. Check back in a minute.`
+          : `Sync complete: ${data.tradesUpserted} trade${data.tradesUpserted !== 1 ? "s" : ""} updated.`,
+      );
+    },
+    onError: (err: Error) => setAccountMessage(err.message),
+  });
+
+  const deactivateAccount = useMutation({
+    mutationFn: async () => {
+      if (!effectiveSelectedId) throw new Error("No account selected.");
+      const res = await fetch(`/api/admin/accounts/${effectiveSelectedId}/deactivate`, { method: "POST" });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Deactivation failed");
+      return json.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-accounts"] });
+      setSuccessMessage(
+        `Account deactivated. MetaAPI: ${data.providerResult}.${data.providerError ? ` Note: ${data.providerError}` : ""}`,
+      );
+    },
+    onError: (err: Error) => setAccountMessage(err.message),
+  });
+
+  const reactivateAccount = useMutation({
+    mutationFn: async () => {
+      if (!effectiveSelectedId) throw new Error("No account selected.");
+      const res = await fetch(`/api/admin/accounts/${effectiveSelectedId}/reactivate`, { method: "POST" });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Reactivation failed");
+      return json.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-accounts"] });
+      setSuccessMessage(
+        `Account reactivated (${data.status}). MetaAPI: ${data.providerResult}.${data.providerError ? ` Note: ${data.providerError}` : ""}`,
       );
     },
     onError: (err: Error) => setAccountMessage(err.message),
@@ -179,6 +231,10 @@ export default function AdminAccountsPage() {
             tone: "accent",
           },
           {
+            label: "Inactive",
+            value: accounts.filter((a) => a.status === "INACTIVE").length,
+          },
+          {
             label: "Open trades",
             value: accounts.reduce((sum, a) => sum + a.openTradeCount, 0),
           },
@@ -228,6 +284,14 @@ export default function AdminAccountsPage() {
                 setSelectedId(accounts.find((a) => a.status === "RESTRICTED")?.accountId ?? accounts[0]?.accountId ?? "");
               },
             },
+            {
+              label: `Inactive (${accounts.filter((a) => a.status === "INACTIVE").length})`,
+              active: statusFilter === "INACTIVE",
+              onClick: () => {
+                setStatusFilter("INACTIVE");
+                setSelectedId(accounts.find((a) => a.status === "INACTIVE")?.accountId ?? accounts[0]?.accountId ?? "");
+              },
+            },
           ]}
         />
       </div>
@@ -253,7 +317,7 @@ export default function AdminAccountsPage() {
                 <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedAccount.accountName}</h2>
                 <p className="mt-1 text-sm text-muted">{selectedAccount.brokerName}</p>
               </div>
-              <StatusPill tone={selectedAccount.status === "CONNECTED" ? "lime" : "accent"}>
+              <StatusPill tone={STATUS_TONE[selectedAccount.status] ?? "muted"}>
                 {selectedAccount.status}
               </StatusPill>
             </div>
@@ -304,9 +368,26 @@ export default function AdminAccountsPage() {
               >
                 {syncAccount.isPending ? "Syncing…" : "Sync account"}
               </GhostButton>
+              {selectedAccount.status === "INACTIVE" ? (
+                <GhostButton
+                  type="button"
+                  disabled={reactivateAccount.isPending}
+                  onClick={() => { setAccountMessage(""); setSuccessMessage(""); setConfirmReactivateOpen(true); }}
+                >
+                  Reactivate
+                </GhostButton>
+              ) : (
+                <GhostButton
+                  type="button"
+                  disabled={deactivateAccount.isPending}
+                  onClick={() => { setAccountMessage(""); setSuccessMessage(""); setConfirmDeactivateOpen(true); }}
+                >
+                  Deactivate
+                </GhostButton>
+              )}
               <GhostButton
                 type="button"
-                onClick={() => setAccountMessage(`${selectedAccount.accountName} queued for removal from supervision.`)}
+                onClick={() => setAccountMessage("Remove from queue is coming soon — no action taken.")}
               >
                 Remove from queue
               </GhostButton>
@@ -342,6 +423,7 @@ export default function AdminAccountsPage() {
               { value: "PENDING", label: "Pending" },
               { value: "DISCONNECTED", label: "Disconnected" },
               { value: "RESTRICTED", label: "Restricted" },
+              { value: "INACTIVE", label: "Inactive" },
             ],
           },
         ]}
@@ -364,7 +446,7 @@ export default function AdminAccountsPage() {
                 <p className="truncate text-sm font-semibold text-foreground">{account.accountName}</p>
                 <p className="mt-1 truncate text-xs text-muted">{account.brokerName}</p>
               </div>
-              <StatusPill tone={account.status === "CONNECTED" ? "lime" : "accent"}>{account.status}</StatusPill>
+              <StatusPill tone={STATUS_TONE[account.status] ?? "muted"}>{account.status}</StatusPill>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
@@ -384,7 +466,7 @@ export default function AdminAccountsPage() {
                 <h3 className="mt-2 text-lg font-semibold text-foreground">{account.accountName}</h3>
                 <p className="mt-1 text-sm text-muted">{account.brokerName}</p>
               </div>
-              <StatusPill tone={account.status === "CONNECTED" ? "lime" : "accent"}>{account.status}</StatusPill>
+              <StatusPill tone={STATUS_TONE[account.status] ?? "muted"}>{account.status}</StatusPill>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
@@ -407,6 +489,66 @@ export default function AdminAccountsPage() {
           </Panel>
         )}
       />
+
+      {/* Deactivate confirmation */}
+      <Dialog.Root open={confirmDeactivateOpen} onOpenChange={setConfirmDeactivateOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-danger/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+            <Dialog.Title className="text-xl font-semibold text-foreground">Deactivate account?</Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
+              <strong className="text-foreground">{selectedAccount?.accountName}</strong> will be undeployed from MetaAPI (saves cost). The account data stays intact — you can reactivate at any time.
+            </Dialog.Description>
+            <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
+              <Dialog.Close asChild>
+                <GhostButton type="button">Cancel</GhostButton>
+              </Dialog.Close>
+              <GhostButton
+                type="button"
+                disabled={deactivateAccount.isPending}
+                onClick={() => { setConfirmDeactivateOpen(false); deactivateAccount.mutate(); }}
+              >
+                {deactivateAccount.isPending ? "Deactivating…" : "Yes, deactivate"}
+              </GhostButton>
+            </div>
+            <Dialog.Close asChild>
+              <button type="button" aria-label="Close" className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Reactivate confirmation */}
+      <Dialog.Root open={confirmReactivateOpen} onOpenChange={setConfirmReactivateOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-accent/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+            <Dialog.Title className="text-xl font-semibold text-foreground">Reactivate account?</Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
+              <strong className="text-foreground">{selectedAccount?.accountName}</strong> will be redeployed on MetaAPI. This will resume MetaAPI billing for this account.
+            </Dialog.Description>
+            <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
+              <Dialog.Close asChild>
+                <GhostButton type="button">Cancel</GhostButton>
+              </Dialog.Close>
+              <PrimaryButton
+                type="button"
+                disabled={reactivateAccount.isPending}
+                onClick={() => { setConfirmReactivateOpen(false); reactivateAccount.mutate(); }}
+              >
+                {reactivateAccount.isPending ? "Reactivating…" : "Yes, reactivate"}
+              </PrimaryButton>
+            </div>
+            <Dialog.Close asChild>
+              <button type="button" aria-label="Close" className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </Dialog.Close>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       {/* Store MT5 credentials dialog for selected account */}
       <Dialog.Root open={credOpen} onOpenChange={setCredOpen}>
@@ -484,6 +626,11 @@ export default function AdminAccountsPage() {
                   />
                 </div>
               </div>
+              {selectedAccount?.status === "CONNECTED" ? (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                  This account is currently <strong>CONNECTED</strong>. Storing new credentials will replace the existing ones immediately.
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
                 <p className="text-xs text-muted">Storing new credentials replaces existing ones.</p>
                 <div className="flex gap-3">
