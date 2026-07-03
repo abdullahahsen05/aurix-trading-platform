@@ -15,7 +15,7 @@ import {
 } from "@/components/app/WorkspaceUI";
 import { SearchField } from "@/components/app/FormFields";
 import { formatMoney } from "@/lib/utils/format";
-import type { PartnerTraderDto, TraderRiskStatus } from "@/lib/partner/types";
+import type { PartnerAccountStatusSummary, PartnerTraderDto, TraderRiskStatus } from "@/lib/partner/types";
 import type { TradeDto } from "@/lib/domain/types";
 
 const RISK_TONE: Record<TraderRiskStatus, "lime" | "accent" | "danger"> = {
@@ -151,6 +151,17 @@ export default function PartnerTradersPage() {
                   <Stat label="Open risk events" value={selected.openRiskEvents} />
                 </div>
 
+                {selected.accounts && selected.accounts.length > 0 ? (
+                  <div className="mt-4 border-t border-line pt-4">
+                    <p className="mb-2 text-sm font-semibold text-foreground">Accounts</p>
+                    <div className="space-y-1.5">
+                      {selected.accounts.map((acc) => (
+                        <AccountStatusRow key={acc.accountId} acc={acc} />
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="mt-5 border-t border-line pt-4">
                   <p className="mb-2 text-sm font-semibold text-foreground">Recent trades</p>
                   {detail && detail.recentTrades.length > 0 ? (
@@ -187,6 +198,28 @@ function Stat({ label, value }: { label: string; value: string | number }) {
     <div className="rounded-2xl border border-line bg-background px-4 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">{label}</p>
       <p className="mt-1 text-sm font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+const ACCOUNT_STATUS_TONE: Record<string, "lime" | "accent" | "danger" | "muted"> = {
+  CONNECTED: "lime",
+  SYNCING: "accent",
+  PENDING: "accent",
+  DISCONNECTED: "muted",
+  RESTRICTED: "danger",
+  INACTIVE: "muted",
+};
+
+function AccountStatusRow({ acc }: { acc: PartnerAccountStatusSummary }) {
+  const tone = ACCOUNT_STATUS_TONE[acc.status] ?? "muted";
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-background px-3 py-2 text-xs">
+      <span className="truncate font-semibold text-foreground">{acc.accountName ?? acc.accountId.slice(0, 8)}</span>
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="text-muted">{acc.currency}</span>
+        <StatusPill tone={tone}>{acc.status}</StatusPill>
+      </div>
     </div>
   );
 }

@@ -399,6 +399,7 @@ interface FollowerRow {
   follower_account_id: string;
   trader_id: string;
   status: CopyFollowerDto["status"];
+  tier: "NORMAL" | "PREMIUM";
   scaling_mode: ScalingMode | null;
   risk_multiplier: number | string | null;
   fixed_lot: number | string | null;
@@ -416,12 +417,14 @@ async function loadActiveFollowers(strategyId: string): Promise<FollowerRow[]> {
   const { data } = await supabase
     .from("copy_strategy_followers")
     .select(
-      "id, follower_account_id, trader_id, status, scaling_mode, risk_multiplier, fixed_lot, max_lot, max_open_trades, max_daily_loss_percent, max_drawdown_percent, symbol_allowlist, symbol_blocklist, consent_accepted_at",
+      "id, follower_account_id, trader_id, status, tier, scaling_mode, risk_multiplier, fixed_lot, max_lot, max_open_trades, max_daily_loss_percent, max_drawdown_percent, symbol_allowlist, symbol_blocklist, consent_accepted_at",
     )
     .eq("strategy_id", strategyId)
     .eq("status", "ACTIVE")
     .limit(2000);
-  return (data ?? []) as FollowerRow[];
+  // PREMIUM followers are processed before NORMAL — ordering guarantee, not broker latency.
+  const rows = (data ?? []) as FollowerRow[];
+  return rows.sort((a, b) => (a.tier === b.tier ? 0 : a.tier === "PREMIUM" ? -1 : 1));
 }
 
 interface SimResult {
@@ -902,6 +905,7 @@ export async function listMySubscriptions(traderUserId: string): Promise<CopyFol
       maxLot: r.max_lot === null ? null : Number(r.max_lot),
       consentAcceptedAt: r.consent_accepted_at,
       createdAt: r.created_at,
+      tier: ((r as any).tier ?? "NORMAL") as "NORMAL" | "PREMIUM",
     };
   });
 }
@@ -982,6 +986,7 @@ export async function followStrategy(
     maxLot: data.max_lot === null ? null : Number(data.max_lot),
     consentAcceptedAt: data.consent_accepted_at,
     createdAt: data.created_at,
+    tier: "NORMAL" as const,
   };
 }
 

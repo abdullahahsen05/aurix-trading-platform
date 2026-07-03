@@ -4,7 +4,8 @@ export type AccountStatus =
   | "CONNECTED"
   | "SYNCING"
   | "DISCONNECTED"
-  | "RESTRICTED";
+  | "RESTRICTED"
+  | "INACTIVE";
 export type TradeStatus = "OPEN" | "CLOSED";
 export type TradeSide = "BUY" | "SELL";
 export type RiskSeverity = "INFO" | "WARNING" | "CRITICAL";

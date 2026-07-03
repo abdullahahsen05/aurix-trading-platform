@@ -141,6 +141,7 @@ export interface AiUserRow {
   effectiveChartLimit: number;
   chatUsedToday: number;
   chartUsedToday: number;
+  aiTokenCredits: number;
 }
 
 export async function listAiUsers(): Promise<AiUserRow[]> {
@@ -152,7 +153,7 @@ export async function listAiUsers(): Promise<AiUserRow[]> {
       .select("id, full_name, email, role")
       .order("created_at", { ascending: false })
       .limit(500),
-    supabase.from("ai_user_limits").select("user_id, chat_daily_limit, chart_daily_limit, ai_enabled"),
+    supabase.from("ai_user_limits").select("user_id, chat_daily_limit, chart_daily_limit, ai_enabled, ai_token_credits"),
   ]);
   if (pErr) throw new Error(`Failed to fetch users: ${pErr.message}`);
   if (lErr) throw new Error(`Failed to fetch AI limits: ${lErr.message}`);
@@ -180,6 +181,7 @@ export async function listAiUsers(): Promise<AiUserRow[]> {
         chat: l.chat_daily_limit as number | null,
         chart: l.chart_daily_limit as number | null,
         enabled: l.ai_enabled as boolean,
+        credits: (l.ai_token_credits as number) ?? 50000,
       },
     ]),
   );
@@ -201,6 +203,7 @@ export async function listAiUsers(): Promise<AiUserRow[]> {
       effectiveChartLimit: chartLimit ?? DEFAULT_CHART_LIMIT,
       chatUsedToday: used.chat,
       chartUsedToday: used.chart,
+      aiTokenCredits: lim?.credits ?? 50000,
     };
   });
 }

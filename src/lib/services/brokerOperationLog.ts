@@ -19,7 +19,9 @@ export type BrokerOperation =
   | "CLOSE_TRADE"
   | "MODIFY_TRADE"
   | "SYNC_ACCOUNT"
-  | "MONITOR_MASTER";
+  | "MONITOR_MASTER"
+  | "DEACTIVATE_ACCOUNT"
+  | "REACTIVATE_ACCOUNT";
 
 export async function logBrokerOperation(params: {
   accountId: string | null;

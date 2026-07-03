@@ -104,9 +104,7 @@ export class MetaApiBrokerAdapter implements BrokerAdapter {
     this.assertConfigured();
     const providerAccountId = await this.resolveProviderAccountId(accountId);
 
-    // Dynamic import keeps the heavy Node-only SDK out of the bundle graph
-    // (paired with serverExternalPackages in next.config.ts).
-    const MetaApi = ((await import("metaapi.cloud-sdk")) as any).default;
+    const MetaApi = ((await import("metaapi.cloud-sdk/node")) as any).default;
     const api = new MetaApi(this.token);
     let connection: any = null;
     try {
@@ -275,5 +273,39 @@ export class MetaApiBrokerAdapter implements BrokerAdapter {
       );
       return this.interpretTradeResponse(resp);
     });
+  }
+
+  // ── Account lifecycle (cost management) ───────────────────────────────────
+
+  /** Undeploy a MetaAPI account to stop billing. Credentials are preserved. */
+  async deactivateAccount(providerAccountId: string): Promise<void> {
+    this.assertConfigured();
+    const MetaApi = ((await import("metaapi.cloud-sdk/node")) as any).default;
+    const api = new MetaApi(this.token);
+    try {
+      const metaAccount = await api.metatraderAccountApi.getAccount(providerAccountId);
+      if (metaAccount.state !== "UNDEPLOYED") {
+        await metaAccount.undeploy();
+        await metaAccount.waitUndeployed(120, 2000);
+      }
+    } finally {
+      try { api.close(); } catch { /* ignore */ }
+    }
+  }
+
+  /** Redeploy a previously undeployed MetaAPI account. */
+  async reactivateAccount(providerAccountId: string): Promise<void> {
+    this.assertConfigured();
+    const MetaApi = ((await import("metaapi.cloud-sdk/node")) as any).default;
+    const api = new MetaApi(this.token);
+    try {
+      const metaAccount = await api.metatraderAccountApi.getAccount(providerAccountId);
+      if (metaAccount.state !== "DEPLOYED") {
+        await metaAccount.deploy();
+        await metaAccount.waitDeployed(120, 2000);
+      }
+    } finally {
+      try { api.close(); } catch { /* ignore */ }
+    }
   }
 }

@@ -113,6 +113,40 @@ export default function AdminTerminalPage() {
         <div className="py-16 text-center text-sm text-muted-foreground">Loading…</div>
       )}
 
+      {/* Professional Tier locked status — always visible */}
+      <div className="mb-6 rounded-2xl border border-zinc-700 bg-zinc-900/60 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+              Professional Tier
+            </p>
+            <h3 className="mt-1 text-base font-bold text-zinc-100">
+              🔒 Professional Live Market Data — Locked
+            </h3>
+            <p className="mt-1.5 max-w-xl text-sm text-zinc-400">
+              dxFeed / Devexperts integration is built and ready. Live professional market data
+              will be unlocked once a data redistribution agreement is signed and API credentials
+              are configured below.
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full border border-zinc-700 bg-zinc-800 px-3 py-1 text-xs font-semibold text-zinc-400">
+            Pending Agreement
+          </span>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          {[
+            { label: "Data Agreement", status: "Required", ok: false },
+            { label: "dxFeed API Credentials", status: "Not configured", ok: false },
+            { label: "Demo Fallback", status: "Active", ok: true },
+          ].map(({ label, status: st, ok }) => (
+            <div key={label} className="rounded-xl border border-zinc-800 bg-zinc-800/40 px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">{label}</p>
+              <p className={`mt-0.5 text-xs font-semibold ${ok ? "text-green-400" : "text-zinc-400"}`}>{st}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {status && (
         <div className="space-y-6">
           {/* Stat overview */}

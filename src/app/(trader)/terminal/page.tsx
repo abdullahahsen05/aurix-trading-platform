@@ -12,7 +12,7 @@ const DxfeedTerminal = dynamic(
   () => import("@/components/terminal/DxfeedTerminal"),
   { ssr: false }
 );
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type {
   ProviderStatus,
@@ -57,6 +57,8 @@ export default function TerminalPage() {
   const [rightPanel, setRightPanel] = useState<"dom" | "vprofile" | "heatmap">("dom");
   const [bottomPanel, setBottomPanel] = useState<"macro" | "news">("macro");
   const [prefsSynced, setPrefsSynced] = useState(false);
+  const [proOpen, setProOpen] = useState(false);
+  const proDialogRef = useRef<HTMLDivElement>(null);
 
   // Load saved preferences on mount
   const { data: prefs } = useQuery<TerminalPreferences>({
@@ -179,6 +181,72 @@ export default function TerminalPage() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      {/* ─── Professional Trader locked overlay ───────────────────────── */}
+      {proOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setProOpen(false); }}
+        >
+          <div
+            ref={proDialogRef}
+            className="relative mx-4 w-full max-w-lg rounded-2xl border border-zinc-700 bg-zinc-900 p-8 shadow-2xl"
+          >
+            <button
+              onClick={() => setProOpen(false)}
+              className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full border border-zinc-700 text-zinc-400 hover:text-zinc-100"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+
+            {/* Lock icon */}
+            <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-zinc-700 bg-zinc-800 text-2xl">
+              🔒
+            </div>
+
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-500">
+              Professional Tier
+            </p>
+            <h2 className="text-xl font-bold text-zinc-100">
+              Professional Live Market Data
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-zinc-400">
+              Real-time institutional market data is available through our{" "}
+              <strong className="text-zinc-200">dxFeed / Devexperts</strong> integration.
+              Access is locked until a data redistribution agreement is in place.
+            </p>
+
+            <div className="mt-5 space-y-2">
+              {[
+                "Real-time tick-by-tick price feeds",
+                "Institutional-grade order flow & depth",
+                "Live Level II DOM data",
+                "Full liquidity heatmap",
+                "Exchange-sourced volume profile",
+              ].map((f) => (
+                <div key={f} className="flex items-center gap-2 text-sm text-zinc-400">
+                  <span className="text-zinc-600">○</span>
+                  {f}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 text-xs text-zinc-400">
+              <strong className="text-zinc-300">Current status:</strong> Demo simulation data active.
+              Professional data will be enabled once the dxFeed agreement and API credentials are
+              configured by your administrator.
+            </div>
+
+            <button
+              onClick={() => setProOpen(false)}
+              className="mt-6 w-full rounded-xl bg-zinc-800 py-2.5 text-sm font-semibold text-zinc-300 hover:bg-zinc-700"
+            >
+              Continue with Demo Data
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ─── Top bar ──────────────────────────────────────────────────── */}
       <header className="flex shrink-0 items-center gap-4 border-b border-border bg-card px-4 py-2">
         {/* Provider badge */}
@@ -191,6 +259,15 @@ export default function TerminalPage() {
         >
           {providerStatus?.label ?? "Demo Market Data"}
         </span>
+
+        {/* Professional Data locked button */}
+        <button
+          onClick={() => setProOpen(true)}
+          className="flex items-center gap-1.5 rounded border border-zinc-700 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+        >
+          <span>🔒</span>
+          Professional Data
+        </button>
 
         {/* Symbol + price */}
         <div className="flex items-baseline gap-3">

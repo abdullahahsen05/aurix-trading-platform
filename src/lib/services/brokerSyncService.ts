@@ -8,6 +8,15 @@ import { writeAuditLog } from '@/lib/services/auditService';
 import { evaluateAndPersistRiskEvents } from '@/lib/services/riskEvaluationService';
 import { createNotification } from '@/lib/services/notificationService';
 
+// MetaAPI can return dates as Date objects, ISO strings, or Unix timestamps
+// depending on the build variant. Always use this helper.
+function safeIso(val: unknown, fallback?: string): string {
+  const fb = fallback ?? new Date().toISOString();
+  if (val == null) return fb;
+  const d = val instanceof Date ? val : new Date(typeof val === 'number' ? val * 1000 : String(val));
+  return isNaN(d.getTime()) ? fb : d.toISOString();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,9 +92,9 @@ async function runMetaApiSync(params: {
 }): Promise<SyncSummary> {
   const { token, accountId, supabase, actorUserId, credentials, platform, existingProviderAccountId } = params;
 
-  // Dynamic import avoids webpack bundling the browser-ESM entry point of metaapi.cloud-sdk.
-  // serverExternalPackages in next.config.ts makes Node use require() → dist/index.js (no window refs).
-  const MetaApi = (await import('metaapi.cloud-sdk')).default as any;
+  // '/node' subpath → dists/cjs/index.js (Node CJS bundle, no window references).
+  // Default import() follows the "import" exports condition → dists/esm-web/index.js which references window.
+  const MetaApi = ((await import('metaapi.cloud-sdk/node')) as any).default;
   const api = new MetaApi(token);
   let connection: any = null;
 
@@ -180,47 +189,96 @@ async function runMetaApiSync(params: {
       drawdown_percent: balance > 0 ? Math.max(0, ((balance - equity) / balance) * 100) : 0,
     });
 
-    // ── 7. Upsert trades ───────────────────────────────────────────────────
+    // ── 7. Sync trades ─────────────────────────────────────────────────────
+    // NOTE: We avoid supabase .upsert() here because the unique index on
+    // (trading_account_id, external_trade_id) is a partial index
+    // (WHERE external_trade_id IS NOT NULL), which PostgREST's ON CONFLICT
+    // clause cannot resolve by column names alone. Instead we do a manual
+    // insert-new / update-existing / close-gone split.
     const openRows = (positions as any[]).map((p) => ({
       trading_account_id: accountId,
       external_trade_id: String(p.id),
       symbol: p.symbol ?? '',
       side: p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL',
-      status: 'OPEN',
+      status: 'OPEN' as const,
       volume: p.volume ?? 0,
       open_price: p.openPrice ?? 0,
-      close_price: null,
+      close_price: null as null,
       profit: p.profit ?? 0,
       currency,
-      opened_at: new Date(p.openTime).toISOString(),
-      closed_at: null,
+      opened_at: safeIso(p.openTime),
+      closed_at: null as null,
     }));
 
-    const closedRows = deals
-      .filter((d) => d.entryType === 'DEAL_ENTRY_OUT')
-      .map((d) => ({
-        trading_account_id: accountId,
-        external_trade_id: String(d.positionId ?? d.id),
-        symbol: d.symbol ?? '',
-        side: d.type === 'DEAL_TYPE_BUY' ? 'BUY' : 'SELL',
-        status: 'CLOSED',
-        volume: d.volume ?? 0,
-        open_price: 0,
-        close_price: d.price ?? null,
-        profit: d.profit ?? 0,
-        currency,
-        opened_at: new Date(d.time).toISOString(),
-        closed_at: new Date(d.time).toISOString(),
-      }));
+    const closeDeals = deals.filter((d) => d.entryType === 'DEAL_ENTRY_OUT');
 
-    const allTrades = [...openRows, ...closedRows];
-    let tradesUpserted = 0;
-    if (allTrades.length > 0) {
-      const { data: upserted } = await supabase
+    const allExtIds = [
+      ...openRows.map((r) => r.external_trade_id),
+      ...closeDeals.map((d) => String(d.positionId ?? d.id)),
+    ].filter(Boolean);
+
+    // Load existing rows for this account so we can split insert vs update.
+    const existingMap = new Map<string, string>();
+    if (allExtIds.length > 0) {
+      const { data: existing } = await supabase
         .from('trades')
-        .upsert(allTrades, { onConflict: 'trading_account_id,external_trade_id' })
-        .select('id');
-      tradesUpserted = upserted?.length ?? 0;
+        .select('id, external_trade_id')
+        .eq('trading_account_id', accountId)
+        .in('external_trade_id', allExtIds);
+      for (const r of existing ?? []) {
+        if (r.external_trade_id) existingMap.set(r.external_trade_id as string, r.id as string);
+      }
+    }
+
+    let tradesUpserted = 0;
+
+    // Insert brand-new open positions.
+    const toInsert = openRows.filter((r) => !existingMap.has(r.external_trade_id));
+    if (toInsert.length > 0) {
+      const { data: inserted, error: insertErr } = await supabase
+        .from('trades').insert(toInsert).select('id');
+      if (insertErr) throw new Error(`Trade insert failed: ${insertErr.message}`);
+      tradesUpserted += inserted?.length ?? 0;
+    }
+
+    // Update profit on already-known open positions.
+    const toUpdateOpen = openRows.filter((r) => existingMap.has(r.external_trade_id));
+    for (const r of toUpdateOpen) {
+      await supabase.from('trades')
+        .update({ profit: r.profit, status: 'OPEN', close_price: null, closed_at: null })
+        .eq('trading_account_id', accountId)
+        .eq('external_trade_id', r.external_trade_id);
+      tradesUpserted++;
+    }
+
+    // Mark closed: deals with DEAL_ENTRY_OUT whose position is in DB.
+    for (const d of closeDeals) {
+      const extId = String(d.positionId ?? d.id);
+      const rowId = existingMap.get(extId);
+      const closedAt = safeIso(d.time);
+      if (rowId) {
+        await supabase.from('trades')
+          .update({ status: 'CLOSED', close_price: d.price ?? null, profit: d.profit ?? 0, closed_at: closedAt })
+          .eq('id', rowId);
+        tradesUpserted++;
+      } else {
+        // Position closed before we ever saw it open — insert as CLOSED.
+        const { data: ins } = await supabase.from('trades').insert({
+          trading_account_id: accountId,
+          external_trade_id: extId,
+          symbol: d.symbol ?? '',
+          side: d.type === 'DEAL_TYPE_BUY' ? 'BUY' : 'SELL',
+          status: 'CLOSED',
+          volume: d.volume ?? 0,
+          open_price: 0,
+          close_price: d.price ?? null,
+          profit: d.profit ?? 0,
+          currency,
+          opened_at: closedAt,
+          closed_at: closedAt,
+        }).select('id');
+        tradesUpserted += ins?.length ?? 0;
+      }
     }
 
     // ── 8. Mark CONNECTED ──────────────────────────────────────────────────
@@ -431,7 +489,9 @@ export async function refreshAccountTrades(
   );
 
   const refreshPromise = (async (): Promise<TradeRefreshSummary> => {
-    const MetaApi = (await import('metaapi.cloud-sdk')).default as any;
+    // '/node' subpath → dists/cjs/index.js (Node CJS bundle, no window references).
+    // Default import() follows the "import" exports condition → dists/esm-web/index.js which references window.
+    const MetaApi = ((await import('metaapi.cloud-sdk/node')) as any).default;
     const api = new MetaApi(token);
     let connection: any = null;
 
@@ -543,52 +603,90 @@ export async function refreshAccountTrades(
         external_trade_id: String(p.id),
         symbol: p.symbol ?? '',
         side: p.type === 'POSITION_TYPE_BUY' ? 'BUY' : 'SELL',
-        status: 'OPEN',
+        status: 'OPEN' as const,
         volume: p.volume ?? 0,
         open_price: p.openPrice ?? 0,
-        close_price: null,
+        close_price: null as null,
         profit: p.profit ?? 0,
         currency,
-        opened_at: p.openTime ? new Date(p.openTime).toISOString() : new Date().toISOString(),
-        closed_at: null,
+        opened_at: safeIso(p.openTime),
+        closed_at: null as null,
       }));
 
-      const closedRows = outDeals.map((d: any) => ({
-        trading_account_id: accountId,
-        external_trade_id: String(d.positionId ?? d.id),
-        symbol: d.symbol ?? '',
-        side: d.type === 'DEAL_TYPE_BUY' ? 'BUY' : 'SELL',
-        status: 'CLOSED',
-        volume: d.volume ?? 0,
-        open_price: 0,
-        close_price: d.price ?? null,
-        profit: d.profit ?? 0,
-        currency,
-        opened_at: d.time ? new Date(d.time).toISOString() : new Date().toISOString(),
-        closed_at: d.time ? new Date(d.time).toISOString() : new Date().toISOString(),
-      }));
+      const allExtIds = [
+        ...openRows.map((r) => r.external_trade_id),
+        ...outDeals.map((d: any) => String(d.positionId ?? d.id)),
+      ].filter(Boolean);
 
-      const allTrades = [...openRows, ...closedRows];
+      const existingMap = new Map<string, string>();
+      if (allExtIds.length > 0) {
+        const { data: existing } = await supabase
+          .from('trades')
+          .select('id, external_trade_id')
+          .eq('trading_account_id', accountId)
+          .in('external_trade_id', allExtIds);
+        for (const r of existing ?? []) {
+          if (r.external_trade_id) existingMap.set(r.external_trade_id as string, r.id as string);
+        }
+      }
 
-      console.log('[REFRESH_UPSERT_PLAN]', {
+      console.log('[REFRESH_SYNC_PLAN]', {
         tradingAccountId: accountId,
         openRows: openRows.length,
-        closedRows: closedRows.length,
-        totalRows: allTrades.length,
+        closedDeals: outDeals.length,
+        existingInDb: existingMap.size,
       });
 
       let tradesUpserted = 0;
-      if (allTrades.length > 0) {
-        const { data: upserted, error: upsertErr } = await supabase
-          .from('trades')
-          .upsert(allTrades, { onConflict: 'trading_account_id,external_trade_id' })
-          .select('id');
-        if (upsertErr) {
-          console.error('[REFRESH_UPSERT_ERROR]', { tradingAccountId: accountId, message: upsertErr.message });
-        }
-        tradesUpserted = upserted?.length ?? 0;
-        console.log('[REFRESH_UPSERT_RESULT]', { tradingAccountId: accountId, tradesUpserted });
+
+      // Insert brand-new open positions.
+      const toInsert = openRows.filter((r) => !existingMap.has(r.external_trade_id));
+      if (toInsert.length > 0) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from('trades').insert(toInsert).select('id');
+        if (insertErr) console.error('[REFRESH_INSERT_ERROR]', { tradingAccountId: accountId, message: insertErr.message });
+        tradesUpserted += inserted?.length ?? 0;
       }
+
+      // Update profit on already-known open positions.
+      for (const r of openRows.filter((row) => existingMap.has(row.external_trade_id))) {
+        await supabase.from('trades')
+          .update({ profit: r.profit, status: 'OPEN', close_price: null, closed_at: null })
+          .eq('trading_account_id', accountId)
+          .eq('external_trade_id', r.external_trade_id);
+        tradesUpserted++;
+      }
+
+      // Mark closed: deals with DEAL_ENTRY_OUT.
+      for (const d of outDeals as any[]) {
+        const extId = String(d.positionId ?? d.id);
+        const rowId = existingMap.get(extId);
+        const closedAt = safeIso(d.time);
+        if (rowId) {
+          await supabase.from('trades')
+            .update({ status: 'CLOSED', close_price: d.price ?? null, profit: d.profit ?? 0, closed_at: closedAt })
+            .eq('id', rowId);
+          tradesUpserted++;
+        } else {
+          const { data: ins } = await supabase.from('trades').insert({
+            trading_account_id: accountId,
+            external_trade_id: extId,
+            symbol: d.symbol ?? '',
+            side: d.type === 'DEAL_TYPE_BUY' ? 'BUY' : 'SELL',
+            status: 'CLOSED',
+            volume: d.volume ?? 0,
+            open_price: 0,
+            close_price: d.price ?? null,
+            profit: d.profit ?? 0,
+            currency,
+            opened_at: closedAt,
+            closed_at: closedAt,
+          }).select('id');
+          tradesUpserted += ins?.length ?? 0;
+        }
+      }
+
+      console.log('[REFRESH_SYNC_RESULT]', { tradingAccountId: accountId, tradesUpserted });
 
       // Update last_synced_at (keep status as-is — admin sets CONNECTED)
       await supabase

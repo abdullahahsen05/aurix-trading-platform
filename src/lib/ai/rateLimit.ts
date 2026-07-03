@@ -1,6 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AI_ERROR, AiError, type AiRoute, type AiUsageStatus, type RateLimitState, type TokenUsage } from "@/lib/ai/types";
 
+const INITIAL_CREDITS = 50_000;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AI Assistant — per-user daily rate limiting + usage logging (server-only)
 //
@@ -41,14 +43,17 @@ function utcDayStartIso(): string {
 }
 
 /**
- * Resolve a user's effective daily limit for a route and ensure AI is enabled.
- * Throws AI_DISABLED if an admin has switched the user off.
+ * Resolve a user's effective daily limit + credit balance for a route.
+ * Throws AI_DISABLED or AI_RATE_LIMITED (credits exhausted).
  */
-async function resolveLimit(userId: string, route: AiRoute): Promise<number> {
+async function resolveLimit(
+  userId: string,
+  route: AiRoute,
+): Promise<{ dailyLimit: number; credits: number }> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("ai_user_limits")
-    .select("chat_daily_limit, chart_daily_limit, ai_enabled")
+    .select("chat_daily_limit, chart_daily_limit, ai_enabled, ai_token_credits")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -56,8 +61,32 @@ async function resolveLimit(userId: string, route: AiRoute): Promise<number> {
     throw new AiError(AI_ERROR.DISABLED, "AI access has been disabled for your account.", 403);
   }
 
+  const credits: number = data?.ai_token_credits ?? INITIAL_CREDITS;
+  if (credits <= 0) {
+    throw new AiError(
+      AI_ERROR.RATE_LIMITED,
+      "Your AI token credits are exhausted. Contact support to top up.",
+      429,
+    );
+  }
+
   const override = route === "chat" ? data?.chat_daily_limit : data?.chart_daily_limit;
-  return override ?? defaultLimitFor(route);
+  return { dailyLimit: override ?? defaultLimitFor(route), credits };
+}
+
+/**
+ * Deduct tokens from a user's credit balance atomically. Balance floors at 0.
+ * Never throws — a deduction failure is logged but does not break the response.
+ */
+export async function deductCredits(userId: string, tokens: number): Promise<void> {
+  if (tokens <= 0) return;
+  try {
+    const supabase = createAdminClient();
+    // Upsert ensures a row exists even for users pre-dating the trigger.
+    await supabase.rpc("deduct_ai_credits", { p_user_id: userId, p_tokens: tokens });
+  } catch (err) {
+    console.error("[ai/rateLimit] failed to deduct credits:", err);
+  }
 }
 
 /**
@@ -80,21 +109,23 @@ async function countTodaySuccess(userId: string, route: AiRoute): Promise<number
  * Throws AI_DISABLED or AI_RATE_LIMITED. Returns the pre-consumption state.
  */
 export async function checkLimit(userId: string, route: AiRoute): Promise<RateLimitState> {
-  const limit = await resolveLimit(userId, route);
+  const { dailyLimit, credits } = await resolveLimit(userId, route);
   const used = await countTodaySuccess(userId, route);
-  if (used >= limit) {
+  if (used >= dailyLimit) {
     throw new AiError(
       AI_ERROR.RATE_LIMITED,
       "You've reached today's AI limit. It resets at 00:00 UTC.",
       429,
     );
   }
-  return { limit, used, remaining: limit - used };
+  return { limit: dailyLimit, used, remaining: dailyLimit - used, creditsRemaining: credits };
 }
 
 /**
  * STEP 3 — call after a successful Gemini response (or to record a failure).
- * Metadata only. Never throws — a logging failure must not break the response.
+ * On SUCCESS, deducts actual tokens from the user's credit balance.
+ * Uses total_tokens if available, otherwise estimates from prompt+completion.
+ * Never throws — a logging/deduction failure must not break the response.
  */
 export async function logUsage(params: {
   userId: string;
@@ -122,5 +153,15 @@ export async function logUsage(params: {
     });
   } catch (err) {
     console.error("[ai/rateLimit] failed to log usage:", err);
+  }
+
+  // Deduct from credit balance on successful calls only.
+  if (params.status === "SUCCESS" && params.usage) {
+    const tokens =
+      params.usage.totalTokens ??
+      (params.usage.promptTokens ?? 0) + (params.usage.completionTokens ?? 0);
+    if (tokens > 0) {
+      await deductCredits(params.userId, tokens);
+    }
   }
 }

@@ -78,6 +78,8 @@ export interface MasterEventDto {
   createdAt: string;
 }
 
+export type FollowerTier = "NORMAL" | "PREMIUM";
+
 export interface CopyFollowerDto {
   id: string;
   strategyId: string;
@@ -86,6 +88,7 @@ export interface CopyFollowerDto {
   followerAccountName: string | null;
   traderId: string;
   status: FollowerStatus;
+  tier: FollowerTier;
   scalingMode: ScalingMode | null;
   riskMultiplier: number | null;
   fixedLot: number | null;

@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
   // from bundling its browser-ESM entry point (which references `window`) into
   // server route handlers — server code uses require() → dist/index.js instead.
   // It must only ever be imported from server-only modules (broker services).
-  serverExternalPackages: ["metaapi.cloud-sdk"],
+  serverExternalPackages: ["metaapi.cloud-sdk", "metaapi.cloud-sdk/node"],
 };
 
 export default nextConfig;

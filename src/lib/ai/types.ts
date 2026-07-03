@@ -55,4 +55,5 @@ export interface RateLimitState {
   limit: number;
   used: number;
   remaining: number;
+  creditsRemaining?: number;
 }
