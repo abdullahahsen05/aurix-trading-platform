@@ -3,6 +3,7 @@ import { mapTradeToDto } from "@/lib/mappers/tradeMapper";
 import {
   PARTNER_ERROR,
   PartnerError,
+  type PartnerAccountStatusSummary,
   type PartnerCommissionDto,
   type PartnerCommissionSummaryDto,
   type PartnerSummaryDto,
@@ -34,6 +35,7 @@ interface AccountRow {
   user_id: string;
   status: string;
   currency: string;
+  account_name: string | null;
 }
 
 interface SnapshotRow {
@@ -82,7 +84,7 @@ async function loadAssignedContext(partnerUserId: string): Promise<AssignedConte
 
   const { data: accountRows, error: aErr } = await supabase
     .from("trading_accounts")
-    .select("id, user_id, status, currency")
+    .select("id, user_id, status, currency, account_name")
     .in("user_id", userIds)
     .limit(2000);
   if (aErr) throw new Error(`Failed to fetch accounts: ${aErr.message}`);
@@ -146,6 +148,17 @@ function buildTraderDto(
       ? "AT_RISK"
       : "OK";
 
+  const accountStatuses: PartnerAccountStatusSummary[] = traderAccounts.map((acc) => {
+    const snap = ctx.snapshotByAccount.get(acc.id);
+    return {
+      accountId: acc.id,
+      accountName: acc.account_name,
+      status: acc.status,
+      currency: acc.currency,
+      equity: snap ? Number(snap.equity) : 0,
+    };
+  });
+
   return {
     traderId: profile.user_id,
     traderProfileId: profile.id,
@@ -161,6 +174,7 @@ function buildTraderDto(
     openRiskEvents,
     riskStatus,
     assignedAt: profile.partner_assigned_at,
+    accounts: accountStatuses,
   };
 }
 
@@ -176,6 +190,13 @@ export async function getPartnerSummary(partnerUserId: string): Promise<PartnerS
 
   const commission = await getPartnerCommissionSummary(partnerUserId);
 
+  const supabase = createAdminClient();
+  const { data: profileRow } = await supabase
+    .from("partner_profiles")
+    .select("referral_code")
+    .eq("user_id", partnerUserId)
+    .maybeSingle();
+
   return {
     assignedTraders: traders.length,
     activeTraders,
@@ -186,6 +207,7 @@ export async function getPartnerSummary(partnerUserId: string): Promise<PartnerS
     pendingCommission: commission.pending,
     earnedCommission: { amount: commission.approved.amount + commission.paid.amount, currency: commission.currency },
     commissionPercent: commission.commissionPercent,
+    referralCode: (profileRow?.referral_code as string | null) ?? null,
   };
 }
 
@@ -336,14 +358,24 @@ export async function listPartnerActivities(partnerUserId: string): Promise<Part
 
 // ── Commissions ──────────────────────────────────────────────────────────────
 
-async function getCommissionPercent(partnerUserId: string): Promise<number> {
+interface CommissionRule {
+  percent: number;
+  type: "CPA" | "REBATE" | "PROFIT_SHARE";
+  cpaAmount: number | null;
+}
+
+async function getCommissionRule(partnerUserId: string): Promise<CommissionRule> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("partner_profiles")
-    .select("commission_percent")
+    .select("commission_percent, commission_type, cpa_amount")
     .eq("user_id", partnerUserId)
     .maybeSingle();
-  return data ? Number(data.commission_percent) : 0;
+  return {
+    percent: data ? Number(data.commission_percent) : 0,
+    type: (data?.commission_type as "CPA" | "REBATE" | "PROFIT_SHARE") ?? "REBATE",
+    cpaAmount: data?.cpa_amount != null ? Number(data.cpa_amount) : null,
+  };
 }
 
 export async function getPartnerCommissionSummary(
@@ -366,13 +398,15 @@ export async function getPartnerCommissionSummary(
     else if (row.status === "APPROVED") approved += amt;
     else if (row.status === "PAID") paid += amt;
   }
-  const commissionPercent = await getCommissionPercent(partnerUserId);
+  const rule = await getCommissionRule(partnerUserId);
 
   return {
     pending: { amount: Number(pending.toFixed(2)), currency: "USD" },
     approved: { amount: Number(approved.toFixed(2)), currency: "USD" },
     paid: { amount: Number(paid.toFixed(2)), currency: "USD" },
-    commissionPercent,
+    commissionPercent: rule.percent,
+    commissionType: rule.type,
+    cpaAmount: rule.cpaAmount,
     currency: "USD",
   };
 }

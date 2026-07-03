@@ -338,6 +338,7 @@ function RevokeCertDialog({ cert, onRevoked }: { cert: CertificateDto; onRevoked
 // ── Main Page ─────────────────────────────────────────────────
 export default function AdminEvaluationsPage() {
   const [tab, setTab] = useState<Tab>("programs");
+  const [attemptStatusFilter, setAttemptStatusFilter] = useState<"ALL" | "ACTIVE" | "PASSED" | "FAILED" | "NEEDS_REVIEW">("ALL");
   const qc = useQueryClient();
 
   const { data: analytics } = useQuery<Record<string, unknown>>({
@@ -439,12 +440,26 @@ export default function AdminEvaluationsPage() {
 
         {/* Attempts Tab */}
         {tab === "attempts" && (
-          attempts.length === 0 ? (
-            <EmptyState icon={undefined} title="No attempts yet" description="Traders will appear here after starting an evaluation." />
-          ) : (
-            <DataTable
-              headers={["Program", "Trader", "Status", "Account", "Last Checked", "Actions"]}
-              rows={attempts.map((at) => [
+          <>
+            {attempts.length > 0 ? (
+              <div className="mb-4 rounded-2xl border border-line bg-panel p-3">
+                <FilterChipRow
+                  chips={(["ALL", "ACTIVE", "PASSED", "FAILED", "NEEDS_REVIEW"] as const).map((s) => ({
+                    label: s === "ALL" ? `All (${attempts.length})` : `${s} (${attempts.filter((a) => a.status === s).length})`,
+                    active: attemptStatusFilter === s,
+                    onClick: () => setAttemptStatusFilter(s),
+                  }))}
+                />
+              </div>
+            ) : null}
+            {(() => {
+              const filtered = attemptStatusFilter === "ALL" ? attempts : attempts.filter((a) => a.status === attemptStatusFilter);
+              return filtered.length === 0 ? (
+                <EmptyState icon={undefined} title="No attempts yet" description="Traders will appear here after starting an evaluation." />
+              ) : (
+                <DataTable
+                  headers={["Program", "Trader", "Status", "Account", "Last Checked", "Actions"]}
+                  rows={filtered.map((at) => [
                 at.programName,
                 at.userId.slice(0, 8) + "…",
                 <StatusPill key="status" tone={STATUS_TONE[at.status] ?? "muted"}>{at.status}</StatusPill>,
@@ -467,8 +482,10 @@ export default function AdminEvaluationsPage() {
                   )}
                 </div>,
               ])}
-            />
-          )
+                />
+              );
+            })()}
+          </>
         )}
 
         {/* Certificates Tab */}

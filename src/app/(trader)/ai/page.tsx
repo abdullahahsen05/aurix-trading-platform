@@ -166,6 +166,17 @@ export default function AiAssistantPage() {
   const [chartResult, setChartResult] = useState<string | null>(null);
   const [chartRemaining, setChartRemaining] = useState<number | null>(null);
 
+  const { data: creditsData } = useQuery<{ credits: number }>({
+    queryKey: ["ai-credits"],
+    queryFn: async () => {
+      const res = await fetch("/api/ai/credits");
+      const json = await res.json();
+      if (!json.ok) throw new Error("credits unavailable");
+      return json.data;
+    },
+    staleTime: 60_000,
+  });
+
   function onPickFile(file: File | null) {
     setChartError(null);
     setChartResult(null);
@@ -258,6 +269,11 @@ export default function AiAssistantPage() {
             label: "Chart analyses left",
             value: chartRemaining === null ? "—" : chartRemaining,
             tone: "lime",
+          },
+          {
+            label: "Token credits",
+            value: creditsData ? creditsData.credits.toLocaleString() : "—",
+            tone: creditsData && creditsData.credits < 5000 ? "danger" : "lime",
           },
         ]}
       />

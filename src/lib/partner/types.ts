@@ -32,6 +32,14 @@ export class PartnerError extends Error {
 
 export type TraderRiskStatus = "OK" | "AT_RISK" | "RESTRICTED";
 
+export interface PartnerAccountStatusSummary {
+  accountId: string;
+  accountName: string | null;
+  status: string;
+  currency: string;
+  equity: number;
+}
+
 export interface PartnerTraderDto {
   traderId: string; // profiles.id (the trader's user id) — used for scoping/assignment
   traderProfileId: string; // trader_profiles.id — used for CRM notes
@@ -47,6 +55,7 @@ export interface PartnerTraderDto {
   openRiskEvents: number;
   riskStatus: TraderRiskStatus;
   assignedAt: string | null;
+  accounts?: PartnerAccountStatusSummary[];
 }
 
 export interface PartnerSummaryDto {
@@ -59,6 +68,7 @@ export interface PartnerSummaryDto {
   pendingCommission: MoneyValue;
   earnedCommission: MoneyValue;
   commissionPercent: number;
+  referralCode: string | null;
 }
 
 export interface PartnerCommissionDto {
@@ -77,11 +87,15 @@ export interface PartnerCommissionDto {
   paidAt: string | null;
 }
 
+export type CommissionType = "CPA" | "REBATE" | "PROFIT_SHARE";
+
 export interface PartnerCommissionSummaryDto {
   pending: MoneyValue;
   approved: MoneyValue;
   paid: MoneyValue;
   commissionPercent: number;
+  commissionType: CommissionType;
+  cpaAmount: number | null;
   currency: string;
 }
 

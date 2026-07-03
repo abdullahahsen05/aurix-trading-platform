@@ -103,7 +103,8 @@ export default function TraderDashboardPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const baseAccount = accounts[0];
+  const [accountIndex, setAccountIndex] = useState(0);
+  const baseAccount = accounts[Math.min(accountIndex, accounts.length - 1)] ?? accounts[0];
 
   const [live, setLive] = useState({
     balance: 0,
@@ -223,26 +224,20 @@ export default function TraderDashboardPage() {
     {
       label: "Trend Bias",
       value: periodStats.winRate >= 58 && periodProfitFactor >= 1.4 ? "Bullish" : "Balanced",
-      helper: "Price structure is stable",
+      helper: "Derived from your win rate and profit factor",
       tone: "lime" as const,
     },
     {
       label: "Volatility",
       value: accountDrawdown >= 4.5 ? "Elevated" : accountDrawdown >= 3 ? "Moderate" : "Low",
-      helper: "Based on the selected period",
+      helper: "Based on your account drawdown",
       tone: accountDrawdown >= 4.5 ? ("danger" as const) : ("lime" as const),
     },
     {
-      label: "Fear & Greed",
-      value: `${Math.round((periodStats.winRate * 0.8 + periodProfitFactor * 10) / 1.1)}`,
-      helper: "Calculated from period performance",
+      label: "Performance Score",
+      value: `${Math.min(99, Math.round((periodStats.winRate * 0.8 + periodProfitFactor * 10) / 1.1))}`,
+      helper: "Composite score from your period results",
       tone: "accent" as const,
-    },
-    {
-      label: "Spread",
-      value: "1.2 pts",
-      helper: "Tight execution band",
-      tone: "lime" as const,
     },
   ];
 
@@ -253,6 +248,19 @@ export default function TraderDashboardPage() {
       description="Equity, risk, and performance across your connected accounts."
       action={
         <PageActionGroup>
+          {accounts.length > 1 ? (
+            <select
+              value={accountIndex}
+              onChange={(e) => setAccountIndex(Number(e.target.value))}
+              className="h-9 rounded-full border border-line bg-background px-3 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
+            >
+              {accounts.map((a, i) => (
+                <option key={a.accountId} value={i}>
+                  {a.accountName}
+                </option>
+              ))}
+            </select>
+          ) : null}
           {dashboardTabs.map((tab) => {
             const active = selectedView === tab.id;
             return (

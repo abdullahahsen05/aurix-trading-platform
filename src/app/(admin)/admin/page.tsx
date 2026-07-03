@@ -217,7 +217,7 @@ export default function AdminOverviewPage() {
                 Summary signals for support, supervision, and admin follow-up.
               </p>
             </div>
-            <StatusPill tone="lime">Stable</StatusPill>
+            <StatusPill tone={openRiskEvents > 0 ? "danger" : "lime"}>{openRiskEvents > 0 ? "Needs attention" : "Stable"}</StatusPill>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-line bg-background p-4">
@@ -287,7 +287,7 @@ export default function AdminOverviewPage() {
         <Panel>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-foreground">Risk queue</h2>
-            <StatusPill tone="accent">Needs attention</StatusPill>
+            <StatusPill tone={riskEvents.length > 0 ? "danger" : "lime"}>{riskEvents.length > 0 ? `${riskEvents.length} open` : "Clear"}</StatusPill>
           </div>
           <div className="mt-4 space-y-3">
             {riskEvents.map((event) => (

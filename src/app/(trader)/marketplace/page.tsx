@@ -20,6 +20,7 @@ const RISK_TONES: Record<string, "lime" | "accent" | "danger" | "muted"> = {
 
 export default function MarketplacePage() {
   const [platformFilter, setPlatformFilter] = useState<"ALL" | "MT5" | "MT4">("ALL");
+  const [riskFilter, setRiskFilter] = useState<"ALL" | "LOW" | "MEDIUM" | "HIGH">("ALL");
 
   const { data: products = [], isLoading, isError, error } = useQuery<BotProductDto[]>({
     queryKey: ["marketplace-products"],
@@ -31,10 +32,9 @@ export default function MarketplacePage() {
     },
   });
 
-  const filtered =
-    platformFilter === "ALL"
-      ? products
-      : products.filter((p) => p.platform === platformFilter || p.platform === "BOTH");
+  const filtered = products
+    .filter((p) => platformFilter === "ALL" || p.platform === platformFilter || p.platform === "BOTH")
+    .filter((p) => riskFilter === "ALL" || p.riskLevel === riskFilter);
 
   return (
     <WorkspacePage
@@ -42,13 +42,23 @@ export default function MarketplacePage() {
       title="Bot Marketplace"
       description="Explore and request access to trading bots"
     >
-      <FilterChipRow
-        chips={[
-          { label: "All", active: platformFilter === "ALL", onClick: () => setPlatformFilter("ALL") },
-          { label: "MT5", active: platformFilter === "MT5", onClick: () => setPlatformFilter("MT5") },
-          { label: "MT4", active: platformFilter === "MT4", onClick: () => setPlatformFilter("MT4") },
-        ]}
-      />
+      <div className="space-y-3">
+        <FilterChipRow
+          chips={[
+            { label: "All platforms", active: platformFilter === "ALL", onClick: () => setPlatformFilter("ALL") },
+            { label: "MT5", active: platformFilter === "MT5", onClick: () => setPlatformFilter("MT5") },
+            { label: "MT4", active: platformFilter === "MT4", onClick: () => setPlatformFilter("MT4") },
+          ]}
+        />
+        <FilterChipRow
+          chips={[
+            { label: "All risk levels", active: riskFilter === "ALL", onClick: () => setRiskFilter("ALL") },
+            { label: "Low risk", active: riskFilter === "LOW", onClick: () => setRiskFilter("LOW") },
+            { label: "Medium risk", active: riskFilter === "MEDIUM", onClick: () => setRiskFilter("MEDIUM") },
+            { label: "High risk", active: riskFilter === "HIGH", onClick: () => setRiskFilter("HIGH") },
+          ]}
+        />
+      </div>
 
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

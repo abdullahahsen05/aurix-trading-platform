@@ -89,6 +89,25 @@ export default function PartnerOverviewPage() {
         ]}
       />
 
+      {summary?.referralCode ? (
+        <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-panel px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Your referral code</p>
+            <p className="mt-1 font-mono text-sm font-semibold text-foreground">{summary.referralCode}</p>
+            <p className="mt-0.5 text-xs text-muted">
+              Share as: <span className="font-mono">/register?partner={summary.referralCode}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => { navigator.clipboard.writeText(summary.referralCode ?? ""); }}
+            className="shrink-0 rounded-xl border border-line bg-background px-3 py-2 text-xs font-semibold text-foreground hover:border-accent/40"
+          >
+            Copy
+          </button>
+        </div>
+      ) : null}
+
       {!hasTraders && !isLoading ? (
         <div className="mt-5">
           <EmptyState
@@ -100,7 +119,10 @@ export default function PartnerOverviewPage() {
         <div className="mt-5 grid gap-5 xl:grid-cols-[1.5fr_1fr]">
           <div className="space-y-5">
             <Panel>
-              <h2 className="mb-4 text-lg font-semibold text-foreground">Trader watchlist</h2>
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold text-foreground">Trader watchlist</h2>
+                {traders.length > 12 ? <span className="text-xs text-muted">Showing 12 of {traders.length}</span> : null}
+              </div>
               {traders.length === 0 ? (
                 <p className="text-sm text-muted">No traders to display.</p>
               ) : (
