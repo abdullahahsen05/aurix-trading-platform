@@ -36,13 +36,14 @@ export function TradingViewAdvancedChart({
     container.innerHTML = "";
     setFailed(false);
 
-    let rafId: number;
     let active = true;
 
     // Defer one paint so the container has computed layout before TradingView
     // tries to attach iframe resize listeners (prevents contentWindow warning).
-    rafId = requestAnimationFrame(() => {
-      if (!active || !containerRef.current) return;
+    const rafId = requestAnimationFrame(() => {
+      if (!active) return;
+      const mountNode = containerRef.current;
+      if (!mountNode) return;
 
       const widgetContainer = document.createElement("div");
       widgetContainer.className = "tradingview-widget-container";
@@ -97,15 +98,13 @@ export function TradingViewAdvancedChart({
       widgetContainer.appendChild(widgetDiv);
       widgetContainer.appendChild(copyright);
       widgetContainer.appendChild(script);
-      containerRef.current.appendChild(widgetContainer);
+      mountNode.appendChild(widgetContainer);
     });
 
     return () => {
       active = false;
       cancelAnimationFrame(rafId);
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-      }
+      container.innerHTML = "";
     };
   }, [symbol, interval, theme]);
 

@@ -273,14 +273,14 @@ export default function AdminTerminalPage() {
               <p>
                 <strong className="text-foreground">Safe fallback:</strong> While the dxFeed
                 provider is not configured, all terminal API endpoints automatically use the mock
-                provider and clearly label data as "Demo Market Data". No live data is ever
+                provider and clearly label data as &quot;Demo Market Data&quot;. No live data is ever
                 displayed unless the provider reports{" "}
                 <code className="rounded bg-border px-1 text-xs">connected: true</code>.
               </p>
               <p>
                 <strong className="text-foreground">Next steps:</strong> Obtain dxFeed credentials
                 and API docs → set env vars → run health check → implement TODO endpoints →
-                switch provider to "dxfeed" here.
+                switch provider to &quot;dxfeed&quot; here.
               </p>
             </div>
           </Panel>

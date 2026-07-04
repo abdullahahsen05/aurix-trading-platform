@@ -12,7 +12,7 @@ const DxfeedTerminal = dynamic(
   () => import("@/components/terminal/DxfeedTerminal"),
   { ssr: false }
 );
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import type {
   ProviderStatus,
@@ -52,11 +52,10 @@ async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
 }
 
 export default function TerminalPage() {
-  const [symbol, setSymbol] = useState("EURUSD");
-  const [timeframe, setTimeframe] = useState<Timeframe>("1h");
+  const [symbolOverride, setSymbolOverride] = useState<string | null>(null);
+  const [timeframeOverride, setTimeframeOverride] = useState<Timeframe | null>(null);
   const [rightPanel, setRightPanel] = useState<"dom" | "vprofile" | "heatmap">("dom");
   const [bottomPanel, setBottomPanel] = useState<"macro" | "news">("macro");
-  const [prefsSynced, setPrefsSynced] = useState(false);
   const [proOpen, setProOpen] = useState(false);
   const proDialogRef = useRef<HTMLDivElement>(null);
 
@@ -66,13 +65,8 @@ export default function TerminalPage() {
     queryFn: () => apiFetch("/api/terminal/preferences"),
   });
 
-  useEffect(() => {
-    if (prefs && !prefsSynced) {
-      setSymbol(prefs.symbol);
-      setTimeframe(prefs.timeframe);
-      setPrefsSynced(true);
-    }
-  }, [prefs, prefsSynced]);
+  const symbol = symbolOverride ?? prefs?.symbol ?? "EURUSD";
+  const timeframe = timeframeOverride ?? prefs?.timeframe ?? "1h";
 
   const savePrefsMutation = useMutation({
     mutationFn: (data: Partial<TerminalPreferences>) =>
@@ -85,7 +79,7 @@ export default function TerminalPage() {
 
   const changeSymbol = useCallback(
     (sym: string) => {
-      setSymbol(sym);
+      setSymbolOverride(sym);
       savePrefsMutation.mutate({ symbol: sym });
     },
     [savePrefsMutation]
@@ -93,7 +87,7 @@ export default function TerminalPage() {
 
   const changeTimeframe = useCallback(
     (tf: Timeframe) => {
-      setTimeframe(tf);
+      setTimeframeOverride(tf);
       savePrefsMutation.mutate({ timeframe: tf });
     },
     [savePrefsMutation]
