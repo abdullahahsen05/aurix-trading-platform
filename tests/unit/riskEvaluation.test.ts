@@ -120,7 +120,9 @@ function setupMockClient(overrides: {
       makeQuery({ data: overrides.platformRules ?? [mockDrawdownRule], error: null }),
     )
     .mockReturnValueOnce(makeQuery({ data: overrides.accountRules ?? [], error: null }));
-  vi.mocked(createAdminClient).mockReturnValue({ from: mockFrom } as ReturnType<typeof createAdminClient>);
+  vi.mocked(createAdminClient).mockReturnValue(
+    { from: mockFrom } as unknown as ReturnType<typeof createAdminClient>,
+  );
 }
 
 describe("evaluateAndPersistRiskEvents", () => {
@@ -186,7 +188,9 @@ describe("evaluateAndPersistRiskEvents", () => {
     const mockFrom = vi.fn().mockReturnValueOnce(
       makeQuery({ data: null, error: { message: "not found" } }),
     );
-    vi.mocked(createAdminClient).mockReturnValue({ from: mockFrom } as ReturnType<typeof createAdminClient>);
+    vi.mocked(createAdminClient).mockReturnValue(
+      { from: mockFrom } as unknown as ReturnType<typeof createAdminClient>,
+    );
 
     await expect(evaluateAndPersistRiskEvents("missing-id", null)).resolves.not.toThrow();
     expect(createRiskEvent).not.toHaveBeenCalled();
