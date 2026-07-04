@@ -88,12 +88,9 @@ export default function LessonPage({
   });
 
   // Notes
-  const [note, setNote] = useState("");
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [noteSaved, setNoteSaved] = useState(false);
-
-  useEffect(() => {
-    if (lesson?.note) setNote(lesson.note);
-  }, [lesson?.note]);
+  const note = noteDraft ?? lesson?.note ?? "";
 
   const saveNoteMutation = useMutation({
     mutationFn: (text: string) =>
@@ -112,7 +109,7 @@ export default function LessonPage({
     mutationFn: () =>
       apiFetch(`/api/academy/lessons/${lesson!.id}/notes`, { method: "DELETE" }),
     onSuccess: () => {
-      setNote("");
+      setNoteDraft("");
       qc.invalidateQueries({ queryKey: ["academy-lesson", courseSlug, lessonSlug] });
     },
   });
@@ -198,7 +195,7 @@ export default function LessonPage({
                     <span className="text-sm font-semibold text-accent-2">Lesson completed</span>
                   </>
                 ) : (
-                  <span className="text-sm text-muted">Mark this lesson as complete when you're done.</span>
+                  <span className="text-sm text-muted">Mark this lesson as complete when you&apos;re done.</span>
                 )}
               </div>
               {!isComplete ? (
@@ -319,7 +316,7 @@ export default function LessonPage({
             <p className="mb-3 text-xs text-muted">Private — only you can see these.</p>
             <textarea
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(e) => setNoteDraft(e.target.value)}
               placeholder="Add your personal notes here…"
               rows={6}
               className={textareaClassName}
