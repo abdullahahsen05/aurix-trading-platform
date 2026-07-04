@@ -10,11 +10,11 @@ const statusSchema = z.object({
 
 export async function PATCH(
   request: Request,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ accountId: string }> }
 ) {
   try {
     const admin = await requireAdmin();
-    const { id } = await params;
+    const { accountId } = await params;
     const parsed = statusSchema.safeParse(await request.json());
     if (!parsed.success) {
       return jsonFail("INVALID_BODY", parsed.error.issues.map(i => i.message).join("; "), 400);
@@ -24,7 +24,7 @@ export async function PATCH(
     const { data: updated, error } = await supabase
       .from("trading_accounts")
       .update({ status: parsed.data.status })
-      .eq("id", id)
+      .eq("id", accountId)
       .select("id")
       .maybeSingle();
 
@@ -35,7 +35,7 @@ export async function PATCH(
       actorUserId: admin.id,
       action: "ACCOUNT_VERIFIED",
       entityType: "trading_account",
-      entityId: id,
+      entityId: accountId,
       metadata: { newStatus: parsed.data.status },
     });
 
