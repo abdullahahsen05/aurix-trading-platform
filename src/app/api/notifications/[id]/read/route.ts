@@ -1,5 +1,5 @@
 import { jsonFail, jsonOk } from "@/lib/api/envelope";
-import { requireTrader, AuthError } from "@/lib/auth/session";
+import { requireAuth, AuthError } from "@/lib/auth/session";
 import { markNotificationRead } from "@/lib/services/notificationService";
 
 export async function PATCH(
@@ -7,7 +7,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireTrader();
+    const user = await requireAuth();
     const { id } = await params;
     await markNotificationRead(id, user.id);
     return jsonOk({ read: true });
