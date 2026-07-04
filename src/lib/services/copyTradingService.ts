@@ -888,7 +888,9 @@ export async function listMySubscriptions(traderUserId: string): Promise<CopyFol
     .limit(500);
   if (error) throw new Error(`Failed to fetch subscriptions: ${error.message}`);
 
-  return (data ?? []).map((r) => {
+  type SubscriptionRow = (typeof data)[number] & { tier?: "NORMAL" | "PREMIUM" | null };
+
+  return ((data ?? []) as SubscriptionRow[]).map((r) => {
     const strat = (r as { copy_strategies?: { name?: string } }).copy_strategies;
     const acct = (r as { trading_accounts?: { account_name?: string } }).trading_accounts;
     return {
@@ -905,7 +907,7 @@ export async function listMySubscriptions(traderUserId: string): Promise<CopyFol
       maxLot: r.max_lot === null ? null : Number(r.max_lot),
       consentAcceptedAt: r.consent_accepted_at,
       createdAt: r.created_at,
-      tier: ((r as any).tier ?? "NORMAL") as "NORMAL" | "PREMIUM",
+      tier: r.tier ?? "NORMAL",
     };
   });
 }

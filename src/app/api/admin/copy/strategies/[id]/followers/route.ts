@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin, AuthError } from "@/lib/auth/session";
 
+type FollowerRow = {
+  id: string;
+  follower_account_id: string;
+  trader_id: string;
+  status: string;
+  tier: string | null;
+  scaling_mode: string;
+  risk_multiplier: number | null;
+  fixed_lot: number | null;
+  max_lot: number | null;
+  consent_accepted_at: string | null;
+  created_at: string;
+  trading_accounts: { account_name?: string | null } | null;
+};
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -28,7 +43,7 @@ export async function GET(
     return NextResponse.json({ ok: false, error: { message: error.message } }, { status: 500 });
   }
 
-  const mapped = (data ?? []).map((f: any) => ({
+  const mapped = ((data ?? []) as FollowerRow[]).map((f) => ({
     id: f.id,
     followerAccountId: f.follower_account_id,
     followerAccountName: f.trading_accounts?.account_name ?? null,

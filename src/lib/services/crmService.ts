@@ -2,6 +2,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { mapCrmNoteToDto, mapTraderProfileToDto } from '@/lib/mappers/crmMapper'
 import type { CrmNoteDto, TraderProfileDto } from '@/lib/domain/types'
 
+type TraderProfileMapperRow = Parameters<typeof mapTraderProfileToDto>[0]
+
 export async function listTraderProfiles(): Promise<TraderProfileDto[]> {
   // Use admin client to bypass RLS — this function is only called from
   // admin API routes that already gate access via requireAdmin().
@@ -28,7 +30,7 @@ export async function listTraderProfiles(): Promise<TraderProfileDto[]> {
 
   if (error) throw new Error(`Failed to fetch trader profiles: ${error.message}`)
 
-  return (data ?? []).map(row => mapTraderProfileToDto(row as any))
+  return (data ?? []).map((row) => mapTraderProfileToDto(row as unknown as TraderProfileMapperRow))
 }
 
 export async function listCrmNotes(traderId?: string): Promise<CrmNoteDto[]> {

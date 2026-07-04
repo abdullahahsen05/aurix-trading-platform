@@ -46,6 +46,80 @@ export interface TradeRefreshSummary {
 // and the caller can re-trigger via the sync-status endpoint.
 const SYNC_TIMEOUT_MS = 50_000;
 
+type MetaApiConstructor = new (token: string) => MetaApiClient;
+
+interface MetaApiClient {
+  metatraderAccountApi: {
+    getAccount(accountId: string): Promise<MetaApiAccount>;
+    createAccount(args: MetaApiCreateAccountArgs): Promise<MetaApiAccount>;
+  };
+  close(): void;
+}
+
+interface MetaApiCreateAccountArgs {
+  login: string;
+  password: string;
+  server: string;
+  platform: 'mt4' | 'mt5';
+  name: string;
+  magic: number;
+  type: 'cloud';
+  reliability: 'regular' | 'high';
+}
+
+interface MetaApiAccount {
+  id: string;
+  state: string;
+  connectionStatus?: string;
+  reliability?: string;
+  deploy(): Promise<void>;
+  waitDeployed(timeoutInSeconds: number, intervalInMilliseconds: number): Promise<void>;
+  waitConnected(timeoutInSeconds: number, intervalInMilliseconds: number): Promise<void>;
+  getRPCConnection(): MetaApiConnection;
+}
+
+interface MetaApiConnection {
+  connect(): Promise<void>;
+  waitSynchronized(timeoutInSeconds: number): Promise<void>;
+  close(): Promise<void>;
+  getAccountInformation(): Promise<MetaApiAccountInformation | null | undefined>;
+  getPositions(): Promise<unknown>;
+  getDealsByTimeRange(from: Date, to: Date): Promise<unknown>;
+}
+
+interface MetaApiAccountInformation {
+  currency?: string;
+  balance?: number;
+  equity?: number;
+  margin?: number;
+  freeMargin?: number;
+  leverage?: number;
+  server?: string;
+  brokerName?: string;
+}
+
+interface MetaApiPosition {
+  id: string | number;
+  symbol?: string;
+  type?: string;
+  volume?: number;
+  openPrice?: number;
+  profit?: number;
+  openTime?: unknown;
+}
+
+interface MetaApiDeal {
+  id: string | number;
+  positionId?: string | number;
+  symbol?: string;
+  type?: string;
+  entryType?: string;
+  volume?: number;
+  price?: number | null;
+  profit?: number;
+  time?: unknown;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,6 +137,79 @@ function sanitizeMessage(msg: string, creds: BrokerCredentialPayload): string {
     );
   }
   return s.slice(0, 500);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function readStringOrNumber(value: unknown): string | number | undefined {
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined;
+}
+
+function normalizePositions(value: unknown): MetaApiPosition[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.reduce<MetaApiPosition[]>((positions, item) => {
+    if (!isRecord(item)) return positions;
+
+    const id = readStringOrNumber(item.id);
+    if (id === undefined) return positions;
+
+    positions.push({
+      id,
+      symbol: readString(item.symbol),
+      type: readString(item.type),
+      volume: readNumber(item.volume),
+      openPrice: readNumber(item.openPrice),
+      profit: readNumber(item.profit),
+      openTime: item.openTime,
+    });
+
+    return positions;
+  }, []);
+}
+
+function normalizeDeals(value: unknown): MetaApiDeal[] {
+  const rawDeals = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.deals)
+      ? value.deals
+      : [];
+
+  return rawDeals.reduce<MetaApiDeal[]>((deals, item) => {
+    if (!isRecord(item)) return deals;
+
+    const id = readStringOrNumber(item.id);
+    if (id === undefined) return deals;
+
+    deals.push({
+      id,
+      positionId: readStringOrNumber(item.positionId),
+      symbol: readString(item.symbol),
+      type: readString(item.type),
+      entryType: readString(item.entryType),
+      volume: readNumber(item.volume),
+      price: item.price === null ? null : readNumber(item.price),
+      profit: readNumber(item.profit),
+      time: item.time,
+    });
+
+    return deals;
+  }, []);
+}
+
+async function loadMetaApi(): Promise<MetaApiConstructor> {
+  const metaApiModule = await import('metaapi.cloud-sdk/node');
+  return (metaApiModule as unknown as { default: MetaApiConstructor }).default;
 }
 
 async function markFailed(
@@ -94,13 +241,13 @@ async function runMetaApiSync(params: {
 
   // '/node' subpath → dists/cjs/index.js (Node CJS bundle, no window references).
   // Default import() follows the "import" exports condition → dists/esm-web/index.js which references window.
-  const MetaApi = ((await import('metaapi.cloud-sdk/node')) as any).default;
+  const MetaApi = await loadMetaApi();
   const api = new MetaApi(token);
-  let connection: any = null;
+  let connection: MetaApiConnection | null = null;
 
   try {
     // ── 1. Get or create MetaAPI account ───────────────────────────────────
-    let metaAccount: any;
+    let metaAccount: MetaApiAccount;
 
     if (existingProviderAccountId) {
       console.log('[METAAPI_CREATE_OR_REUSE_START]', { providerAccountId: existingProviderAccountId });
@@ -174,7 +321,7 @@ async function runMetaApiSync(params: {
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const dealsResult = await connection.getDealsByTimeRange(since, new Date());
-    const deals: any[] = Array.isArray(dealsResult) ? dealsResult : (dealsResult?.deals ?? []);
+    const deals = normalizeDeals(dealsResult);
 
     const currency: string = info?.currency ?? 'USD';
     const balance: number = info?.balance ?? 0;
@@ -195,7 +342,7 @@ async function runMetaApiSync(params: {
     // (WHERE external_trade_id IS NOT NULL), which PostgREST's ON CONFLICT
     // clause cannot resolve by column names alone. Instead we do a manual
     // insert-new / update-existing / close-gone split.
-    const openRows = (positions as any[]).map((p) => ({
+    const openRows = normalizePositions(positions).map((p) => ({
       trading_account_id: accountId,
       external_trade_id: String(p.id),
       symbol: p.symbol ?? '',
@@ -491,9 +638,9 @@ export async function refreshAccountTrades(
   const refreshPromise = (async (): Promise<TradeRefreshSummary> => {
     // '/node' subpath → dists/cjs/index.js (Node CJS bundle, no window references).
     // Default import() follows the "import" exports condition → dists/esm-web/index.js which references window.
-    const MetaApi = ((await import('metaapi.cloud-sdk/node')) as any).default;
+    const MetaApi = await loadMetaApi();
     const api = new MetaApi(token);
-    let connection: any = null;
+    let connection: MetaApiConnection | null = null;
 
     try {
       const metaAccount = await api.metatraderAccountApi.getAccount(account.provider_account_id);
@@ -551,19 +698,15 @@ export async function refreshAccountTrades(
       });
 
       // Guard: MetaAPI may return null / undefined / non-array on empty terminal
-      const positions: any[] = Array.isArray(rawPositions) ? rawPositions : [];
+      const positions = normalizePositions(rawPositions);
 
       const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
       const dealsResult = await connection.getDealsByTimeRange(since, new Date());
 
       // getDealsByTimeRange returns { deals: [] } in some SDK versions, plain array in others
-      const deals: any[] = Array.isArray(dealsResult)
-        ? dealsResult
-        : Array.isArray(dealsResult?.deals)
-          ? dealsResult.deals
-          : [];
+      const deals = normalizeDeals(dealsResult);
 
-      const outDeals = deals.filter((d: any) => d.entryType === 'DEAL_ENTRY_OUT');
+      const outDeals = deals.filter((d) => d.entryType === 'DEAL_ENTRY_OUT');
 
       console.log('[REFRESH_RAW_DEALS]', {
         tradingAccountId: accountId,
@@ -598,7 +741,7 @@ export async function refreshAccountTrades(
       });
 
       // Build trade rows
-      const openRows = positions.map((p: any) => ({
+      const openRows = positions.map((p) => ({
         trading_account_id: accountId,
         external_trade_id: String(p.id),
         symbol: p.symbol ?? '',
@@ -615,7 +758,7 @@ export async function refreshAccountTrades(
 
       const allExtIds = [
         ...openRows.map((r) => r.external_trade_id),
-        ...outDeals.map((d: any) => String(d.positionId ?? d.id)),
+        ...outDeals.map((d) => String(d.positionId ?? d.id)),
       ].filter(Boolean);
 
       const existingMap = new Map<string, string>();
@@ -658,7 +801,7 @@ export async function refreshAccountTrades(
       }
 
       // Mark closed: deals with DEAL_ENTRY_OUT.
-      for (const d of outDeals as any[]) {
+      for (const d of outDeals) {
         const extId = String(d.positionId ?? d.id);
         const rowId = existingMap.get(extId);
         const closedAt = safeIso(d.time);
