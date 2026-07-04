@@ -10,14 +10,16 @@ import type { UserRole } from "@/lib/domain/types";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const isAuthRoute = ["/login", "/register", "/forgot-password"].includes(pathname);
+  const isShellFreeRoute =
+    ["/login", "/register", "/forgot-password"].includes(pathname) ||
+    pathname.startsWith("/certificates/verify/");
   const role: UserRole = pathname.startsWith("/admin")
     ? "ADMIN"
     : pathname.startsWith("/partner")
       ? "PARTNER"
       : "TRADER";
 
-  if (isAuthRoute) {
+  if (isShellFreeRoute) {
     return <div className="min-h-screen bg-background">{children}</div>;
   }
 
