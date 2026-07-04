@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
@@ -105,25 +106,15 @@ export default function TraderDashboardPage() {
 
   const [accountIndex, setAccountIndex] = useState(0);
   const baseAccount = accounts[Math.min(accountIndex, accounts.length - 1)] ?? accounts[0];
-
-  const [live, setLive] = useState({
-    balance: 0,
-    equity: 0,
-    pnl: 0,
-    refresh: new Date(),
-  });
-
-  // Sync live state when account data arrives
-  useEffect(() => {
-    if (baseAccount) {
-      setLive({
-        balance: baseAccount.balance.amount,
-        equity: baseAccount.equity.amount,
-        pnl: baseAccount.floatingPnl.amount,
-        refresh: new Date(),
-      });
-    }
-  }, [baseAccount]);
+  const live = useMemo(
+    () => ({
+      balance: baseAccount?.balance.amount ?? 0,
+      equity: baseAccount?.equity.amount ?? 0,
+      pnl: baseAccount?.floatingPnl.amount ?? 0,
+      refresh: statsNow,
+    }),
+    [baseAccount, statsNow],
+  );
 
   const openTrades = useMemo(() => trades.filter((trade) => trade.status === "OPEN"), [trades]);
   const periodTrades = useMemo(
@@ -294,12 +285,12 @@ export default function TraderDashboardPage() {
               Connect a broker account to start tracking your equity, trades, and performance metrics.
             </p>
           </div>
-          <a
+          <Link
             href="/accounts"
             className="rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-background transition hover:opacity-90"
           >
             Connect account
-          </a>
+          </Link>
         </div>
       ) : (
         <>
