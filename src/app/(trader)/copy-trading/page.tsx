@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Repeat, X } from "lucide-react";
+import { AlertTriangle, ShieldCheck as Lock, Repeat, X } from "lucide-react";
 import {
   DataTable,
   EmptyState,
@@ -15,6 +16,7 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField } from "@/components/app/FormFields";
+import type { UserBillingSummaryDto } from "@/lib/services/billingService";
 import type { CopyFollowerDto, CopyLogDto } from "@/lib/copy/types";
 import type { TraderStrategyDto } from "@/lib/services/copyTradingService";
 import type { TraderAccountSummary } from "@/lib/domain/types";
@@ -47,6 +49,17 @@ export default function CopyTradingPage() {
   const [consent, setConsent] = useState(false);
   const [revokeSubId, setRevokeSubId] = useState<string | null>(null);
   const [logStatusFilter, setLogStatusFilter] = useState<"ALL" | "SUCCESS" | "SKIPPED" | "FAILED">("ALL");
+
+  const { data: billingSummary } = useQuery<UserBillingSummaryDto>({
+    queryKey: ["billing-me"],
+    queryFn: () => getJson("/api/billing/me"),
+    staleTime: 60_000,
+  });
+
+  const hasActiveEntitlement =
+    (billingSummary?.copyEntitlements ?? []).some((e) => e.status === "ACTIVE");
+  const hasPendingEntitlement =
+    (billingSummary?.copyEntitlements ?? []).some((e) => e.status === "PENDING_APPROVAL");
 
   const { data: strategies = [], isLoading } = useQuery<StrategyDto[]>({
     queryKey: ["copy-strategies"],
@@ -123,6 +136,31 @@ export default function CopyTradingPage() {
           Copied trades are scaled to your account but can still lose money. You can pause or stop following at any time.
         </p>
       </div>
+
+      {/* Entitlement gate */}
+      {!hasActiveEntitlement && !hasPendingEntitlement && (
+        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-semibold">Copy-trading access required</p>
+            <p className="mt-0.5 text-muted">
+              You need an active copy-trading entitlement to follow strategies. Normal accounts are $10/month; Ultra Fast accounts are $15/month.
+            </p>
+            <Link href="/billing" className="mt-2 inline-block rounded-full border border-accent/30 bg-background px-3 py-1 text-xs font-semibold text-foreground hover:border-accent/60">
+              Go to Billing →
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {!hasActiveEntitlement && hasPendingEntitlement && (
+        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            Your copy-trading entitlement is <strong>pending admin approval</strong>. Following strategies will be unlocked once approved.
+          </p>
+        </div>
+      )}
 
       {notice ? (
         <div
