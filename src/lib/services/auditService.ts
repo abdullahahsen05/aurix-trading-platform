@@ -76,7 +76,13 @@ export type AuditAction =
   | "EVAL_ATTEMPT_OVERRIDDEN"
   | "EVAL_CERTIFICATE_ISSUED"
   | "EVAL_CERTIFICATE_REVOKED"
-  | "TERMINAL_SETTINGS_UPDATED";
+  | "TERMINAL_SETTINGS_UPDATED"
+  | "PAYMENT_ACCESS_APPROVED"
+  | "SUBSCRIPTION_CANCELLED"
+  | "PARTNER_COMMISSION_APPROVED"
+  | "PARTNER_PAYOUT_MARKED_PAID"
+  | "ACCOUNT_DEACTIVATED"
+  | "ACCOUNT_REACTIVATED";
 
 export interface WriteAuditLogParams {
   /** UUID of the admin or service performing the action. Null for system jobs. */
