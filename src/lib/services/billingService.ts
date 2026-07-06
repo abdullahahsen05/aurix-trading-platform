@@ -36,6 +36,7 @@ export interface PaymentOrderDto {
 export interface BotAccessDto {
   id: string;
   botProductId: string;
+  botName: string;
   status: string;
   grantedAt: string | null;
 }
@@ -447,7 +448,7 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
 
     supabase
       .from("bot_access_records")
-      .select("id, product_id, status, granted_at")
+      .select("id, product_id, status, granted_at, bot_products(name)")
       .eq("user_id", userId)
       .in("status", ["ACTIVE", "REQUESTED"])
       .limit(20),
@@ -488,6 +489,7 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
     product_id: string;
     status: string;
     granted_at: string | null;
+    bot_products: { name: string } | null;
   };
 
   const platformSub = ((subs ?? []) as unknown as SubRow[]).find(
@@ -553,6 +555,7 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
     botAccess: allBotRecs.map((r) => ({
       id: r.id,
       botProductId: r.product_id,
+      botName: r.bot_products?.name ?? "Trading Bot / EA",
       status: r.status,
       grantedAt: r.granted_at,
     })),

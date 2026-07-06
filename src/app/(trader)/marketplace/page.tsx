@@ -132,13 +132,17 @@ export default function MarketplacePage() {
                 {product.shortDescription ? (
                   <p className="text-sm text-muted line-clamp-2">{product.shortDescription}</p>
                 ) : null}
-                <div className="mt-auto flex flex-wrap items-center gap-2">
-                  {product.riskLevel ? (
-                    <StatusPill tone={RISK_TONES[product.riskLevel] ?? "muted"}>
-                      {product.riskLevel} Risk
-                    </StatusPill>
-                  ) : null}
-
+                <div className="mt-auto space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {product.riskLevel ? (
+                      <StatusPill tone={RISK_TONES[product.riskLevel] ?? "muted"}>
+                        {product.riskLevel} Risk
+                      </StatusPill>
+                    ) : null}
+                    <span className="ml-auto text-sm font-semibold text-accent">
+                      {product.pricingLabel ?? (product.priceAmount != null ? `$${product.priceAmount}` : "$500")} — one-time
+                    </span>
+                  </div>
                   {/* Purchase state */}
                   {accessState === "ACTIVE" ? (
                     <StatusPill tone="lime">Access granted</StatusPill>
@@ -150,9 +154,8 @@ export default function MarketplacePage() {
                     <GhostButton
                       type="button"
                       onClick={() => setBuyBotId(product.id)}
-                      className="ml-auto"
                     >
-                      Buy Bot — $500
+                      Buy Bot
                     </GhostButton>
                   )}
                 </div>

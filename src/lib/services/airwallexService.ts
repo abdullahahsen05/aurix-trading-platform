@@ -92,8 +92,8 @@ export async function createPaymentIntent(
       currency: params.currency,
       description: params.description,
       return_url: params.returnUrl,
-      order: {
-        products: [{ name: params.description, quantity: 1, unit_price: params.amount }],
+      payment_method_options: {
+        card: { auto_capture: true },
       },
       customer: params.customerEmail
         ? {

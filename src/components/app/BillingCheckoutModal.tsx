@@ -3,7 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { AlertTriangle, X } from "lucide-react";
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { GhostButton, PrimaryButton } from "@/components/app/WorkspaceUI";
 import { SelectField } from "@/components/app/FormFields";
 import { formatMoney } from "@/lib/utils/format";
@@ -39,6 +39,7 @@ export function BillingCheckoutModal({
 }: BillingCheckoutModalProps) {
   const [selectedAccountId, setSelectedAccountId] = useState(propAccountId ?? "");
   const [apiError, setApiError] = useState("");
+  const queryClient = useQueryClient();
 
   const isCopyProduct = product.code.startsWith("COPY_");
   const needsAccountSelector = isCopyProduct && !propAccountId && accounts.length > 0;
@@ -66,6 +67,8 @@ export function BillingCheckoutModal({
     },
     onSuccess: (data) => {
       handleClose();
+      // Invalidate so every page reflects the new payment immediately on return
+      queryClient.invalidateQueries({ queryKey: ["billing-me"] });
       window.location.href = data.checkoutUrl;
     },
     onError: (err: Error) => setApiError(err.message),

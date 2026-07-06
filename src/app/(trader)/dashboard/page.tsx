@@ -69,7 +69,7 @@ export default function TraderDashboardPage() {
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load billing");
       return json.data;
     },
-    staleTime: 60_000,
+    staleTime: 0,
   });
 
   const subStatus = billingSummary?.platformSubscription?.status;

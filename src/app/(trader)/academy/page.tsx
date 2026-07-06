@@ -53,7 +53,7 @@ export default function AcademyPage() {
   const { data: billingSummary } = useQuery<UserBillingSummaryDto>({
     queryKey: ["billing-me"],
     queryFn: () => apiFetch("/api/billing/me"),
-    staleTime: 60_000,
+    staleTime: 0,
   });
 
   const mentorshipOrder = billingSummary?.paymentHistory.find(

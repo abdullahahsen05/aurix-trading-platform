@@ -178,7 +178,7 @@ export default function BillingPage() {
                 key={b.id}
                 className="flex items-center justify-between gap-3 rounded-xl border border-line bg-background px-3 py-2"
               >
-                <p className="text-sm font-semibold text-foreground">Trading Bot / EA</p>
+                <p className="text-sm font-semibold text-foreground">{b.botName}</p>
                 <StatusPill tone={b.status === "ACTIVE" ? "lime" : "accent"}>
                   {b.status === "ACTIVE" ? "Access granted" : "Pending admin approval"}
                 </StatusPill>
