@@ -254,15 +254,15 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
 
   if (orderErr || !order) throw new Error(`Failed to create payment order: ${orderErr?.message}`);
 
-  // TEST MODE: skip Airwallex and mark order PAID immediately
+  // TEST MODE: skip Airwallex, wire up the intent ID, then let handlePaymentSucceeded
+  // run the normal PENDING→PAID transition and create the subscription/entitlement row.
+  // Do NOT pre-mark as PAID here — handlePaymentSucceeded bails early if it sees PAID.
   if (process.env.AIRWALLEX_TEST_MODE === "true") {
     const testIntentId = `test_${order.id}`;
     const testCheckoutUrl = `${params.returnUrl}?orderId=${order.id}&test=1`;
     await supabase
       .from("payment_orders")
       .update({
-        status: "PAID",
-        paid_at: new Date().toISOString(),
         provider_payment_intent_id: testIntentId,
         provider_checkout_url: testCheckoutUrl,
       })
