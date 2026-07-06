@@ -43,6 +43,7 @@ export const navItems: NavItem[] = [
   { href: "/academy", label: "Academy", role: "TRADER", icon: BookOpenCheck },
   { href: "/evaluations", label: "Evaluations", role: "TRADER", icon: ListChecks },
   { href: "/terminal", label: "Terminal", role: "TRADER", icon: CandlestickChart },
+  { href: "/billing", label: "Billing", role: "TRADER", icon: BadgeDollarSign },
   { href: "/reports", label: "Reports", role: "TRADER", icon: BookOpenCheck },
   { href: "/settings", label: "Settings", role: "TRADER", icon: Settings },
   { href: "/admin", label: "Overview", role: "ADMIN", icon: Gauge },
@@ -55,7 +56,7 @@ export const navItems: NavItem[] = [
   { href: "/admin/jobs", label: "Jobs", role: "ADMIN", icon: Clock },
   { href: "/admin/ai", label: "AI Controls", role: "ADMIN", icon: Bot },
   { href: "/admin/economic-calendar", label: "Calendar", role: "ADMIN", icon: CalendarClock },
-  { href: "/admin/subscriptions", label: "Subscriptions", role: "ADMIN", icon: BadgeDollarSign },
+  { href: "/admin/billing", label: "Billing", role: "ADMIN", icon: BadgeDollarSign },
   { href: "/admin/marketplace", label: "Marketplace", role: "ADMIN", icon: Sparkles},
   { href: "/admin/academy", label: "Academy", role: "ADMIN", icon: BookOpenCheck },
   { href: "/admin/evaluations", label: "Evaluations", role: "ADMIN", icon: ListChecks },
@@ -65,4 +66,5 @@ export const navItems: NavItem[] = [
   { href: "/partner/traders", label: "Traders", role: "PARTNER", icon: Users },
   { href: "/partner/crm", label: "CRM", role: "PARTNER", icon: MessageSquare },
   { href: "/partner/commissions", label: "Commissions", role: "PARTNER", icon: BadgeDollarSign },
+  { href: "/partner/payouts", label: "Payouts", role: "PARTNER", icon: WalletCards },
 ];
