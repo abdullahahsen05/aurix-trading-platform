@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireAuth, AuthError } from "@/lib/auth/session";
 import { jsonOk, jsonFail, handleAuthError } from "@/lib/api/envelope";
-import { createCheckoutSession } from "@/lib/services/billingService";
+import { createCheckoutSession, checkExistingAccess } from "@/lib/services/billingService";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,6 +14,15 @@ export async function POST(req: NextRequest) {
     };
 
     if (!body.productCode) return jsonFail("MISSING_FIELD", "productCode is required");
+
+    // Duplicate purchase prevention
+    const existing = await checkExistingAccess(user.id, body.productCode, {
+      tradingAccountId: body.tradingAccountId,
+      botProductId: body.botProductId,
+    });
+    if (existing.status !== "NONE" && existing.status !== "EXPIRED" && existing.status !== "CANCELLED" && existing.status !== "FAILED") {
+      return jsonFail("DUPLICATE_PURCHASE", existing.message, 409);
+    }
 
     const origin = req.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "";
     const returnUrl = `${origin}/billing/return`;

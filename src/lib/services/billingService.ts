@@ -29,6 +29,15 @@ export interface PaymentOrderDto {
   checkoutUrl: string | null;
   createdAt: string;
   paidAt: string | null;
+  botProductId: string | null;
+  tradingAccountId: string | null;
+}
+
+export interface BotAccessDto {
+  id: string;
+  botProductId: string;
+  status: string;
+  grantedAt: string | null;
 }
 
 export interface SubscriptionDto {
@@ -53,12 +62,106 @@ export interface UserBillingSummaryDto {
   platformSubscription: SubscriptionDto | null;
   copyEntitlements: CopyEntitlementDto[];
   paymentHistory: PaymentOrderDto[];
+  botAccess: BotAccessDto[];
   pendingApprovals: Array<{
     type: string;
     orderId: string;
     productName: string;
     paidAt: string;
   }>;
+}
+
+// ─── Access check ────────────────────────────────────────────────────────────
+
+export type AccessStatus =
+  | "NONE"
+  | "PENDING_PAYMENT"
+  | "PENDING_APPROVAL"
+  | "ACTIVE"
+  | "EXPIRED"
+  | "CANCELLED"
+  | "FAILED";
+
+export interface ExistingAccessResult {
+  status: AccessStatus;
+  message: string;
+}
+
+/** Returns NONE if the user may purchase; otherwise returns the blocking status. */
+export async function checkExistingAccess(
+  userId: string,
+  productCode: string,
+  options?: { tradingAccountId?: string; botProductId?: string },
+): Promise<ExistingAccessResult> {
+  const supabase = createAdminClient();
+  const product = await getProductByCode(productCode);
+  if (!product) return { status: "NONE", message: "" };
+
+  if (product.type === "SUBSCRIPTION") {
+    const { data } = await supabase
+      .from("subscriptions")
+      .select("id, status")
+      .eq("user_id", userId)
+      .in("status", ["ACTIVE", "PENDING_APPROVAL"])
+      .limit(1);
+    const row = ((data ?? []) as Array<{ status: string }>)[0];
+    if (!row) return { status: "NONE", message: "" };
+    if (row.status === "ACTIVE") return { status: "ACTIVE", message: "Subscription already active" };
+    return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
+  }
+
+  if (product.type === "COPY_ACCOUNT") {
+    let q = supabase
+      .from("copy_account_entitlements")
+      .select("id, status")
+      .eq("user_id", userId)
+      .in("status", ["ACTIVE", "PENDING_APPROVAL"]);
+    if (options?.tradingAccountId) q = q.eq("trading_account_id", options.tradingAccountId);
+    const { data } = await q.limit(1);
+    const row = ((data ?? []) as Array<{ status: string }>)[0];
+    if (!row) return { status: "NONE", message: "" };
+    if (row.status === "ACTIVE") return { status: "ACTIVE", message: "Copy trading access already active" };
+    return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
+  }
+
+  if (product.type === "BOT") {
+    if (options?.botProductId) {
+      const { data: bar } = await supabase
+        .from("bot_access_records")
+        .select("id, status")
+        .eq("user_id", userId)
+        .eq("product_id", options.botProductId)
+        .in("status", ["ACTIVE", "REQUESTED"])
+        .limit(1);
+      const rec = ((bar ?? []) as Array<{ status: string }>)[0];
+      if (rec?.status === "ACTIVE") return { status: "ACTIVE", message: "Bot access already granted" };
+      if (rec?.status === "REQUESTED") return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
+    }
+    const { data: orders } = await supabase
+      .from("payment_orders")
+      .select("id, status")
+      .eq("user_id", userId)
+      .eq("product_id", product.id)
+      .in("status", ["PENDING", "PAID"])
+      .limit(1);
+    const order = ((orders ?? []) as Array<{ status: string }>)[0];
+    if (!order) return { status: "NONE", message: "" };
+    if (order.status === "PAID") return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
+    return { status: "PENDING_PAYMENT", message: "Payment already pending" };
+  }
+
+  // MENTORSHIP / EVALUATION
+  const { data: orders } = await supabase
+    .from("payment_orders")
+    .select("id, status")
+    .eq("user_id", userId)
+    .eq("product_id", product.id)
+    .in("status", ["PENDING", "PAID"])
+    .limit(1);
+  const order = ((orders ?? []) as Array<{ status: string }>)[0];
+  if (!order) return { status: "NONE", message: "" };
+  if (order.status === "PAID") return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
+  return { status: "PENDING_PAYMENT", message: "Payment already pending" };
 }
 
 // ─── Product lookup ───────────────────────────────────────────────────────────
@@ -149,6 +252,23 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
     .single();
 
   if (orderErr || !order) throw new Error(`Failed to create payment order: ${orderErr?.message}`);
+
+  // TEST MODE: skip Airwallex and mark order PAID immediately
+  if (process.env.AIRWALLEX_TEST_MODE === "true") {
+    const testIntentId = `test_${order.id}`;
+    const testCheckoutUrl = `${params.returnUrl}?orderId=${order.id}&test=1`;
+    await supabase
+      .from("payment_orders")
+      .update({
+        status: "PAID",
+        paid_at: new Date().toISOString(),
+        provider_payment_intent_id: testIntentId,
+        provider_checkout_url: testCheckoutUrl,
+      })
+      .eq("id", order.id);
+    await handlePaymentSucceeded(testIntentId);
+    return { orderId: order.id, checkoutUrl: testCheckoutUrl };
+  }
 
   // Create Airwallex PaymentIntent
   const intent = await createPaymentIntent({
@@ -303,7 +423,7 @@ async function maybeCreatePartnerCommission(
 export async function getUserBillingSummary(userId: string): Promise<UserBillingSummaryDto> {
   const supabase = createAdminClient();
 
-  const [{ data: subs }, { data: entitlements }, { data: orders }] = await Promise.all([
+  const [{ data: subs }, { data: entitlements }, { data: orders }, { data: botRecs }] = await Promise.all([
     supabase
       .from("subscriptions")
       .select("id, status, current_period_end, approved_at, billing_products(code, name)")
@@ -320,10 +440,17 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
 
     supabase
       .from("payment_orders")
-      .select("id, status, amount, currency, paid_at, created_at, provider_checkout_url, billing_products(code, name)")
+      .select("id, status, amount, currency, paid_at, created_at, provider_checkout_url, trading_account_id, bot_product_id, billing_products(code, name)")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(50),
+
+    supabase
+      .from("bot_access_records")
+      .select("id, product_id, status, granted_at")
+      .eq("user_id", userId)
+      .in("status", ["ACTIVE", "REQUESTED"])
+      .limit(20),
   ]);
 
   type SubRow = {
@@ -351,7 +478,16 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
     paid_at: string | null;
     created_at: string;
     provider_checkout_url: string | null;
+    trading_account_id: string | null;
+    bot_product_id: string | null;
     billing_products: { code: string; name: string } | null;
+  };
+
+  type BotRecRow = {
+    id: string;
+    product_id: string;
+    status: string;
+    granted_at: string | null;
   };
 
   const platformSub = ((subs ?? []) as unknown as SubRow[]).find(
@@ -361,6 +497,7 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
   const allSubs = (subs ?? []) as unknown as SubRow[];
   const allEnts = (entitlements ?? []) as unknown as EntRow[];
   const allOrders = (orders ?? []) as unknown as OrderRow[];
+  const allBotRecs = (botRecs ?? []) as unknown as BotRecRow[];
 
   const pendingApprovals = [
     ...allSubs
@@ -410,6 +547,14 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
       checkoutUrl: o.provider_checkout_url,
       createdAt: o.created_at,
       paidAt: o.paid_at,
+      botProductId: o.bot_product_id,
+      tradingAccountId: o.trading_account_id,
+    })),
+    botAccess: allBotRecs.map((r) => ({
+      id: r.id,
+      botProductId: r.product_id,
+      status: r.status,
+      grantedAt: r.granted_at,
     })),
     pendingApprovals,
   };

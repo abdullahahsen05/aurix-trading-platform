@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
+import { BillingCheckoutModal } from "@/components/app/BillingCheckoutModal";
+import type { UserBillingSummaryDto } from "@/lib/services/billingService";
 import { DashboardModeOverlay } from "@/components/dashboard/DashboardModeOverlay";
 import { DashboardKpiStrip, MarketSentimentStrip } from "@/components/dashboard/DashboardKpiStrip";
 import { PerformanceRings, type PerformanceRingItem } from "@/components/dashboard/PerformanceRings";
@@ -57,6 +59,25 @@ export default function TraderDashboardPage() {
   const [selectedView, setSelectedView] = useState<DashboardView>("CURRENT_EQUITY");
   const [activeOverlay, setActiveOverlay] = useState<DashboardView | null>(null);
   const [statsNow, setStatsNow] = useState(() => new Date());
+  const [subModalOpen, setSubModalOpen] = useState(false);
+
+  const { data: billingSummary } = useQuery<UserBillingSummaryDto>({
+    queryKey: ["billing-me"],
+    queryFn: async () => {
+      const res = await fetch("/api/billing/me");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load billing");
+      return json.data;
+    },
+    staleTime: 60_000,
+  });
+
+  const subStatus = billingSummary?.platformSubscription?.status;
+  const subEnd = billingSummary?.platformSubscription?.currentPeriodEnd;
+  const showSubBanner =
+    billingSummary !== undefined &&
+    subStatus !== "ACTIVE" &&
+    subStatus !== "PENDING_APPROVAL";
 
   // Fetch trading accounts
   const { data: accounts = [], isLoading } = useQuery<TraderAccountSummary[]>({
@@ -233,6 +254,7 @@ export default function TraderDashboardPage() {
   ];
 
   return (
+    <>
     <WorkspacePage
       eyebrow="Trader workspace"
       title="Trading overview"
@@ -271,6 +293,34 @@ export default function TraderDashboardPage() {
         </PageActionGroup>
       }
     >
+      {/* Platform subscription banner */}
+      {showSubBanner && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              {subStatus === "EXPIRED" ? "Subscription expired" : "Activate Platform Subscription"}
+            </p>
+            <p className="text-xs text-muted">
+              {subStatus === "EXPIRED"
+                ? `Expired on ${subEnd ? new Date(subEnd).toLocaleDateString() : "—"}. Renew to restore full access.`
+                : "$50/month — renews monthly from your subscription start date"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSubModalOpen(true)}
+            className="shrink-0 rounded-full bg-accent px-4 py-2 text-xs font-semibold text-background hover:opacity-90"
+          >
+            {subStatus === "EXPIRED" ? "Renew — $50/month" : "Pay $50 / month"}
+          </button>
+        </div>
+      )}
+      {subStatus === "PENDING_APPROVAL" && (
+        <div className="mb-5 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm text-accent">
+          Platform subscription payment received — pending admin approval.
+        </div>
+      )}
+
       {/* Empty state for traders with no connected accounts */}
       {!isLoading && accounts.length === 0 ? (
         <div className="mt-10 flex flex-col items-center justify-center gap-5 text-center">
@@ -325,5 +375,20 @@ export default function TraderDashboardPage() {
         </>
       )}
     </WorkspacePage>
+
+    <BillingCheckoutModal
+      open={subModalOpen}
+      onClose={() => setSubModalOpen(false)}
+      product={{
+        code: "PLATFORM_MONTHLY",
+        name: "Platform Subscription",
+        amount: 50,
+        currency: "USD",
+        billingInterval: "MONTHLY",
+        description:
+          "Full access to all Aurix platform features. Renews monthly from your subscription start date.",
+      }}
+    />
+    </>
   );
 }

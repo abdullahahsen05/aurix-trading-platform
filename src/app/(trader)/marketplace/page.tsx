@@ -6,11 +6,14 @@ import { useQuery } from "@tanstack/react-query";
 import {
   EmptyState,
   FilterChipRow,
+  GhostButton,
   Panel,
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
+import { BillingCheckoutModal } from "@/components/app/BillingCheckoutModal";
 import type { BotProductDto } from "@/lib/domain/types";
+import type { UserBillingSummaryDto } from "@/lib/services/billingService";
 
 const RISK_TONES: Record<string, "lime" | "accent" | "danger" | "muted"> = {
   LOW: "lime",
@@ -18,29 +21,60 @@ const RISK_TONES: Record<string, "lime" | "accent" | "danger" | "muted"> = {
   HIGH: "danger",
 };
 
+const BOT_EA_PRODUCT = {
+  code: "BOT_EA",
+  name: "Trading Bot / EA",
+  amount: 500,
+  currency: "USD",
+  billingInterval: "ONE_TIME",
+  description: "One-time purchase — lifetime access after admin approval.",
+};
+
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error?.message ?? "Request failed");
+  return json.data;
+}
+
 export default function MarketplacePage() {
   const [platformFilter, setPlatformFilter] = useState<"ALL" | "MT5" | "MT4">("ALL");
   const [riskFilter, setRiskFilter] = useState<"ALL" | "LOW" | "MEDIUM" | "HIGH">("ALL");
+  const [buyBotId, setBuyBotId] = useState<string | null>(null);
 
   const { data: products = [], isLoading, isError, error } = useQuery<BotProductDto[]>({
     queryKey: ["marketplace-products"],
-    queryFn: async () => {
-      const res = await fetch("/api/marketplace/products");
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load marketplace");
-      return json.data;
-    },
+    queryFn: () => getJson("/api/marketplace/products"),
+  });
+
+  const { data: summary } = useQuery<UserBillingSummaryDto>({
+    queryKey: ["billing-me"],
+    queryFn: () => getJson("/api/billing/me"),
+    staleTime: 60_000,
   });
 
   const filtered = products
     .filter((p) => platformFilter === "ALL" || p.platform === platformFilter || p.platform === "BOTH")
     .filter((p) => riskFilter === "ALL" || p.riskLevel === riskFilter);
 
+  function getBotAccessState(botProductId: string): "NONE" | "PENDING_APPROVAL" | "ACTIVE" | "PENDING_PAYMENT" {
+    if (summary?.botAccess.some((b) => b.botProductId === botProductId && b.status === "ACTIVE")) return "ACTIVE";
+    if (summary?.botAccess.some((b) => b.botProductId === botProductId && b.status === "REQUESTED")) return "PENDING_APPROVAL";
+    const order = summary?.paymentHistory.find(
+      (h) => h.productCode === "BOT_EA" && h.botProductId === botProductId && ["PAID", "PENDING"].includes(h.status)
+    );
+    if (order?.status === "PAID") return "PENDING_APPROVAL";
+    if (order?.status === "PENDING") return "PENDING_PAYMENT";
+    return "NONE";
+  }
+
+  const buyingBot = products.find((p) => p.id === buyBotId);
+
   return (
     <WorkspacePage
       eyebrow="Trading Tools"
       title="Bot Marketplace"
-      description="Explore and request access to trading bots"
+      description="Explore and purchase trading bots and expert advisors"
     >
       <div className="space-y-3">
         <FilterChipRow
@@ -79,37 +113,65 @@ export default function MarketplacePage() {
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((product) => (
-            <Link
-              key={product.id}
-              href={`/marketplace/${product.slug}`}
-              className="group flex flex-col gap-3 rounded-3xl border border-line bg-panel p-5 transition-colors hover:border-accent/40 hover:bg-panel/80"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="text-base font-semibold text-foreground group-hover:text-accent">
-                  {product.name}
-                </h3>
-                <StatusPill tone="muted">{product.platform}</StatusPill>
-              </div>
-              {product.shortDescription ? (
-                <p className="text-sm text-muted line-clamp-2">{product.shortDescription}</p>
-              ) : null}
-              <div className="mt-auto flex flex-wrap items-center gap-2">
-                {product.difficulty ? (
-                  <StatusPill tone="muted">{product.difficulty}</StatusPill>
+          {filtered.map((product) => {
+            const accessState = getBotAccessState(product.id);
+            return (
+              <div
+                key={product.id}
+                className="flex flex-col gap-3 rounded-3xl border border-line bg-panel p-5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <Link
+                    href={`/marketplace/${product.slug}`}
+                    className="text-base font-semibold text-foreground hover:text-accent"
+                  >
+                    {product.name}
+                  </Link>
+                  <StatusPill tone="muted">{product.platform}</StatusPill>
+                </div>
+                {product.shortDescription ? (
+                  <p className="text-sm text-muted line-clamp-2">{product.shortDescription}</p>
                 ) : null}
-                {product.riskLevel ? (
-                  <StatusPill tone={RISK_TONES[product.riskLevel] ?? "muted"}>
-                    {product.riskLevel} Risk
-                  </StatusPill>
-                ) : null}
-                <span className="ml-auto text-sm font-semibold text-accent">
-                  {product.pricingLabel ?? (product.priceAmount != null ? `$${product.priceAmount}` : "Free")}
-                </span>
+                <div className="mt-auto flex flex-wrap items-center gap-2">
+                  {product.riskLevel ? (
+                    <StatusPill tone={RISK_TONES[product.riskLevel] ?? "muted"}>
+                      {product.riskLevel} Risk
+                    </StatusPill>
+                  ) : null}
+
+                  {/* Purchase state */}
+                  {accessState === "ACTIVE" ? (
+                    <StatusPill tone="lime">Access granted</StatusPill>
+                  ) : accessState === "PENDING_APPROVAL" ? (
+                    <StatusPill tone="accent">Pending admin approval</StatusPill>
+                  ) : accessState === "PENDING_PAYMENT" ? (
+                    <StatusPill tone="muted">Payment pending</StatusPill>
+                  ) : (
+                    <GhostButton
+                      type="button"
+                      onClick={() => setBuyBotId(product.id)}
+                      className="ml-auto"
+                    >
+                      Buy Bot — $500
+                    </GhostButton>
+                  )}
+                </div>
               </div>
-            </Link>
-          ))}
+            );
+          })}
         </div>
+      )}
+
+      {buyingBot && (
+        <BillingCheckoutModal
+          open={Boolean(buyBotId)}
+          onClose={() => setBuyBotId(null)}
+          product={{
+            ...BOT_EA_PRODUCT,
+            name: `${buyingBot.name} — Bot / EA`,
+          }}
+          botProductId={buyBotId ?? undefined}
+        />
       )}
     </WorkspacePage>
   );

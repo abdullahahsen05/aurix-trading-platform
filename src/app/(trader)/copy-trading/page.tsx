@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ShieldCheck as Lock, Repeat, X } from "lucide-react";
+import { BillingCheckoutModal } from "@/components/app/BillingCheckoutModal";
 import {
   DataTable,
   EmptyState,
@@ -44,6 +44,7 @@ const STATUS_TONE: Record<string, "lime" | "accent" | "danger" | "muted"> = {
 export default function CopyTradingPage() {
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [copyTierModal, setCopyTierModal] = useState<"NORMAL" | "PREMIUM" | null>(null);
   const [followStrategy, setFollowStrategy] = useState<StrategyDto | null>(null);
   const [followAccountId, setFollowAccountId] = useState("");
   const [consent, setConsent] = useState(false);
@@ -124,6 +125,7 @@ export default function CopyTradingPage() {
   });
 
   return (
+    <>
     <WorkspacePage
       eyebrow="Copy Trading"
       title="Copy Trading"
@@ -137,18 +139,35 @@ export default function CopyTradingPage() {
         </p>
       </div>
 
-      {/* Entitlement gate */}
+      {/* Entitlement gate — inline tier payment */}
       {!hasActiveEntitlement && !hasPendingEntitlement && (
-        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            <p className="font-semibold">Copy-trading access required</p>
-            <p className="mt-0.5 text-muted">
-              You need an active copy-trading entitlement to follow strategies. Normal accounts are $10/month; Ultra Fast accounts are $15/month.
-            </p>
-            <Link href="/billing" className="mt-2 inline-block rounded-full border border-accent/30 bg-background px-3 py-1 text-xs font-semibold text-foreground hover:border-accent/60">
-              Go to Billing →
-            </Link>
+        <div className="mb-5 rounded-2xl border border-accent/30 bg-accent/5 p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Lock className="h-4 w-4 text-accent" />
+            Activate copy-trading access
+          </div>
+          <p className="mb-4 text-xs text-muted">
+            Choose a tier to start following strategies. Access is activated after payment and admin approval.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setCopyTierModal("NORMAL")}
+              className="rounded-2xl border border-line bg-background p-4 text-left hover:border-accent/50"
+            >
+              <p className="text-sm font-semibold text-foreground">Normal</p>
+              <p className="mt-0.5 text-xs text-muted">Standard copy speed</p>
+              <p className="mt-2 text-sm font-semibold text-accent">$10 / month</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCopyTierModal("PREMIUM")}
+              className="rounded-2xl border border-line bg-background p-4 text-left hover:border-accent/50"
+            >
+              <p className="text-sm font-semibold text-foreground">Ultra Fast</p>
+              <p className="mt-0.5 text-xs text-muted">Lowest latency execution</p>
+              <p className="mt-2 text-sm font-semibold text-accent">$15 / month</p>
+            </button>
           </div>
         </div>
       )}
@@ -157,8 +176,27 @@ export default function CopyTradingPage() {
         <div className="mb-5 flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            Your copy-trading entitlement is <strong>pending admin approval</strong>. Following strategies will be unlocked once approved.
+            Payment received — copy-trading entitlement is <strong>pending admin approval</strong>.
+            Following strategies will be unlocked once approved.
           </p>
+        </div>
+      )}
+
+      {hasActiveEntitlement && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {(billingSummary?.copyEntitlements ?? [])
+            .filter((e) => e.status === "ACTIVE")
+            .map((e) => (
+              <span
+                key={e.id}
+                className="rounded-full border border-lime/30 bg-lime/10 px-3 py-1 text-xs font-semibold text-lime"
+              >
+                {e.tier === "PREMIUM" ? "Ultra Fast" : "Normal"} — Active
+                {e.currentPeriodEnd
+                  ? ` · renews ${new Date(e.currentPeriodEnd).toLocaleDateString()}`
+                  : ""}
+              </span>
+            ))}
         </div>
       )}
 
@@ -374,5 +412,33 @@ export default function CopyTradingPage() {
         </Dialog.Portal>
       </Dialog.Root>
     </WorkspacePage>
+
+    {copyTierModal && (
+      <BillingCheckoutModal
+        open={Boolean(copyTierModal)}
+        onClose={() => setCopyTierModal(null)}
+        product={
+          copyTierModal === "PREMIUM"
+            ? {
+                code: "COPY_ULTRA_FAST",
+                name: "Copy Trading – Ultra Fast",
+                amount: 15,
+                currency: "USD",
+                billingInterval: "MONTHLY",
+                description: "Lowest latency copy execution. Renews monthly from approval date.",
+              }
+            : {
+                code: "COPY_NORMAL",
+                name: "Copy Trading – Normal",
+                amount: 10,
+                currency: "USD",
+                billingInterval: "MONTHLY",
+                description: "Standard copy speed for most strategies. Renews monthly from approval date.",
+              }
+        }
+        accounts={accounts.map((a) => ({ accountId: a.accountId, accountName: a.accountName }))}
+      />
+    )}
+    </>
   );
 }
