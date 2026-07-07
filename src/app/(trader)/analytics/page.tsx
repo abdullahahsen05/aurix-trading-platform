@@ -13,9 +13,11 @@ import {
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
+import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import { EquityCurve } from "@/components/dashboard/EquityCurve";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 import type { AnalyticsSummary, EquityPoint, TraderAccountSummary, TradeDto } from "@/lib/domain/types";
+import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
 
 const periods = ["DAILY", "WEEKLY", "MONTHLY", "ALL_TIME"] as const;
 
@@ -128,6 +130,38 @@ function GrowthGraph({ points }: { points: EquityPoint[] }) {
 }
 
 export default function AnalyticsPage() {
+  const { data: summary, isLoading: accessLoading } = useTraderAccessSummary();
+  const access = summary?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
+
+  if (accessLoading && !summary) {
+    return (
+      <WorkspacePage eyebrow="Performance lab" title="Analytics" description="Loading your platform access status.">
+        <Panel>
+          <p className="text-sm text-muted">Loading…</p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  if (access.status !== "ACTIVE") {
+    return (
+      <WorkspacePage
+        eyebrow="Performance lab"
+        title="Analytics"
+        description="Activate your platform subscription to unlock equity analytics and performance reporting."
+      >
+        <PlatformSubscriptionLocked
+          access={access}
+          description="Activate the Aurix platform subscription to unlock analytics, equity breakdowns, and performance reporting workflows."
+        />
+      </WorkspacePage>
+    );
+  }
+
+  return <AnalyticsContent />;
+}
+
+function AnalyticsContent() {
   const [period, setPeriod] = useState<(typeof periods)[number]>("ALL_TIME");
   const [exportStatus, setExportStatus] = useState<string>("");
 

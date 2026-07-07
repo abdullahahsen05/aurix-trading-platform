@@ -9,8 +9,6 @@ import {
   evaluateAttempt,
   calculateAcademyCompletion,
   type CheckResult,
-  type EvaluationMetrics,
-  type RulesSnapshot,
 } from "@/lib/services/evaluationRulesEngine";
 
 // ─────────────────────────────────────────────────────────────────────────────

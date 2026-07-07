@@ -7,8 +7,6 @@ import { z } from "zod";
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Mirror schemas from API routes
-const requestAccessAllowedStatuses = ["PUBLISHED"] as const;
-const accessStatusEnum = ["REQUESTED", "ACTIVE", "SUSPENDED", "REVOKED", "EXPIRED"] as const;
 const botPlatformEnum = ["MT5", "MT4", "BOTH"] as const;
 const botStatusEnum = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
 

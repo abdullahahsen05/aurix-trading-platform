@@ -3,10 +3,15 @@ import { requireTrader, AuthError } from "@/lib/auth/session";
 import { followStrategy } from "@/lib/services/copyTradingService";
 import { copyFollowSchema } from "@/lib/validation/schemas";
 import { COPY_ERROR, CopyError } from "@/lib/copy/types";
-import { getActiveCopyEntitlements, expireStaleEntitlements } from "@/lib/services/billingService";
+import {
+  expireStaleEntitlements,
+  getActiveCopyEntitlements,
+  getPlatformSubscriptionAccess,
+} from "@/lib/services/billingService";
 
 // POST — trader opts in to a strategy with one of their own accounts. Requires
-// explicit consent (consentAccepted must be true) AND an active copy entitlement.
+// explicit consent (consentAccepted must be true), an active platform subscription,
+// and an active copy entitlement for the selected follower account.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const trader = await requireTrader();
@@ -22,7 +27,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Run expiry check lazily before access check
     await expireStaleEntitlements().catch(() => {});
 
-    // Billing gate: user must have an active copy entitlement
+    const platformAccess = await getPlatformSubscriptionAccess(trader.id);
+    if (platformAccess.status !== "ACTIVE") {
+      return jsonFail(
+        "PLATFORM_SUBSCRIPTION_REQUIRED",
+        "Activate your $50/month platform subscription before starting copy trading.",
+        403,
+      );
+    }
+
+    // Billing gate: user must have an active copy entitlement on the selected account
     const entitlements = await getActiveCopyEntitlements(
       trader.id,
       parsed.data.followerAccountId,
@@ -30,7 +44,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (entitlements.length === 0) {
       return jsonFail(
         "COPY_ENTITLEMENT_REQUIRED",
-        "An active copy-trading entitlement is required. Purchase one from Billing to continue.",
+        "Choose an active copy tier for this trading account before following strategies.",
         403,
       );
     }

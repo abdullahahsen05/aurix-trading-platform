@@ -19,6 +19,24 @@ export interface BillingProductDto {
   billingInterval: string;
 }
 
+export type BillingAccessState =
+  | "NONE"
+  | "PENDING_PAYMENT"
+  | "PENDING_APPROVAL"
+  | "ACTIVE"
+  | "EXPIRED"
+  | "CANCELLED"
+  | "FAILED"
+  | "REFUNDED";
+
+export interface BillingAccessSummaryDto {
+  status: BillingAccessState;
+  orderId: string | null;
+  currentPeriodEnd: string | null;
+  approvedAt: string | null;
+  message: string;
+}
+
 export interface PaymentOrderDto {
   id: string;
   productCode: string;
@@ -33,37 +51,37 @@ export interface PaymentOrderDto {
   tradingAccountId: string | null;
 }
 
-export interface BotAccessDto {
+export interface BotAccessDto extends BillingAccessSummaryDto {
   id: string;
   botProductId: string;
   botName: string;
-  status: string;
   grantedAt: string | null;
 }
 
-export interface SubscriptionDto {
+export interface SubscriptionDto extends BillingAccessSummaryDto {
   id: string;
   productCode: string;
   productName: string;
-  status: string;
-  currentPeriodEnd: string | null;
-  approvedAt: string | null;
 }
 
-export interface CopyEntitlementDto {
+export interface CopyEntitlementDto extends BillingAccessSummaryDto {
   id: string;
   tier: string;
-  status: string;
   tradingAccountId: string | null;
-  currentPeriodEnd: string | null;
-  approvedAt: string | null;
+}
+
+export interface MentorshipAccessDto extends BillingAccessSummaryDto {
+  id: string;
+  productCode: string;
+  productName: string;
 }
 
 export interface UserBillingSummaryDto {
-  platformSubscription: SubscriptionDto | null;
+  platformSubscription: SubscriptionDto;
   copyEntitlements: CopyEntitlementDto[];
   paymentHistory: PaymentOrderDto[];
   botAccess: BotAccessDto[];
+  mentorshipAccess: MentorshipAccessDto;
   pendingApprovals: Array<{
     type: string;
     orderId: string;
@@ -74,18 +92,461 @@ export interface UserBillingSummaryDto {
 
 // ─── Access check ────────────────────────────────────────────────────────────
 
-export type AccessStatus =
-  | "NONE"
-  | "PENDING_PAYMENT"
-  | "PENDING_APPROVAL"
-  | "ACTIVE"
-  | "EXPIRED"
-  | "CANCELLED"
-  | "FAILED";
-
 export interface ExistingAccessResult {
-  status: AccessStatus;
+  status: BillingAccessState;
   message: string;
+}
+
+type SubscriptionAccessRow = {
+  id: string;
+  status: string;
+  currentPeriodEnd: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+  productCode: string;
+  productName: string;
+};
+
+type CopyEntitlementAccessRow = {
+  id: string;
+  tier: string;
+  status: string;
+  tradingAccountId: string | null;
+  currentPeriodEnd: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+};
+
+type PaymentOrderAccessRow = {
+  id: string;
+  status: string;
+  createdAt: string;
+  productCode?: string;
+  productName?: string;
+  tradingAccountId?: string | null;
+  botProductId?: string | null;
+  tier?: string | null;
+  approvedAt?: string | null;
+};
+
+type BotAccessRecordRow = {
+  id: string;
+  botProductId: string;
+  botName: string;
+  status: string;
+  grantedAt: string | null;
+  createdAt: string;
+};
+
+function compareDescByCreatedAt<T extends { createdAt: string }>(a: T, b: T) {
+  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+}
+
+function isFuture(dateValue: string | null | undefined, nowIso: string) {
+  if (!dateValue) return false;
+  return new Date(dateValue).getTime() > new Date(nowIso).getTime();
+}
+
+function mapTerminalState(status: string | null | undefined): BillingAccessState {
+  if (status === "FAILED") return "FAILED";
+  if (status === "CANCELLED") return "CANCELLED";
+  if (status === "REFUNDED") return "REFUNDED";
+  return "NONE";
+}
+
+function defaultMessage(status: BillingAccessState, itemName: string) {
+  switch (status) {
+    case "PENDING_PAYMENT":
+      return "Payment pending";
+    case "PENDING_APPROVAL":
+      return "Payment received — pending admin approval";
+    case "ACTIVE":
+      return `${itemName} active`;
+    case "EXPIRED":
+      return `${itemName} expired`;
+    case "CANCELLED":
+      return "Cancelled";
+    case "FAILED":
+      return "Failed — try again";
+    case "REFUNDED":
+      return "Refunded";
+    default:
+      return "";
+  }
+}
+
+export function canCreateCheckoutForState(status: BillingAccessState, isRenewable: boolean): boolean {
+  if (status === "NONE" || status === "FAILED" || status === "CANCELLED" || status === "REFUNDED") {
+    return true;
+  }
+  if (status === "EXPIRED") return isRenewable;
+  return false;
+}
+
+export function derivePlatformSubscriptionAccess(params: {
+  subscriptions: SubscriptionAccessRow[];
+  orders: PaymentOrderAccessRow[];
+  nowIso: string;
+}): SubscriptionDto {
+  const subscriptions = [...params.subscriptions].sort(compareDescByCreatedAt);
+  const orders = [...params.orders].sort(compareDescByCreatedAt);
+
+  const active = subscriptions.find((sub) => sub.status === "ACTIVE" && isFuture(sub.currentPeriodEnd, params.nowIso));
+  if (active) {
+    return {
+      id: active.id,
+      productCode: active.productCode,
+      productName: active.productName,
+      status: "ACTIVE",
+      currentPeriodEnd: active.currentPeriodEnd,
+      approvedAt: active.approvedAt,
+      orderId: null,
+      message: defaultMessage("ACTIVE", active.productName),
+    };
+  }
+
+  const pendingApprovalSub = subscriptions.find((sub) => sub.status === "PENDING_APPROVAL");
+  if (pendingApprovalSub) {
+    return {
+      id: pendingApprovalSub.id,
+      productCode: pendingApprovalSub.productCode,
+      productName: pendingApprovalSub.productName,
+      status: "PENDING_APPROVAL",
+      currentPeriodEnd: pendingApprovalSub.currentPeriodEnd,
+      approvedAt: pendingApprovalSub.approvedAt,
+      orderId: null,
+      message: defaultMessage("PENDING_APPROVAL", pendingApprovalSub.productName),
+    };
+  }
+
+  const paidOrder = orders.find((order) => order.status === "PAID");
+  if (paidOrder) {
+    return {
+      id: "",
+      productCode: paidOrder.productCode ?? "PLATFORM_MONTHLY",
+      productName: paidOrder.productName ?? "Platform Subscription",
+      status: "PENDING_APPROVAL",
+      currentPeriodEnd: null,
+      approvedAt: paidOrder.approvedAt ?? null,
+      orderId: paidOrder.id,
+      message: defaultMessage("PENDING_APPROVAL", "Platform Subscription"),
+    };
+  }
+
+  const pendingOrder = orders.find((order) => order.status === "PENDING");
+  if (pendingOrder) {
+    return {
+      id: "",
+      productCode: pendingOrder.productCode ?? "PLATFORM_MONTHLY",
+      productName: pendingOrder.productName ?? "Platform Subscription",
+      status: "PENDING_PAYMENT",
+      currentPeriodEnd: null,
+      approvedAt: null,
+      orderId: pendingOrder.id,
+      message: defaultMessage("PENDING_PAYMENT", "Platform Subscription"),
+    };
+  }
+
+  const expired = subscriptions.find((sub) =>
+    (sub.status === "ACTIVE" || sub.status === "EXPIRED") && sub.currentPeriodEnd && !isFuture(sub.currentPeriodEnd, params.nowIso),
+  );
+  if (expired) {
+    return {
+      id: expired.id,
+      productCode: expired.productCode,
+      productName: expired.productName,
+      status: "EXPIRED",
+      currentPeriodEnd: expired.currentPeriodEnd,
+      approvedAt: expired.approvedAt,
+      orderId: null,
+      message: defaultMessage("EXPIRED", expired.productName),
+    };
+  }
+
+  const terminal = orders.find((order) => mapTerminalState(order.status) !== "NONE");
+  const terminalState = mapTerminalState(terminal?.status);
+  return {
+    id: "",
+    productCode: terminal?.productCode ?? "PLATFORM_MONTHLY",
+    productName: terminal?.productName ?? "Platform Subscription",
+    status: terminalState,
+    currentPeriodEnd: null,
+    approvedAt: terminal?.approvedAt ?? null,
+    orderId: terminal?.id ?? null,
+    message: defaultMessage(terminalState, "Platform Subscription"),
+  };
+}
+
+export function deriveCopyEntitlementAccess(params: {
+  tradingAccountId: string;
+  entitlements: CopyEntitlementAccessRow[];
+  orders: PaymentOrderAccessRow[];
+  nowIso: string;
+}): CopyEntitlementDto {
+  const entitlements = params.entitlements
+    .filter((entry) => entry.tradingAccountId === params.tradingAccountId)
+    .sort(compareDescByCreatedAt);
+  const orders = params.orders
+    .filter((order) => order.tradingAccountId === params.tradingAccountId)
+    .sort(compareDescByCreatedAt);
+
+  const active = entitlements.find((entry) => entry.status === "ACTIVE" && isFuture(entry.currentPeriodEnd, params.nowIso));
+  if (active) {
+    return {
+      id: active.id,
+      tier: active.tier,
+      tradingAccountId: active.tradingAccountId,
+      status: "ACTIVE",
+      currentPeriodEnd: active.currentPeriodEnd,
+      approvedAt: active.approvedAt,
+      orderId: null,
+      message: defaultMessage("ACTIVE", "Copy trading access"),
+    };
+  }
+
+  const pendingApprovalEntry = entitlements.find((entry) => entry.status === "PENDING_APPROVAL");
+  if (pendingApprovalEntry) {
+    return {
+      id: pendingApprovalEntry.id,
+      tier: pendingApprovalEntry.tier,
+      tradingAccountId: pendingApprovalEntry.tradingAccountId,
+      status: "PENDING_APPROVAL",
+      currentPeriodEnd: pendingApprovalEntry.currentPeriodEnd,
+      approvedAt: pendingApprovalEntry.approvedAt,
+      orderId: null,
+      message: defaultMessage("PENDING_APPROVAL", "Copy trading access"),
+    };
+  }
+
+  const paidOrder = orders.find((order) => order.status === "PAID");
+  if (paidOrder) {
+    return {
+      id: "",
+      tier: paidOrder.tier ?? "NORMAL",
+      tradingAccountId: params.tradingAccountId,
+      status: "PENDING_APPROVAL",
+      currentPeriodEnd: null,
+      approvedAt: paidOrder.approvedAt ?? null,
+      orderId: paidOrder.id,
+      message: defaultMessage("PENDING_APPROVAL", "Copy trading access"),
+    };
+  }
+
+  const pendingOrder = orders.find((order) => order.status === "PENDING");
+  if (pendingOrder) {
+    return {
+      id: "",
+      tier: pendingOrder.tier ?? "NORMAL",
+      tradingAccountId: params.tradingAccountId,
+      status: "PENDING_PAYMENT",
+      currentPeriodEnd: null,
+      approvedAt: null,
+      orderId: pendingOrder.id,
+      message: defaultMessage("PENDING_PAYMENT", "Copy trading access"),
+    };
+  }
+
+  const expired = entitlements.find((entry) =>
+    (entry.status === "ACTIVE" || entry.status === "EXPIRED") && entry.currentPeriodEnd && !isFuture(entry.currentPeriodEnd, params.nowIso),
+  );
+  if (expired) {
+    return {
+      id: expired.id,
+      tier: expired.tier,
+      tradingAccountId: expired.tradingAccountId,
+      status: "EXPIRED",
+      currentPeriodEnd: expired.currentPeriodEnd,
+      approvedAt: expired.approvedAt,
+      orderId: null,
+      message: defaultMessage("EXPIRED", "Copy trading access"),
+    };
+  }
+
+  const terminal = orders.find((order) => mapTerminalState(order.status) !== "NONE");
+  const terminalState = mapTerminalState(terminal?.status);
+  return {
+    id: "",
+    tier: terminal?.tier ?? "NORMAL",
+    tradingAccountId: params.tradingAccountId,
+    status: terminalState,
+    currentPeriodEnd: null,
+    approvedAt: terminal?.approvedAt ?? null,
+    orderId: terminal?.id ?? null,
+    message: defaultMessage(terminalState, "Copy trading access"),
+  };
+}
+
+export function deriveBotPurchaseAccess(params: {
+  botProductId: string;
+  botName: string;
+  accessRecords: BotAccessRecordRow[];
+  orders: PaymentOrderAccessRow[];
+}): BotAccessDto {
+  const accessRecords = params.accessRecords
+    .filter((entry) => entry.botProductId === params.botProductId)
+    .sort(compareDescByCreatedAt);
+  const orders = params.orders
+    .filter((order) => order.botProductId === params.botProductId)
+    .sort(compareDescByCreatedAt);
+
+  const active = accessRecords.find((entry) => entry.status === "ACTIVE");
+  if (active) {
+    return {
+      id: active.id,
+      botProductId: active.botProductId,
+      botName: active.botName,
+      status: "ACTIVE",
+      currentPeriodEnd: null,
+      approvedAt: active.grantedAt,
+      grantedAt: active.grantedAt,
+      orderId: null,
+      message: defaultMessage("ACTIVE", "Bot access"),
+    };
+  }
+
+  const requested = accessRecords.find((entry) => entry.status === "REQUESTED");
+  if (requested) {
+    return {
+      id: requested.id,
+      botProductId: requested.botProductId,
+      botName: requested.botName,
+      status: "PENDING_APPROVAL",
+      currentPeriodEnd: null,
+      approvedAt: null,
+      grantedAt: requested.grantedAt,
+      orderId: null,
+      message: defaultMessage("PENDING_APPROVAL", "Bot access"),
+    };
+  }
+
+  const paidOrder = orders.find((order) => order.status === "PAID");
+  if (paidOrder) {
+    return {
+      id: "",
+      botProductId: params.botProductId,
+      botName: params.botName,
+      status: "PENDING_APPROVAL",
+      currentPeriodEnd: null,
+      approvedAt: paidOrder.approvedAt ?? null,
+      grantedAt: null,
+      orderId: paidOrder.id,
+      message: defaultMessage("PENDING_APPROVAL", "Bot access"),
+    };
+  }
+
+  const pendingOrder = orders.find((order) => order.status === "PENDING");
+  if (pendingOrder) {
+    return {
+      id: "",
+      botProductId: params.botProductId,
+      botName: params.botName,
+      status: "PENDING_PAYMENT",
+      currentPeriodEnd: null,
+      approvedAt: null,
+      grantedAt: null,
+      orderId: pendingOrder.id,
+      message: defaultMessage("PENDING_PAYMENT", "Bot access"),
+    };
+  }
+
+  const terminal = orders.find((order) => mapTerminalState(order.status) !== "NONE");
+  const terminalState = mapTerminalState(terminal?.status);
+  return {
+    id: "",
+    botProductId: params.botProductId,
+    botName: params.botName,
+    status: terminalState,
+    currentPeriodEnd: null,
+    approvedAt: terminal?.approvedAt ?? null,
+    grantedAt: null,
+    orderId: terminal?.id ?? null,
+    message: defaultMessage(terminalState, "Bot access"),
+  };
+}
+
+export function deriveMentorshipAccess(params: {
+  orders: PaymentOrderAccessRow[];
+}): MentorshipAccessDto {
+  const orders = [...params.orders].sort(compareDescByCreatedAt);
+  const latest = orders[0];
+  if (!latest) {
+    return {
+      id: "",
+      productCode: "MENTORSHIP_1_1",
+      productName: "1-to-1 Professional Mentorship",
+      status: "NONE",
+      currentPeriodEnd: null,
+      approvedAt: null,
+      orderId: null,
+      message: "",
+    };
+  }
+
+  const status: BillingAccessState =
+    latest.approvedAt
+      ? "ACTIVE"
+      : latest.status === "PAID"
+        ? "PENDING_APPROVAL"
+        : latest.status === "PENDING"
+          ? "PENDING_PAYMENT"
+          : mapTerminalState(latest.status);
+
+  return {
+    id: latest.id,
+    productCode: latest.productCode ?? "MENTORSHIP_1_1",
+    productName: latest.productName ?? "1-to-1 Professional Mentorship",
+    status,
+    currentPeriodEnd: null,
+    approvedAt: latest.approvedAt ?? null,
+    orderId: latest.id,
+    message: defaultMessage(status, "Mentorship access"),
+  };
+}
+
+export async function getPlatformSubscriptionAccess(userId: string): Promise<SubscriptionDto> {
+  const summary = await getTraderAccessSummary(userId);
+  return summary.platformSubscription;
+}
+
+export async function getCopyEntitlementAccess(
+  userId: string,
+  tradingAccountId: string,
+): Promise<CopyEntitlementDto> {
+  const summary = await getTraderAccessSummary(userId);
+  return (
+    summary.copyEntitlements.find((entry) => entry.tradingAccountId === tradingAccountId) ?? {
+      id: "",
+      tier: "NORMAL",
+      tradingAccountId,
+      status: "NONE",
+      currentPeriodEnd: null,
+      approvedAt: null,
+      orderId: null,
+      message: "",
+    }
+  );
+}
+
+export async function getBotPurchaseAccess(userId: string, botProductId: string): Promise<BotAccessDto> {
+  const summary = await getTraderAccessSummary(userId);
+  return (
+    summary.botAccess.find((entry) => entry.botProductId === botProductId) ?? {
+      id: "",
+      botProductId,
+      botName: "Trading Bot / EA",
+      status: "NONE",
+      currentPeriodEnd: null,
+      approvedAt: null,
+      grantedAt: null,
+      orderId: null,
+      message: "",
+    }
+  );
+}
+
+export async function getMentorshipAccess(userId: string): Promise<MentorshipAccessDto> {
+  const summary = await getTraderAccessSummary(userId);
+  return summary.mentorshipAccess;
 }
 
 /** Returns NONE if the user may purchase; otherwise returns the blocking status. */
@@ -94,75 +555,36 @@ export async function checkExistingAccess(
   productCode: string,
   options?: { tradingAccountId?: string; botProductId?: string },
 ): Promise<ExistingAccessResult> {
-  const supabase = createAdminClient();
   const product = await getProductByCode(productCode);
   if (!product) return { status: "NONE", message: "" };
 
   if (product.type === "SUBSCRIPTION") {
-    const { data } = await supabase
-      .from("subscriptions")
-      .select("id, status")
-      .eq("user_id", userId)
-      .in("status", ["ACTIVE", "PENDING_APPROVAL"])
-      .limit(1);
-    const row = ((data ?? []) as Array<{ status: string }>)[0];
-    if (!row) return { status: "NONE", message: "" };
-    if (row.status === "ACTIVE") return { status: "ACTIVE", message: "Subscription already active" };
-    return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
+    const access = await getPlatformSubscriptionAccess(userId);
+    return { status: access.status, message: access.message };
   }
 
   if (product.type === "COPY_ACCOUNT") {
-    let q = supabase
-      .from("copy_account_entitlements")
-      .select("id, status")
-      .eq("user_id", userId)
-      .in("status", ["ACTIVE", "PENDING_APPROVAL"]);
-    if (options?.tradingAccountId) q = q.eq("trading_account_id", options.tradingAccountId);
-    const { data } = await q.limit(1);
-    const row = ((data ?? []) as Array<{ status: string }>)[0];
-    if (!row) return { status: "NONE", message: "" };
-    if (row.status === "ACTIVE") return { status: "ACTIVE", message: "Copy trading access already active" };
-    return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
+    if (!options?.tradingAccountId) {
+      return { status: "NONE", message: "Trading account is required" };
+    }
+    const access = await getCopyEntitlementAccess(userId, options.tradingAccountId);
+    return { status: access.status, message: access.message };
   }
 
   if (product.type === "BOT") {
     if (options?.botProductId) {
-      const { data: bar } = await supabase
-        .from("bot_access_records")
-        .select("id, status")
-        .eq("user_id", userId)
-        .eq("product_id", options.botProductId)
-        .in("status", ["ACTIVE", "REQUESTED"])
-        .limit(1);
-      const rec = ((bar ?? []) as Array<{ status: string }>)[0];
-      if (rec?.status === "ACTIVE") return { status: "ACTIVE", message: "Bot access already granted" };
-      if (rec?.status === "REQUESTED") return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
+      const access = await getBotPurchaseAccess(userId, options.botProductId);
+      return { status: access.status, message: access.message };
     }
-    const { data: orders } = await supabase
-      .from("payment_orders")
-      .select("id, status")
-      .eq("user_id", userId)
-      .eq("product_id", product.id)
-      .in("status", ["PENDING", "PAID"])
-      .limit(1);
-    const order = ((orders ?? []) as Array<{ status: string }>)[0];
-    if (!order) return { status: "NONE", message: "" };
-    if (order.status === "PAID") return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
-    return { status: "PENDING_PAYMENT", message: "Payment already pending" };
+    return { status: "NONE", message: "" };
   }
 
-  // MENTORSHIP / EVALUATION
-  const { data: orders } = await supabase
-    .from("payment_orders")
-    .select("id, status")
-    .eq("user_id", userId)
-    .eq("product_id", product.id)
-    .in("status", ["PENDING", "PAID"])
-    .limit(1);
-  const order = ((orders ?? []) as Array<{ status: string }>)[0];
-  if (!order) return { status: "NONE", message: "" };
-  if (order.status === "PAID") return { status: "PENDING_APPROVAL", message: "Payment received — pending admin approval" };
-  return { status: "PENDING_PAYMENT", message: "Payment already pending" };
+  if (product.type === "EVALUATION") {
+    return { status: "NONE", message: "" };
+  }
+
+  const access = await getMentorshipAccess(userId);
+  return { status: access.status, message: access.message };
 }
 
 // ─── Product lookup ───────────────────────────────────────────────────────────
@@ -232,6 +654,12 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
   const product = await getProductByCode(params.productCode);
   if (!product) throw new Error("Product not found or inactive");
   if (product.billingInterval === "FREE") throw new Error("This product is free — no payment needed");
+  if (product.type === "COPY_ACCOUNT" && !params.tradingAccountId) {
+    throw new Error("Trading account is required for copy trading access");
+  }
+  if (product.type === "BOT" && !params.botProductId) {
+    throw new Error("Bot product is required for this purchase");
+  }
 
   const supabase = createAdminClient();
 
@@ -421,36 +849,35 @@ async function maybeCreatePartnerCommission(
 
 // ─── User billing summary ─────────────────────────────────────────────────────
 
-export async function getUserBillingSummary(userId: string): Promise<UserBillingSummaryDto> {
+export async function getTraderAccessSummary(userId: string): Promise<UserBillingSummaryDto> {
   const supabase = createAdminClient();
 
   const [{ data: subs }, { data: entitlements }, { data: orders }, { data: botRecs }] = await Promise.all([
     supabase
       .from("subscriptions")
-      .select("id, status, current_period_end, approved_at, billing_products(code, name)")
+      .select("id, status, current_period_end, approved_at, created_at, billing_products(code, name)")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(10),
 
     supabase
       .from("copy_account_entitlements")
-      .select("id, tier, status, trading_account_id, current_period_end, approved_at")
+      .select("id, tier, status, trading_account_id, current_period_end, approved_at, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(20),
 
     supabase
       .from("payment_orders")
-      .select("id, status, amount, currency, paid_at, created_at, provider_checkout_url, trading_account_id, bot_product_id, billing_products(code, name)")
+      .select("id, status, amount, currency, paid_at, created_at, provider_checkout_url, trading_account_id, bot_product_id, tier, metadata, billing_products(code, name, type, billing_interval)")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(50),
 
     supabase
       .from("bot_access_records")
-      .select("id, product_id, status, granted_at, bot_products(name)")
+      .select("id, product_id, status, granted_at, created_at, bot_products(name)")
       .eq("user_id", userId)
-      .in("status", ["ACTIVE", "REQUESTED"])
       .limit(20),
   ]);
 
@@ -459,6 +886,7 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
     status: string;
     current_period_end: string | null;
     approved_at: string | null;
+    created_at: string;
     billing_products: { code: string; name: string } | null;
   };
 
@@ -469,6 +897,7 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
     trading_account_id: string | null;
     current_period_end: string | null;
     approved_at: string | null;
+    created_at: string;
   };
 
   type OrderRow = {
@@ -481,7 +910,9 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
     provider_checkout_url: string | null;
     trading_account_id: string | null;
     bot_product_id: string | null;
-    billing_products: { code: string; name: string } | null;
+    tier: string | null;
+    metadata: { approvedAt?: string | null } | null;
+    billing_products: { code: string; name: string; type: string; billing_interval: string } | null;
   };
 
   type BotRecRow = {
@@ -489,56 +920,144 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
     product_id: string;
     status: string;
     granted_at: string | null;
+    created_at: string;
     bot_products: { name: string } | null;
   };
-
-  const platformSub = ((subs ?? []) as unknown as SubRow[]).find(
-    (s) => s.status === "ACTIVE" || s.status === "PENDING_APPROVAL",
-  );
 
   const allSubs = (subs ?? []) as unknown as SubRow[];
   const allEnts = (entitlements ?? []) as unknown as EntRow[];
   const allOrders = (orders ?? []) as unknown as OrderRow[];
   const allBotRecs = (botRecs ?? []) as unknown as BotRecRow[];
 
-  const pendingApprovals = [
-    ...allSubs
-      .filter((s) => s.status === "PENDING_APPROVAL")
+  const normalizedOrders = allOrders.map((o) => ({
+    id: o.id,
+    status: o.status,
+    createdAt: o.created_at,
+    productCode: o.billing_products?.code,
+    productName: o.billing_products?.name,
+    tradingAccountId: o.trading_account_id,
+    botProductId: o.bot_product_id,
+    tier: o.tier,
+    approvedAt: o.metadata?.approvedAt ?? null,
+  }));
+
+  const platformOrders = normalizedOrders.filter((o) => o.productCode === "PLATFORM_MONTHLY");
+  const platformSubscription = derivePlatformSubscriptionAccess({
+    subscriptions: allSubs
+      .filter((s) => s.billing_products?.code === "PLATFORM_MONTHLY")
       .map((s) => ({
-        type: "SUBSCRIPTION",
-        orderId: s.id,
+        id: s.id,
+        status: s.status,
+        currentPeriodEnd: s.current_period_end,
+        approvedAt: s.approved_at,
+        createdAt: s.created_at,
+        productCode: s.billing_products?.code ?? "PLATFORM_MONTHLY",
         productName: s.billing_products?.name ?? "Platform Subscription",
-        paidAt: "",
       })),
-    ...allEnts
-      .filter((e) => e.status === "PENDING_APPROVAL")
-      .map((e) => ({
+    orders: platformOrders,
+    nowIso: new Date().toISOString(),
+  });
+
+  const copyAccountIds = Array.from(
+    new Set(
+      [
+        ...allEnts.map((e) => e.trading_account_id).filter((value): value is string => Boolean(value)),
+        ...normalizedOrders
+          .filter((o) => o.productCode === "COPY_NORMAL" || o.productCode === "COPY_ULTRA_FAST")
+          .map((o) => o.tradingAccountId)
+          .filter((value): value is string => Boolean(value)),
+      ],
+    ),
+  );
+
+  const copyEntitlements = copyAccountIds.map((tradingAccountId) =>
+    deriveCopyEntitlementAccess({
+      tradingAccountId,
+      entitlements: allEnts.map((e) => ({
+        id: e.id,
+        tier: e.tier,
+        status: e.status,
+        tradingAccountId: e.trading_account_id,
+        currentPeriodEnd: e.current_period_end,
+        approvedAt: e.approved_at,
+        createdAt: e.created_at,
+      })),
+      orders: normalizedOrders.filter(
+        (o) => (o.productCode === "COPY_NORMAL" || o.productCode === "COPY_ULTRA_FAST") && o.tradingAccountId === tradingAccountId,
+      ),
+      nowIso: new Date().toISOString(),
+    }),
+  );
+
+  const botIds = Array.from(
+    new Set(
+      [
+        ...allBotRecs.map((r) => r.product_id),
+        ...normalizedOrders.map((o) => o.botProductId).filter((value): value is string => Boolean(value)),
+      ],
+    ),
+  );
+
+  const botAccess = botIds.map((botProductId) =>
+    deriveBotPurchaseAccess({
+      botProductId,
+      botName:
+        allBotRecs.find((r) => r.product_id === botProductId)?.bot_products?.name ??
+        "Trading Bot / EA",
+      accessRecords: allBotRecs.map((r) => ({
+        id: r.id,
+        botProductId: r.product_id,
+        botName: r.bot_products?.name ?? "Trading Bot / EA",
+        status: r.status,
+        grantedAt: r.granted_at,
+        createdAt: r.created_at,
+      })),
+      orders: normalizedOrders.filter((o) => o.botProductId === botProductId),
+    }),
+  );
+
+  const mentorshipAccess = deriveMentorshipAccess({
+    orders: normalizedOrders.filter((o) => o.productCode === "MENTORSHIP_1_1"),
+  });
+
+  const pendingApprovals = [
+    ...platformOrders
+      .filter((o) => o.status === "PAID")
+      .map((o) => ({
+        type: "SUBSCRIPTION",
+        orderId: o.id,
+        productName: o.productName ?? "Platform Subscription",
+        paidAt: allOrders.find((row) => row.id === o.id)?.paid_at ?? "",
+      })),
+    ...normalizedOrders
+      .filter((o) => (o.productCode === "COPY_NORMAL" || o.productCode === "COPY_ULTRA_FAST") && o.status === "PAID")
+      .map((o) => ({
         type: "COPY_ENTITLEMENT",
-        orderId: e.id,
-        productName: `Copy Trading (${e.tier})`,
-        paidAt: "",
+        orderId: o.id,
+        productName: o.productName ?? `Copy Trading (${o.tier ?? "NORMAL"})`,
+        paidAt: allOrders.find((row) => row.id === o.id)?.paid_at ?? "",
+      })),
+    ...normalizedOrders
+      .filter((o) => o.productCode === "BOT_EA" && o.status === "PAID")
+      .map((o) => ({
+        type: "BOT",
+        orderId: o.id,
+        productName: o.productName ?? "Trading Bot / EA",
+        paidAt: allOrders.find((row) => row.id === o.id)?.paid_at ?? "",
+      })),
+    ...normalizedOrders
+      .filter((o) => o.productCode === "MENTORSHIP_1_1" && o.status === "PAID" && !o.approvedAt)
+      .map((o) => ({
+        type: "MENTORSHIP",
+        orderId: o.id,
+        productName: o.productName ?? "1-to-1 Professional Mentorship",
+        paidAt: allOrders.find((row) => row.id === o.id)?.paid_at ?? "",
       })),
   ];
 
   return {
-    platformSubscription: platformSub
-      ? {
-          id: platformSub.id,
-          productCode: platformSub.billing_products?.code ?? "",
-          productName: platformSub.billing_products?.name ?? "",
-          status: platformSub.status,
-          currentPeriodEnd: platformSub.current_period_end,
-          approvedAt: platformSub.approved_at,
-        }
-      : null,
-    copyEntitlements: allEnts.map((e) => ({
-      id: e.id,
-      tier: e.tier,
-      status: e.status,
-      tradingAccountId: e.trading_account_id,
-      currentPeriodEnd: e.current_period_end,
-      approvedAt: e.approved_at,
-    })),
+    platformSubscription,
+    copyEntitlements,
     paymentHistory: allOrders.map((o) => ({
       id: o.id,
       productCode: o.billing_products?.code ?? "",
@@ -552,15 +1071,14 @@ export async function getUserBillingSummary(userId: string): Promise<UserBilling
       botProductId: o.bot_product_id,
       tradingAccountId: o.trading_account_id,
     })),
-    botAccess: allBotRecs.map((r) => ({
-      id: r.id,
-      botProductId: r.product_id,
-      botName: r.bot_products?.name ?? "Trading Bot / EA",
-      status: r.status,
-      grantedAt: r.granted_at,
-    })),
+    botAccess,
+    mentorshipAccess,
     pendingApprovals,
   };
+}
+
+export async function getUserBillingSummary(userId: string): Promise<UserBillingSummaryDto> {
+  return getTraderAccessSummary(userId);
 }
 
 // ─── Admin helpers ────────────────────────────────────────────────────────────
@@ -573,7 +1091,7 @@ export async function approvePaymentAccess(
 
   const { data: order, error } = await supabase
     .from("payment_orders")
-    .select("id, user_id, product_id, status, trading_account_id, tier, bot_product_id")
+    .select("id, user_id, product_id, status, trading_account_id, tier, bot_product_id, metadata")
     .eq("id", orderId)
     .single();
 
@@ -625,6 +1143,17 @@ export async function approvePaymentAccess(
       .eq("user_id", order.user_id)
       .eq("product_id", order.bot_product_id)
       .eq("source", "FUTURE_PAYMENT");
+  } else if (product.type === "MENTORSHIP") {
+    await supabase
+      .from("payment_orders")
+      .update({
+        metadata: {
+          ...((order.metadata as Record<string, unknown> | null) ?? {}),
+          approvedAt: now,
+          approvedByAdminId: adminId,
+        },
+      })
+      .eq("id", orderId);
   }
 
   await writeAuditLog({

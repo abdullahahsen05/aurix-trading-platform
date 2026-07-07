@@ -2,6 +2,8 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { WorkspacePage, Panel } from "@/components/app/WorkspaceUI";
+import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 
 // When DXFEED_WIDGET_CDN_URL is set, render the Candelabra widget terminal
 // instead of the mock terminal. The CDN URL is a NEXT_PUBLIC_ var so it is
@@ -27,6 +29,7 @@ import type {
   TerminalPreferences,
   Timeframe,
 } from "@/lib/terminal/types";
+import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
 
 const CandleChart = dynamic(() => import("@/components/terminal/CandleChart"), { ssr: false });
 
@@ -52,6 +55,38 @@ async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
 }
 
 export default function TerminalPage() {
+  const { data: summary, isLoading: accessLoading } = useTraderAccessSummary();
+  const access = summary?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
+
+  if (accessLoading && !summary) {
+    return (
+      <WorkspacePage eyebrow="Terminal" title="Professional Terminal" description="Loading your platform access status.">
+        <Panel>
+          <p className="text-sm text-muted">Loading…</p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  if (access.status !== "ACTIVE") {
+    return (
+      <WorkspacePage
+        eyebrow="Terminal"
+        title="Professional Terminal"
+        description="Activate your platform subscription to unlock the trader terminal workspace."
+      >
+        <PlatformSubscriptionLocked
+          access={access}
+          description="Activate the Aurix platform subscription to unlock the professional terminal workspace, chart workflow, and trader terminal tools."
+        />
+      </WorkspacePage>
+    );
+  }
+
+  return <TerminalContent />;
+}
+
+function TerminalContent() {
   const [symbolOverride, setSymbolOverride] = useState<string | null>(null);
   const [timeframeOverride, setTimeframeOverride] = useState<Timeframe | null>(null);
   const [rightPanel, setRightPanel] = useState<"dom" | "vprofile" | "heatmap">("dom");

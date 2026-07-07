@@ -9,7 +9,6 @@ import {
   EmptyState,
   FilterChipRow,
   GhostButton,
-  Panel,
   PageActionGroup,
   PrimaryButton,
   StatTile,

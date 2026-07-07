@@ -58,13 +58,11 @@ export default function MarketplacePage() {
     .filter((p) => riskFilter === "ALL" || p.riskLevel === riskFilter);
 
   function getBotAccessState(botProductId: string): "NONE" | "PENDING_APPROVAL" | "ACTIVE" | "PENDING_PAYMENT" {
-    if (summary?.botAccess.some((b) => b.botProductId === botProductId && b.status === "ACTIVE")) return "ACTIVE";
-    if (summary?.botAccess.some((b) => b.botProductId === botProductId && b.status === "REQUESTED")) return "PENDING_APPROVAL";
-    const order = summary?.paymentHistory.find(
-      (h) => h.productCode === "BOT_EA" && h.botProductId === botProductId && ["PAID", "PENDING"].includes(h.status)
-    );
-    if (order?.status === "PAID") return "PENDING_APPROVAL";
-    if (order?.status === "PENDING") return "PENDING_PAYMENT";
+    const access = summary?.botAccess.find((b) => b.botProductId === botProductId);
+    if (!access) return "NONE";
+    if (access.status === "ACTIVE") return "ACTIVE";
+    if (access.status === "PENDING_APPROVAL") return "PENDING_APPROVAL";
+    if (access.status === "PENDING_PAYMENT") return "PENDING_PAYMENT";
     return "NONE";
   }
 

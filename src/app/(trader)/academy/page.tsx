@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import {
   EmptyState,
@@ -56,15 +57,7 @@ export default function AcademyPage() {
     staleTime: 0,
   });
 
-  const mentorshipOrder = billingSummary?.paymentHistory.find(
-    (h) => h.productCode === "MENTORSHIP_1_1" && ["PAID", "PENDING"].includes(h.status)
-  );
-  const mentorshipState: "NONE" | "PENDING_PAYMENT" | "PENDING_APPROVAL" =
-    mentorshipOrder?.status === "PAID"
-      ? "PENDING_APPROVAL"
-      : mentorshipOrder?.status === "PENDING"
-        ? "PENDING_PAYMENT"
-        : "NONE";
+  const mentorshipState = billingSummary?.mentorshipAccess.status ?? "NONE";
 
   const filtered =
     filter === "ALL" ? courses : courses.filter((c) => c.difficulty === filter);
@@ -149,7 +142,16 @@ export default function AcademyPage() {
               className="group flex flex-col gap-3 rounded-3xl border border-line bg-panel p-5 transition-colors hover:border-accent/40 hover:bg-panel/80"
             >
               {course.coverImageUrl ? (
-                <img src={course.coverImageUrl} alt={course.title} className="h-32 w-full rounded-xl object-cover" />
+                <div className="relative h-32 w-full overflow-hidden rounded-xl">
+                  <Image
+                    src={course.coverImageUrl}
+                    alt={course.title}
+                    fill
+                    unoptimized
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className="object-cover"
+                  />
+                </div>
               ) : (
                 <div className="flex h-32 w-full items-center justify-center rounded-xl bg-panel-strong">
                   <BookOpenCheck className="h-10 w-10 text-muted/40" />
@@ -217,7 +219,9 @@ export default function AcademyPage() {
           </div>
 
           <div className="shrink-0">
-            {mentorshipState === "PENDING_APPROVAL" ? (
+            {mentorshipState === "ACTIVE" ? (
+              <StatusPill tone="lime">Mentorship access active</StatusPill>
+            ) : mentorshipState === "PENDING_APPROVAL" ? (
               <StatusPill tone="accent">Payment received — pending admin approval</StatusPill>
             ) : mentorshipState === "PENDING_PAYMENT" ? (
               <StatusPill tone="muted">Payment pending</StatusPill>

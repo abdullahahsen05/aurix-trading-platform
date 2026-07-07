@@ -2,7 +2,6 @@ import { jsonFail, jsonOk } from "@/lib/api/envelope";
 import { requireAuth, assertCanAccessAccount, AuthError } from "@/lib/auth/session";
 import {
   storeBrokerCredentials,
-  getDecryptedCredentials,
   BrokerCredentialError,
 } from "@/lib/services/brokerCredentialService";
 import { createAdminClient } from "@/lib/supabase/admin";

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { BillingCheckoutModal } from "@/components/app/BillingCheckoutModal";
+import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import type { UserBillingSummaryDto } from "@/lib/services/billingService";
 import { DashboardModeOverlay } from "@/components/dashboard/DashboardModeOverlay";
 import { DashboardKpiStrip, MarketSentimentStrip } from "@/components/dashboard/DashboardKpiStrip";
@@ -25,6 +26,7 @@ import {
 } from "@/lib/domain/dashboard";
 import type { TraderAccountSummary, TradeDto, RiskRuleDto } from "@/lib/domain/types";
 import { useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
+import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
 
 const TradingChart = dynamic(
   () => import("@/components/charts/TradingChart").then((mod) => mod.TradingChart),
@@ -55,6 +57,42 @@ const dashboardTabs: Array<{ id: DashboardView; label: string }> = [
 ];
 
 export default function TraderDashboardPage() {
+  const { data: summary, isLoading } = useTraderAccessSummary();
+  const access = summary?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
+
+  if (isLoading && !summary) {
+    return (
+      <WorkspacePage
+        eyebrow="Workspace"
+        title="Trading Dashboard"
+        description="Loading your platform access status."
+      >
+        <Panel>
+          <p className="text-sm text-muted">Loading…</p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  if (access.status !== "ACTIVE") {
+    return (
+      <WorkspacePage
+        eyebrow="Workspace"
+        title="Trading Dashboard"
+        description="Activate your platform subscription to unlock the live trader dashboard."
+      >
+        <PlatformSubscriptionLocked
+          access={access}
+          description="Activate the Aurix platform subscription to unlock live dashboard metrics, MT5 account tracking, and the full trading workspace."
+        />
+      </WorkspacePage>
+    );
+  }
+
+  return <TraderDashboardContent />;
+}
+
+function TraderDashboardContent() {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("DAILY");
   const [selectedView, setSelectedView] = useState<DashboardView>("CURRENT_EQUITY");
   const [activeOverlay, setActiveOverlay] = useState<DashboardView | null>(null);

@@ -405,7 +405,7 @@ async function run() {
     { tp: trader4Tp, uid: trader4Id, name: "Priya Nair", partnerNote: "Priya hit the daily loss limit on day 3. Spoke to her about position sizing — she is recalibrating. Account is restricted pending admin review.", activities: ["ONBOARDING", "Account restricted — daily loss limit breached on day 3."] },
   ];
 
-  for (const { tp, uid, name, partnerNote, activities } of extraTraderData) {
+  for (const { tp, partnerNote, activities } of extraTraderData) {
     if (!tp) continue;
     await supabase.from("crm_notes").insert([
       { trader_profile_id: tp.id, author_user_id: partnerId, author_name: "Demo Partner", note: partnerNote, note_source: "PARTNER", created_at: daysAgo(2) },

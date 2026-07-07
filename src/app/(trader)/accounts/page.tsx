@@ -6,7 +6,6 @@ import { Plus, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  DataTable,
   EmptyState,
   GhostButton,
   FilterChipRow,
@@ -17,14 +16,52 @@ import {
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
+import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import { SearchField, SelectField, TextField } from "@/components/app/FormFields";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 import type { TraderAccountSummary } from "@/lib/domain/types";
+import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
 
 // Dialog step state machine
 type ConnectStep = "setup" | "credentials";
 
 export default function AccountsPage() {
+  const { data: summary, isLoading: accessLoading } = useTraderAccessSummary();
+  const access = summary?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
+
+  if (accessLoading && !summary) {
+    return (
+      <WorkspacePage
+        eyebrow="Trading accounts"
+        title="Connected broker accounts"
+        description="Loading your platform access status."
+      >
+        <Panel>
+          <p className="text-sm text-muted">Loading…</p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  if (access.status !== "ACTIVE") {
+    return (
+      <WorkspacePage
+        eyebrow="Trading accounts"
+        title="Connected broker accounts"
+        description="Activate your platform subscription to unlock account connection and supervision."
+      >
+        <PlatformSubscriptionLocked
+          access={access}
+          description="Activate the Aurix platform subscription to unlock MT5 account connection, account detail views, and core broker-account workflow tools."
+        />
+      </WorkspacePage>
+    );
+  }
+
+  return <AccountsContent />;
+}
+
+function AccountsContent() {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [connectOpen, setConnectOpen] = useState(false);

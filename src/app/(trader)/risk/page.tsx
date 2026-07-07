@@ -9,8 +9,10 @@ import {
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
+import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 import type { RiskEventDto, RiskRuleDto, TraderAccountSummary } from "@/lib/domain/types";
+import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
 
 function RiskBar({
   label,
@@ -53,6 +55,38 @@ function RiskBar({
 }
 
 export default function RiskPage() {
+  const { data: summary, isLoading: accessLoading } = useTraderAccessSummary();
+  const access = summary?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
+
+  if (accessLoading && !summary) {
+    return (
+      <WorkspacePage eyebrow="Risk control" title="Risk dashboard" description="Loading your platform access status.">
+        <Panel>
+          <p className="text-sm text-muted">Loading…</p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  if (access.status !== "ACTIVE") {
+    return (
+      <WorkspacePage
+        eyebrow="Risk control"
+        title="Risk dashboard"
+        description="Activate your platform subscription to unlock risk monitoring and event tracking."
+      >
+        <PlatformSubscriptionLocked
+          access={access}
+          description="Activate the Aurix platform subscription to unlock risk rules, event history, and account risk monitoring."
+        />
+      </WorkspacePage>
+    );
+  }
+
+  return <RiskContent />;
+}
+
+function RiskContent() {
   const { data: riskRules = [] } = useQuery<RiskRuleDto[]>({
     queryKey: ["risk-rules"],
     queryFn: async () => {

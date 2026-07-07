@@ -69,7 +69,7 @@ export function BillingCheckoutModal({
       handleClose();
       // Invalidate so every page reflects the new payment immediately on return
       queryClient.invalidateQueries({ queryKey: ["billing-me"] });
-      window.location.href = data.checkoutUrl;
+      window.location.assign(data.checkoutUrl);
     },
     onError: (err: Error) => setApiError(err.message),
   });

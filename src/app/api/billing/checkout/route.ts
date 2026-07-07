@@ -1,7 +1,12 @@
 import { NextRequest } from "next/server";
 import { requireAuth, AuthError } from "@/lib/auth/session";
 import { jsonOk, jsonFail, handleAuthError } from "@/lib/api/envelope";
-import { createCheckoutSession, checkExistingAccess } from "@/lib/services/billingService";
+import {
+  canCreateCheckoutForState,
+  checkExistingAccess,
+  createCheckoutSession,
+  getProductByCode,
+} from "@/lib/services/billingService";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,12 +20,15 @@ export async function POST(req: NextRequest) {
 
     if (!body.productCode) return jsonFail("MISSING_FIELD", "productCode is required");
 
+    const product = await getProductByCode(body.productCode);
+    if (!product) return jsonFail("PRODUCT_NOT_FOUND", "Product not found or inactive", 404);
+
     // Duplicate purchase prevention
     const existing = await checkExistingAccess(user.id, body.productCode, {
       tradingAccountId: body.tradingAccountId,
       botProductId: body.botProductId,
     });
-    if (existing.status !== "NONE" && existing.status !== "EXPIRED" && existing.status !== "CANCELLED" && existing.status !== "FAILED") {
+    if (!canCreateCheckoutForState(existing.status, product.billingInterval === "MONTHLY")) {
       return jsonFail("DUPLICATE_PURCHASE", existing.message, 409);
     }
 

@@ -12,7 +12,7 @@
  *   - cdnUrl is the public CDN script URL (not a credential)
  */
 import { requireAuth } from "@/lib/auth/session";
-import { jsonOk, jsonFail, handleAuthError } from "@/lib/api/envelope";
+import { jsonOk, handleAuthError } from "@/lib/api/envelope";
 import { getDxfeedWidgetEnvStatus } from "@/lib/terminal/dxfeedWidgetConfig";
 
 export async function GET() {

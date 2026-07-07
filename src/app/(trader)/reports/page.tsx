@@ -14,9 +14,11 @@ import {
   WorkspacePage,
   PageActionGroup,
 } from "@/components/app/WorkspaceUI";
+import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import { SelectField, TextField, TextAreaField } from "@/components/app/FormFields";
 import type { TradeDto } from "@/lib/domain/types";
 import { formatMoney } from "@/lib/utils/format";
+import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
 
 type ReportRow = {
   name: string;
@@ -28,6 +30,38 @@ type ReportRow = {
 };
 
 export default function ReportsPage() {
+  const { data: summary, isLoading: accessLoading } = useTraderAccessSummary();
+  const access = summary?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
+
+  if (accessLoading && !summary) {
+    return (
+      <WorkspacePage eyebrow="Reporting" title="Reports" description="Loading your platform access status.">
+        <Panel>
+          <p className="text-sm text-muted">Loading…</p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  if (access.status !== "ACTIVE") {
+    return (
+      <WorkspacePage
+        eyebrow="Reporting"
+        title="Reports"
+        description="Activate your platform subscription to unlock reporting and export workflows."
+      >
+        <PlatformSubscriptionLocked
+          access={access}
+          description="Activate the Aurix platform subscription to unlock reports, export tools, and scheduled reporting workflows."
+        />
+      </WorkspacePage>
+    );
+  }
+
+  return <ReportsContent />;
+}
+
+function ReportsContent() {
   const [createOpen, setCreateOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);

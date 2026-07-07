@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, test, afterEach } from "vitest";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Validation logic tests for the broker credential API (Phase 4.7)
@@ -157,7 +157,6 @@ describe("broker credential store — input validation", () => {
 
 describe("partner role guard logic", () => {
   test("PARTNER role string check works as expected", () => {
-    const roles = ["ADMIN", "TRADER", "PARTNER"] as const;
     const isPartner = (role: string) => role === "PARTNER";
 
     expect(isPartner("PARTNER")).toBe(true);

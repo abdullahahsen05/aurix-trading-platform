@@ -1,8 +1,11 @@
 import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
 import { DataTable, InlineStatusStrip, Panel, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
+import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import { AccountConnectionActions } from "@/components/accounts/AccountConnectionActions";
 import { BrokerConnectPanel } from "@/components/accounts/BrokerConnectPanel";
+import { requireAuth } from "@/lib/auth/session";
+import { getPlatformSubscriptionAccess } from "@/lib/services/billingService";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 import type { TraderAccountSummary, TradeDto, EquityPoint } from "@/lib/domain/types";
 
@@ -62,6 +65,24 @@ export default async function AccountDetailPage({
 }: {
   params: Promise<{ accountId: string }>;
 }) {
+  const user = await requireAuth();
+  const platformAccess = await getPlatformSubscriptionAccess(user.id);
+
+  if (platformAccess.status !== "ACTIVE") {
+    return (
+      <WorkspacePage
+        eyebrow="Account detail"
+        title="Account detail"
+        description="Activate your platform subscription to unlock broker account details and analytics."
+      >
+        <PlatformSubscriptionLocked
+          access={platformAccess}
+          description="Activate the Aurix platform subscription to unlock account detail views, broker status, and account performance history."
+        />
+      </WorkspacePage>
+    );
+  }
+
   const { accountId } = await params;
   const [account, accountTrades, equityCurveData] = await Promise.all([
     fetchAccount(accountId),

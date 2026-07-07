@@ -4,7 +4,7 @@
  * This file must NOT have top-level imports (it must be an ambient declaration).
  */
 declare module 'lucide-react' {
-  import type { FC, SVGProps, RefAttributes, ForwardRefExoticComponent } from 'react'
+  import type { SVGProps, RefAttributes, ForwardRefExoticComponent } from 'react'
 
   export interface LucideProps extends SVGProps<SVGSVGElement> {
     size?: number | string

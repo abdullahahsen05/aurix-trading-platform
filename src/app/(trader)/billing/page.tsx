@@ -35,7 +35,9 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 export default function BillingPage() {
-  const [historyFilter, setHistoryFilter] = useState<"ALL" | "PAID" | "PENDING" | "FAILED">("ALL");
+  const [historyFilter, setHistoryFilter] = useState<
+    "ALL" | "PAID" | "PENDING" | "FAILED" | "CANCELLED" | "REFUNDED"
+  >("ALL");
 
   const { data: summary, isLoading } = useQuery<UserBillingSummaryDto>({
     queryKey: ["billing-me"],
@@ -43,11 +45,21 @@ export default function BillingPage() {
     staleTime: 30_000,
   });
 
-  const platformSub = summary?.platformSubscription;
+  const platformSub = summary?.platformSubscription ?? {
+    id: "",
+    productCode: "PLATFORM_MONTHLY",
+    productName: "Platform Subscription",
+    status: "NONE" as const,
+    currentPeriodEnd: null,
+    approvedAt: null,
+    orderId: null,
+    message: "",
+  };
   const copyEntitlements = summary?.copyEntitlements ?? [];
   const paymentHistory = summary?.paymentHistory ?? [];
   const pendingApprovals = summary?.pendingApprovals ?? [];
   const botAccess = summary?.botAccess ?? [];
+  const mentorshipAccess = summary?.mentorshipAccess;
 
   const filteredHistory =
     historyFilter === "ALL"
@@ -98,7 +110,7 @@ export default function BillingPage() {
         {/* Platform subscription */}
         <Panel>
           <h2 className="mb-4 text-lg font-semibold text-foreground">Platform Subscription</h2>
-          {platformSub ? (
+          {platformSub.status !== "NONE" ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-muted">{platformSub.productName}</span>
@@ -179,11 +191,31 @@ export default function BillingPage() {
                 className="flex items-center justify-between gap-3 rounded-xl border border-line bg-background px-3 py-2"
               >
                 <p className="text-sm font-semibold text-foreground">{b.botName}</p>
-                <StatusPill tone={b.status === "ACTIVE" ? "lime" : "accent"}>
-                  {b.status === "ACTIVE" ? "Access granted" : "Pending admin approval"}
+                <StatusPill tone={STATUS_TONE[b.status] ?? "muted"}>
+                  {b.status === "ACTIVE"
+                    ? "Access granted"
+                    : b.status === "PENDING_APPROVAL"
+                      ? "Pending admin approval"
+                      : b.status.replace(/_/g, " ")}
                 </StatusPill>
               </div>
             ))}
+          </div>
+        </Panel>
+      )}
+
+      {mentorshipAccess && mentorshipAccess.status !== "NONE" && (
+        <Panel className="mt-5">
+          <h2 className="mb-4 text-lg font-semibold text-foreground">Mentorship Access</h2>
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-background px-3 py-2">
+            <p className="text-sm font-semibold text-foreground">{mentorshipAccess.productName}</p>
+            <StatusPill tone={STATUS_TONE[mentorshipAccess.status] ?? "muted"}>
+              {mentorshipAccess.status === "ACTIVE"
+                ? "Access granted"
+                : mentorshipAccess.status === "PENDING_APPROVAL"
+                  ? "Pending admin approval"
+                  : mentorshipAccess.status.replace(/_/g, " ")}
+            </StatusPill>
           </div>
         </Panel>
       )}
@@ -194,7 +226,7 @@ export default function BillingPage() {
           <h2 className="text-lg font-semibold text-foreground">Payment history</h2>
           {paymentHistory.length > 0 && (
             <FilterChipRow
-              chips={(["ALL", "PAID", "PENDING", "FAILED"] as const).map((s) => ({
+              chips={(["ALL", "PAID", "PENDING", "FAILED", "CANCELLED", "REFUNDED"] as const).map((s) => ({
                 label: s === "ALL" ? `All (${paymentHistory.length})` : s,
                 active: historyFilter === s,
                 onClick: () => setHistoryFilter(s),

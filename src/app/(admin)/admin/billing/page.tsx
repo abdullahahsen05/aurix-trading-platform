@@ -1,7 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { AlertTriangle, CheckCircle2 as CheckCircle, X } from "lucide-react";
+import { CheckCircle2 as CheckCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {

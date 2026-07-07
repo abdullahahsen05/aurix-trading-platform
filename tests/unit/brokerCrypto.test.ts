@@ -24,7 +24,7 @@ describe("brokerCrypto", () => {
 
   test("tampered ciphertext fails authentication", () => {
     const enc = encryptSecret("hello");
-    const [iv, tag, ct] = enc.split(":");
+    const [iv, tag] = enc.split(":");
     const tampered = [iv, tag, Buffer.from("evil").toString("base64")].join(":");
     expect(() => decryptSecret(tampered)).toThrow();
   });

@@ -4,7 +4,6 @@ import { use, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   EmptyState,
-  GhostButton,
   Panel,
   PrimaryButton,
   StatusPill,

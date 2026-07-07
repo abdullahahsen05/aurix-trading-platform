@@ -42,13 +42,6 @@ const STATUS_TONE: Record<string, "lime" | "accent" | "muted" | "danger"> = {
   CANCELLED: "muted",
 };
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error?.message ?? "Request failed");
-  return json.data;
-}
-
 export default function PartnerPayoutsPage() {
   const [commissionFilter, setCommissionFilter] = useState<"ALL" | "PENDING" | "APPROVED" | "PAID">("ALL");
 

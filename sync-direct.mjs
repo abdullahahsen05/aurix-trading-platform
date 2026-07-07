@@ -1,13 +1,10 @@
 // Plain ESM script — uses createRequire to load MetaAPI CJS bundle (not the ESM-web bundle),
 // which is exactly what Next.js serverExternalPackages does at runtime.
 import { readFileSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { join } from 'path'
 import { createRequire } from 'module'
-import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'crypto'
+import { createHash, createDecipheriv } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Force CJS require for metaapi — picks ./dist/index.js, not the ESM-web bundle
 const require = createRequire(import.meta.url)

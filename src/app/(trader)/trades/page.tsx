@@ -3,11 +3,45 @@
 import { useMemo, useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DirectorySearchOverlay } from "@/components/app/DirectorySearchOverlay";
+import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import { EmptyState, GhostButton, InlineStatusStrip, Panel, PageActionGroup, PrimaryButton, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
 import { formatMoney } from "@/lib/utils/format";
 import type { TradeDto } from "@/lib/domain/types";
+import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
 
 export default function TradesPage() {
+  const { data: summary, isLoading: accessLoading } = useTraderAccessSummary();
+  const access = summary?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
+
+  if (accessLoading && !summary) {
+    return (
+      <WorkspacePage eyebrow="Trade ledger" title="Trade history" description="Loading your platform access status.">
+        <Panel>
+          <p className="text-sm text-muted">Loading…</p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  if (access.status !== "ACTIVE") {
+    return (
+      <WorkspacePage
+        eyebrow="Trade ledger"
+        title="Trade history"
+        description="Activate your platform subscription to unlock trade history and manual trade-sync tools."
+      >
+        <PlatformSubscriptionLocked
+          access={access}
+          description="Activate the Aurix platform subscription to unlock trade history, trade-search tools, and the trader trade ledger workspace."
+        />
+      </WorkspacePage>
+    );
+  }
+
+  return <TradesContent />;
+}
+
+function TradesContent() {
   const queryClient = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");

@@ -13,9 +13,11 @@ import {
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
+import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import { SelectField, TextAreaField } from "@/components/app/FormFields";
 import { queryKeys } from "@/lib/data/queryKeys";
 import type { TraderAccountSummary } from "@/lib/domain/types";
+import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
 
 const SUGGESTED_PROMPTS = [
   "Analyze my current account risk.",
@@ -40,6 +42,38 @@ function uid() {
 }
 
 export default function AiAssistantPage() {
+  const { data: summary, isLoading: accessLoading } = useTraderAccessSummary();
+  const access = summary?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
+
+  if (accessLoading && !summary) {
+    return (
+      <WorkspacePage eyebrow="Assistant" title="Aurix AI Trading Assistant" description="Loading your platform access status.">
+        <Panel>
+          <p className="text-sm text-muted">Loading…</p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  if (access.status !== "ACTIVE") {
+    return (
+      <WorkspacePage
+        eyebrow="Assistant"
+        title="Aurix AI Trading Assistant"
+        description="Activate your platform subscription to unlock the AI trading assistant."
+      >
+        <PlatformSubscriptionLocked
+          access={access}
+          description="Activate the Aurix platform subscription to unlock the AI trading assistant, account-aware prompts, and chart analysis workflows."
+        />
+      </WorkspacePage>
+    );
+  }
+
+  return <AiAssistantContent />;
+}
+
+function AiAssistantContent() {
   // ── Account context (for the selector + context cards) ─────────────────────
   const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({
     queryKey: queryKeys.accounts,
