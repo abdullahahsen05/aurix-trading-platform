@@ -1,11 +1,11 @@
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
-import { AlertTriangle, X } from "lucide-react";
 import { useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { GhostButton, PrimaryButton } from "@/components/app/WorkspaceUI";
+import { AlertTriangle, X } from "lucide-react";
 import { SelectField } from "@/components/app/FormFields";
+import { GhostButton, PrimaryButton } from "@/components/app/WorkspaceUI";
 import { formatMoney } from "@/lib/utils/format";
 
 export interface CheckoutProduct {
@@ -21,11 +21,8 @@ interface BillingCheckoutModalProps {
   open: boolean;
   onClose: () => void;
   product: CheckoutProduct;
-  /** For COPY_ACCOUNT: pre-selected account ID */
   tradingAccountId?: string;
-  /** For COPY_ACCOUNT: list of accounts to pick from when no tradingAccountId provided */
   accounts?: Array<{ accountId: string; accountName: string }>;
-  /** Specific bot product ID for BOT purchases */
   botProductId?: string;
 }
 
@@ -44,6 +41,7 @@ export function BillingCheckoutModal({
   const isCopyProduct = product.code.startsWith("COPY_");
   const needsAccountSelector = isCopyProduct && !propAccountId && accounts.length > 0;
   const canProceed = !needsAccountSelector || selectedAccountId !== "";
+  const isMockCheckout = process.env.NEXT_PUBLIC_AIRWALLEX_ENABLED === "false";
 
   const checkout = useMutation({
     mutationFn: async () => {
@@ -67,7 +65,6 @@ export function BillingCheckoutModal({
     },
     onSuccess: (data) => {
       handleClose();
-      // Invalidate so every page reflects the new payment immediately on return
       queryClient.invalidateQueries({ queryKey: ["billing-me"] });
       window.location.assign(data.checkoutUrl);
     },
@@ -107,7 +104,7 @@ export function BillingCheckoutModal({
               <span className="text-muted">Billing</span>
               <span className="text-foreground">
                 {product.billingInterval === "MONTHLY"
-                  ? "Monthly — renews from approval date"
+                  ? "Monthly - renews from approval date"
                   : "One-time payment"}
               </span>
             </div>
@@ -120,7 +117,7 @@ export function BillingCheckoutModal({
                 value={selectedAccountId}
                 onChange={(e) => setSelectedAccountId(e.target.value)}
               >
-                <option value="">Select account…</option>
+                <option value="">Select account...</option>
                 {accounts.map((a) => (
                   <option key={a.accountId} value={a.accountId}>
                     {a.accountName}
@@ -133,9 +130,14 @@ export function BillingCheckoutModal({
           <div className="mt-4 flex items-start gap-2 rounded-xl border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-muted">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
             <span>
-              Access is activated after payment is confirmed and admin-approved.
-              {" "}Sandbox test card:{" "}
-              <strong className="font-mono text-foreground">4035 5010 0000 0008</strong>
+              {isMockCheckout ? (
+                <>Mock billing mode is enabled. Completing checkout records a local payment and still requires manual admin approval before access unlocks.</>
+              ) : (
+                <>
+                  Access is activated after payment is confirmed and admin-approved. Stripe test card:{" "}
+                  <strong className="font-mono text-foreground">4242 4242 4242 4242</strong>
+                </>
+              )}
             </span>
           </div>
 
@@ -155,7 +157,7 @@ export function BillingCheckoutModal({
               onClick={() => { setApiError(""); checkout.mutate(); }}
             >
               {checkout.isPending
-                ? "Processing…"
+                ? "Processing..."
                 : `Pay ${formatMoney({ amount: product.amount, currency: product.currency })}`}
             </PrimaryButton>
           </div>

@@ -1,10 +1,12 @@
 /**
- * Billing service — orchestrates Airwallex PaymentIntents, payment_orders,
+ * Billing service — orchestrates Stripe Checkout Sessions, payment_orders,
  * subscriptions, copy_account_entitlements, and partner commission ledger.
- * Server-only.
+ * Server-only (do not import in client components).
  */
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createPaymentIntent, buildCheckoutUrl } from "@/lib/services/airwallexService";
+import { buildMockCheckoutUrl, getBillingRuntimeMode } from "@/lib/payments/runtime";
+import { getStripe, ensureStripeCustomer } from "@/lib/stripe/stripeClient";
+import { getStripePriceId, getStripeCheckoutMode } from "@/lib/stripe/stripeProducts";
 import { writeAuditLog } from "@/lib/services/auditService";
 
 // ─── Public DTOs ──────────────────────────────────────────────────────────────
@@ -90,6 +92,59 @@ export interface UserBillingSummaryDto {
   }>;
 }
 
+export interface AdminBillingPendingApprovalDto {
+  orderId: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  productCode: string;
+  productName: string;
+  productType: string;
+  amount: number;
+  currency: string;
+  paidAt: string | null;
+}
+
+export interface AdminBillingAccessRecordDto {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  accessType: "SUBSCRIPTION" | "COPY_ACCOUNT" | "BOT" | "MENTORSHIP";
+  productName: string;
+  status: string;
+  scopeLabel: string;
+  currentPeriodEnd: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminBillingOverviewDto {
+  purchases: Array<{
+    id: string;
+    userId: string;
+    userName: string;
+    userEmail: string;
+    productCode: string;
+    productName: string;
+    productType: string;
+    amount: number;
+    currency: string;
+    status: string;
+    provider: string;
+    intentId: string | null;
+    checkoutUrl: string | null;
+    tradingAccountId: string | null;
+    tier: string | null;
+    botProductId: string | null;
+    createdAt: string;
+    paidAt: string | null;
+  }>;
+  pendingApprovals: AdminBillingPendingApprovalDto[];
+  activeAccess: AdminBillingAccessRecordDto[];
+  expiredAccess: AdminBillingAccessRecordDto[];
+}
+
 // ─── Access check ────────────────────────────────────────────────────────────
 
 export interface ExistingAccessResult {
@@ -138,8 +193,59 @@ type BotAccessRecordRow = {
   createdAt: string;
 };
 
+type PaidOrderProvisionRow = {
+  id: string;
+  user_id: string;
+  product_id: string;
+  status: string;
+  amount: number;
+  currency: string;
+  trading_account_id: string | null;
+  tier: string | null;
+  bot_product_id: string | null;
+  metadata?: Record<string, unknown> | null;
+};
+
+type BillingProductProvisionRow = {
+  type: string;
+  billing_interval: string;
+  code: string;
+};
+
+async function ensureTraderProfileId(userId: string): Promise<string> {
+  const supabase = createAdminClient();
+
+  const { data: existing, error: existingError } = await supabase
+    .from("trader_profiles")
+    .select("id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (existingError) {
+    throw new Error(`Failed to load trader profile: ${existingError.message}`);
+  }
+
+  if (existing?.id) return existing.id as string;
+
+  const { data: created, error: createError } = await supabase
+    .from("trader_profiles")
+    .upsert({ user_id: userId }, { onConflict: "user_id" })
+    .select("id")
+    .single();
+
+  if (createError || !created?.id) {
+    throw new Error(`Failed to provision trader profile: ${createError?.message ?? "missing id"}`);
+  }
+
+  return created.id as string;
+}
+
 function compareDescByCreatedAt<T extends { createdAt: string }>(a: T, b: T) {
   return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+}
+
+function monthlyPeriodEndIso() {
+  return new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function isFuture(dateValue: string | null | undefined, nowIso: string) {
@@ -650,6 +756,138 @@ export interface CheckoutResult {
   checkoutUrl: string;
 }
 
+async function ensurePaidOrderProvisioned(
+  order: PaidOrderProvisionRow,
+  product: BillingProductProvisionRow,
+): Promise<void> {
+  const supabase = createAdminClient();
+  const periodEnd = product.billing_interval === "MONTHLY" ? monthlyPeriodEndIso() : null;
+
+  if (product.type === "SUBSCRIPTION") {
+    const { data: existing } = await supabase
+      .from("subscriptions")
+      .select("id")
+      .eq("payment_order_id", order.id)
+      .maybeSingle();
+
+    if (!existing) {
+      const traderProfileId = await ensureTraderProfileId(order.user_id);
+      const { error: insertError } = await supabase.from("subscriptions").insert({
+        trader_profile_id: traderProfileId,
+        plan_name: product.code === "PLATFORM_MONTHLY" ? "Platform Subscription" : product.code,
+        started_at: new Date().toISOString(),
+        ends_at: periodEnd,
+        user_id: order.user_id,
+        product_id: order.product_id,
+        payment_order_id: order.id,
+        status: "PENDING_APPROVAL",
+        current_period_end: periodEnd,
+      });
+      if (insertError) {
+        throw new Error(`Failed to provision subscription access: ${insertError.message}`);
+      }
+    }
+    return;
+  }
+
+  if (product.type === "COPY_ACCOUNT") {
+    const { data: existing } = await supabase
+      .from("copy_account_entitlements")
+      .select("id")
+      .eq("payment_order_id", order.id)
+      .maybeSingle();
+
+    if (!existing) {
+      const { error: insertError } = await supabase.from("copy_account_entitlements").insert({
+        user_id: order.user_id,
+        trading_account_id: order.trading_account_id,
+        payment_order_id: order.id,
+        tier: order.tier ?? (product.code === "COPY_ULTRA_FAST" ? "PREMIUM" : "NORMAL"),
+        status: "PENDING_APPROVAL",
+        amount: order.amount,
+        currency: order.currency,
+        current_period_end: periodEnd,
+      });
+      if (insertError) {
+        throw new Error(`Failed to provision copy entitlement: ${insertError.message}`);
+      }
+    }
+    return;
+  }
+
+  if (product.type === "BOT" && order.bot_product_id) {
+    const { data: existing } = await supabase
+      .from("bot_access_records")
+      .select("id, status")
+      .eq("user_id", order.user_id)
+      .eq("product_id", order.bot_product_id)
+      .maybeSingle();
+
+    if (!existing) {
+      const { error: insertError } = await supabase.from("bot_access_records").insert({
+        product_id: order.bot_product_id,
+        user_id: order.user_id,
+        status: "REQUESTED",
+        source: "FUTURE_PAYMENT",
+        price_amount: order.amount,
+        price_currency: order.currency,
+      });
+      if (insertError) {
+        throw new Error(`Failed to provision bot access: ${insertError.message}`);
+      }
+      return;
+    }
+
+    if (existing.status !== "ACTIVE") {
+      const { error: updateError } = await supabase
+        .from("bot_access_records")
+        .update({
+          status: "REQUESTED",
+          source: "FUTURE_PAYMENT",
+          price_amount: order.amount,
+          price_currency: order.currency,
+        })
+        .eq("id", existing.id);
+      if (updateError) {
+        throw new Error(`Failed to refresh bot access request: ${updateError.message}`);
+      }
+    }
+  }
+}
+
+async function markOrderPaid(orderId: string): Promise<void> {
+  const supabase = createAdminClient();
+
+  const { data: order, error: orderErr } = await supabase
+    .from("payment_orders")
+    .select("id, user_id, product_id, status, amount, currency, trading_account_id, tier, bot_product_id, metadata")
+    .eq("id", orderId)
+    .single();
+
+  if (orderErr || !order) {
+    console.warn(`[billing] markOrderPaid: no order for ${orderId}`);
+    return;
+  }
+
+  if (order.status === "PAID") return;
+
+  await supabase
+    .from("payment_orders")
+    .update({ status: "PAID", paid_at: new Date().toISOString() })
+    .eq("id", order.id);
+
+  const { data: product } = await supabase
+    .from("billing_products")
+    .select("type, billing_interval, code")
+    .eq("id", order.product_id)
+    .single();
+
+  if (!product) return;
+
+  await ensurePaidOrderProvisioned(order as PaidOrderProvisionRow, product as BillingProductProvisionRow);
+  await maybeCreatePartnerCommission(order.user_id, order.id, order.amount, order.currency);
+}
+
 export async function createCheckoutSession(params: CreateCheckoutParams): Promise<CheckoutResult> {
   const product = await getProductByCode(params.productCode);
   if (!product) throw new Error("Product not found or inactive");
@@ -662,6 +900,7 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
   }
 
   const supabase = createAdminClient();
+  const runtimeMode = getBillingRuntimeMode({ BILLING_PROVIDER: process.env.BILLING_PROVIDER });
 
   // Create the payment_order record first (PENDING)
   const { data: order, error: orderErr } = await supabase
@@ -672,61 +911,202 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
       amount: product.amount,
       currency: product.currency,
       status: "PENDING",
-      provider: "AIRWALLEX",
+      provider: runtimeMode === "mock" ? "MOCK" : "STRIPE",
       trading_account_id: params.tradingAccountId ?? null,
       tier: params.tier ?? null,
       bot_product_id: params.botProductId ?? null,
+      metadata: { checkoutMode: runtimeMode },
     })
     .select("id")
     .single();
 
   if (orderErr || !order) throw new Error(`Failed to create payment order: ${orderErr?.message}`);
 
-  // TEST MODE: skip Airwallex, wire up the intent ID, then let handlePaymentSucceeded
-  // run the normal PENDING→PAID transition and create the subscription/entitlement row.
-  // Do NOT pre-mark as PAID here — handlePaymentSucceeded bails early if it sees PAID.
-  if (process.env.AIRWALLEX_TEST_MODE === "true") {
-    const testIntentId = `test_${order.id}`;
-    const testCheckoutUrl = `${params.returnUrl}?orderId=${order.id}&test=1`;
+  // MOCK MODE: bypass Stripe, mark order PENDING with a local mock URL.
+  // The return page calls /api/billing/mock-confirm to simulate payment success.
+  if (runtimeMode === "mock") {
+    const mockIntentId = `mock_${order.id}`;
+    const mockCheckoutUrl = buildMockCheckoutUrl(params.returnUrl, order.id);
     await supabase
       .from("payment_orders")
       .update({
-        provider_payment_intent_id: testIntentId,
-        provider_checkout_url: testCheckoutUrl,
+        provider_payment_intent_id: mockIntentId,
+        provider_checkout_url: mockCheckoutUrl,
       })
       .eq("id", order.id);
-    await handlePaymentSucceeded(testIntentId);
-    return { orderId: order.id, checkoutUrl: testCheckoutUrl };
+    return { orderId: order.id, checkoutUrl: mockCheckoutUrl };
   }
 
-  // Create Airwallex PaymentIntent
-  const intent = await createPaymentIntent({
-    merchantOrderId: order.id,
-    amount: product.amount,
-    currency: product.currency,
-    description: product.name,
-    returnUrl: `${params.returnUrl}?orderId=${order.id}`,
-    customerEmail: params.userEmail,
-    customerName: params.userName,
+  // STRIPE MODE: create a hosted Checkout Session.
+  const stripe = getStripe();
+  const priceId = getStripePriceId(params.productCode);
+  const stripeCustomerId = await ensureStripeCustomer(params.userId, params.userEmail, params.userName);
+  const checkoutMode = getStripeCheckoutMode(product.billingInterval);
+  const origin = new URL(params.returnUrl).origin;
+
+  const session = await stripe.checkout.sessions.create({
+    mode: checkoutMode,
+    customer: stripeCustomerId,
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: `${params.returnUrl}?orderId=${order.id}&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/billing?checkout=cancelled`,
+    client_reference_id: order.id,
     metadata: {
-      orderId: order.id,
+      localOrderId: order.id,
       userId: params.userId,
       productCode: params.productCode,
+      ...(params.tradingAccountId ? { tradingAccountId: params.tradingAccountId } : {}),
+      ...(params.botProductId ? { botProductId: params.botProductId } : {}),
     },
   });
 
-  const checkoutUrl = buildCheckoutUrl(intent.id, intent.client_secret);
-
-  // Persist intent ID and checkout URL on the order
   await supabase
     .from("payment_orders")
     .update({
-      provider_payment_intent_id: intent.id,
-      provider_checkout_url: checkoutUrl,
+      stripe_checkout_session_id: session.id,
+      stripe_customer_id: stripeCustomerId,
+      provider_checkout_url: session.url,
     })
     .eq("id", order.id);
 
-  return { orderId: order.id, checkoutUrl };
+  return { orderId: order.id, checkoutUrl: session.url! };
+}
+
+// ─── Stripe event handlers ────────────────────────────────────────────────────
+
+/** Called from the Stripe webhook when checkout.session.completed fires. */
+export async function handleStripeCheckoutCompleted(session: {
+  id: string;
+  subscription?: string | null;
+  payment_intent?: string | null;
+}): Promise<void> {
+  const supabase = createAdminClient();
+
+  const { data: order } = await supabase
+    .from("payment_orders")
+    .select("id, status")
+    .eq("stripe_checkout_session_id", session.id)
+    .maybeSingle();
+
+  if (!order) {
+    console.warn(`[stripe] handleStripeCheckoutCompleted: no order for session ${session.id}`);
+    return;
+  }
+
+  // Update Stripe-specific IDs before provisioning
+  await supabase
+    .from("payment_orders")
+    .update({
+      ...(session.subscription ? { stripe_subscription_id: session.subscription } : {}),
+      ...(session.payment_intent ? { stripe_payment_intent_id: session.payment_intent } : {}),
+    })
+    .eq("id", order.id);
+
+  await markOrderPaid(order.id);
+
+  // Link stripe_subscription_id to subscription/entitlement rows
+  if (session.subscription) {
+    await supabase
+      .from("subscriptions")
+      .update({ stripe_subscription_id: session.subscription })
+      .eq("payment_order_id", order.id);
+
+    await supabase
+      .from("copy_account_entitlements")
+      .update({ stripe_subscription_id: session.subscription })
+      .eq("payment_order_id", order.id);
+  }
+}
+
+/** Called on invoice.paid — extends current_period_end for active subscriptions. */
+export async function handleStripeInvoicePaid(invoice: {
+  subscription?: string | null;
+  lines?: { data?: Array<{ period?: { start?: number; end?: number } }> };
+}): Promise<void> {
+  if (!invoice.subscription) return;
+  const supabase = createAdminClient();
+
+  const periodData = invoice.lines?.data?.[0]?.period;
+  const newPeriodEnd = periodData?.end
+    ? new Date(periodData.end * 1000).toISOString()
+    : monthlyPeriodEndIso();
+  const newPeriodStart = periodData?.start
+    ? new Date(periodData.start * 1000).toISOString()
+    : new Date().toISOString();
+
+  // Only extend ACTIVE rows — renewals don't need re-approval
+  await Promise.all([
+    supabase
+      .from("subscriptions")
+      .update({ current_period_start: newPeriodStart, current_period_end: newPeriodEnd })
+      .eq("stripe_subscription_id", invoice.subscription)
+      .eq("status", "ACTIVE"),
+
+    supabase
+      .from("copy_account_entitlements")
+      .update({ current_period_start: newPeriodStart, current_period_end: newPeriodEnd })
+      .eq("stripe_subscription_id", invoice.subscription)
+      .eq("status", "ACTIVE"),
+  ]);
+}
+
+/** Called on customer.subscription.deleted — cancels local subscription. */
+export async function handleStripeSubscriptionDeleted(stripeSubscriptionId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const now = new Date().toISOString();
+
+  await Promise.all([
+    supabase
+      .from("subscriptions")
+      .update({ status: "CANCELLED", cancelled_at: now })
+      .eq("stripe_subscription_id", stripeSubscriptionId)
+      .in("status", ["ACTIVE", "PENDING_APPROVAL"]),
+
+    supabase
+      .from("copy_account_entitlements")
+      .update({ status: "CANCELLED" })
+      .eq("stripe_subscription_id", stripeSubscriptionId)
+      .in("status", ["ACTIVE", "PENDING_APPROVAL"]),
+  ]);
+}
+
+/** Called on customer.subscription.updated — syncs cancel_at_period_end flag. */
+export async function handleStripeSubscriptionUpdated(subscription: {
+  id: string;
+  cancel_at_period_end?: boolean;
+}): Promise<void> {
+  if (subscription.cancel_at_period_end === undefined) return;
+  const supabase = createAdminClient();
+
+  await Promise.all([
+    supabase
+      .from("subscriptions")
+      .update({ cancel_at_period_end: subscription.cancel_at_period_end })
+      .eq("stripe_subscription_id", subscription.id),
+
+    supabase
+      .from("copy_account_entitlements")
+      .update({ cancel_at_period_end: subscription.cancel_at_period_end })
+      .eq("stripe_subscription_id", subscription.id),
+  ]);
+}
+
+/** Called on invoice.payment_failed — logs without extending access. */
+export async function handleStripeInvoicePaymentFailed(stripeSubscriptionId: string | null): Promise<void> {
+  if (!stripeSubscriptionId) return;
+  console.warn(`[stripe] invoice.payment_failed for subscription ${stripeSubscriptionId}`);
+  // Access is preserved until current_period_end; expireStaleEntitlements() handles the rest.
+}
+
+/** Called on charge.refunded — marks order REFUNDED and logs it. */
+export async function handleStripeChargeRefunded(paymentIntentId: string | null): Promise<void> {
+  if (!paymentIntentId) return;
+  const supabase = createAdminClient();
+  await supabase
+    .from("payment_orders")
+    .update({ status: "REFUNDED" })
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .neq("status", "REFUNDED");
 }
 
 // ─── Webhook: handle payment succeeded ───────────────────────────────────────
@@ -745,7 +1125,9 @@ export async function handlePaymentSucceeded(intentId: string): Promise<void> {
     console.warn(`[billing] handlePaymentSucceeded: no order for intent ${intentId}`);
     return;
   }
-  if (order.status === "PAID") return; // already processed
+  await markOrderPaid(order.id);
+  return;
+  /*
 
   // Mark order as PAID
   await supabase
@@ -800,6 +1182,36 @@ export async function handlePaymentSucceeded(intentId: string): Promise<void> {
 
   // ── Partner commission ────────────────────────────────────
   await maybeCreatePartnerCommission(order.user_id, order.id, order.amount, order.currency);
+  */
+}
+
+export async function confirmMockPayment(
+  userId: string,
+  orderId: string,
+): Promise<{ ok: boolean; message: string }> {
+  const runtimeMode = getBillingRuntimeMode({ BILLING_PROVIDER: process.env.BILLING_PROVIDER });
+
+  if (runtimeMode !== "mock") {
+    return { ok: false, message: "Mock billing mode is not enabled" };
+  }
+
+  const supabase = createAdminClient();
+  const { data: order, error } = await supabase
+    .from("payment_orders")
+    .select("id, user_id, status, provider")
+    .eq("id", orderId)
+    .eq("user_id", userId)
+    .single();
+
+  if (error || !order) return { ok: false, message: "Order not found" };
+  if (order.provider !== "MOCK") return { ok: false, message: "Order is not using mock billing" };
+  if (order.status === "PAID") return { ok: true, message: "Payment already recorded" };
+  if (order.status !== "PENDING") {
+    return { ok: false, message: `Order cannot be confirmed from status ${order.status}` };
+  }
+
+  await markOrderPaid(order.id);
+  return { ok: true, message: "Mock payment recorded" };
 }
 
 async function maybeCreatePartnerCommission(
@@ -1100,11 +1512,13 @@ export async function approvePaymentAccess(
 
   const { data: product } = await supabase
     .from("billing_products")
-    .select("type, code")
+    .select("type, code, billing_interval")
     .eq("id", order.product_id)
     .single();
 
   if (!product) return { ok: false, message: "Product not found" };
+
+  await ensurePaidOrderProvisioned(order as PaidOrderProvisionRow, product as BillingProductProvisionRow);
 
   const now = new Date().toISOString();
   const pEnd = new Date(Date.now() + 31 * 24 * 60 * 60 * 1000).toISOString();
@@ -1115,6 +1529,8 @@ export async function approvePaymentAccess(
       .update({
         status: "ACTIVE",
         starts_at: now,
+        started_at: now,
+        ends_at: pEnd,
         current_period_end: pEnd,
         approved_by_admin_id: adminId,
         approved_at: now,

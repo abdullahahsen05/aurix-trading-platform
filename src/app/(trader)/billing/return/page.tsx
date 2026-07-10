@@ -1,33 +1,64 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2 as CheckCircle, Clock } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Panel, WorkspacePage } from "@/components/app/WorkspaceUI";
 
+type BillingHistoryRow = {
+  id: string;
+  productName: string;
+  status: string;
+  amount: number;
+  currency: string;
+};
+
+type BillingSummary = {
+  paymentHistory: BillingHistoryRow[];
+};
+
 export default function BillingReturnPage() {
+  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
+  const isMock = searchParams.get("mock") === "1";
 
-  // Poll the billing summary to determine actual payment status
-  const { data, isLoading } = useQuery({
+  const confirmMockPayment = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/billing/mock-confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to confirm mock payment");
+      return json.data as { message: string };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["billing-me"] });
+    },
+  });
+
+  useEffect(() => {
+    if (!isMock || !orderId || confirmMockPayment.isSuccess || confirmMockPayment.isPending) return;
+    confirmMockPayment.mutate();
+  }, [confirmMockPayment, isMock, orderId]);
+
+  const { data, isLoading } = useQuery<BillingSummary>({
     queryKey: ["billing-return", orderId],
     queryFn: async () => {
       const res = await fetch("/api/billing/me");
       const json = await res.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load status");
-      return json.data;
+      return json.data as BillingSummary;
     },
     refetchInterval: 5_000,
     enabled: Boolean(orderId),
   });
 
-  // Find the relevant order in payment history
-  const order = data?.paymentHistory?.find(
-    (h: { id: string }) => h.id === orderId,
-  ) as { productName: string; status: string; amount: number; currency: string } | undefined;
-
+  const order = data?.paymentHistory?.find((item) => item.id === orderId);
   const isPaid = order?.status === "PAID";
   const isPending = order?.status === "PENDING" || !order;
 
@@ -35,7 +66,7 @@ export default function BillingReturnPage() {
     <WorkspacePage
       eyebrow="Billing"
       title="Payment status"
-      description="Redirected back from the Airwallex checkout."
+      description={isMock ? "Returned from the local mock checkout flow." : "Returned from Stripe Checkout."}
     >
       <Panel className="max-w-lg">
         {isLoading && !order ? (
@@ -49,9 +80,8 @@ export default function BillingReturnPage() {
             <div>
               <p className="text-base font-semibold text-foreground">Payment confirmed</p>
               <p className="mt-1 text-sm text-muted">
-                Your payment for <strong className="text-foreground">{order?.productName}</strong> was
-                received. Access will be activated once an admin reviews and approves it — usually
-                within 1 business day.
+                Your payment for <strong className="text-foreground">{order?.productName}</strong> was received.
+                Access will unlock after admin approval, usually within 1 business day.
               </p>
             </div>
           </div>
@@ -60,13 +90,18 @@ export default function BillingReturnPage() {
             <Clock className="mt-0.5 h-7 w-7 shrink-0 text-accent" />
             <div>
               <p className="text-base font-semibold text-foreground">
-                {isPending ? "Payment processing…" : "Payment not confirmed"}
+                {isPending ? "Payment processing..." : "Payment not confirmed"}
               </p>
               <p className="mt-1 text-sm text-muted">
                 {isPending
-                  ? "We are waiting for Airwallex to confirm payment. This page refreshes automatically."
+                  ? isMock
+                    ? "We are recording the mock payment locally. This page refreshes automatically."
+                    : "We are waiting for Stripe to confirm your payment. This page refreshes automatically."
                   : `Current status: ${order?.status}. Contact support if you believe this is an error.`}
               </p>
+              {confirmMockPayment.isError ? (
+                <p className="mt-2 text-xs text-danger">{(confirmMockPayment.error as Error).message}</p>
+              ) : null}
             </div>
           </div>
         )}
