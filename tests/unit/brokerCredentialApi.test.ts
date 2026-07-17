@@ -1,4 +1,5 @@
 import { describe, expect, test, afterEach } from "vitest";
+import { brokerConnectionSchema } from "@/lib/validation/schemas";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Validation logic tests for the broker credential API (Phase 4.7)
@@ -8,16 +9,7 @@ import { describe, expect, test, afterEach } from "vitest";
 // SUPABASE credentials and is outside the unit test scope.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { z } from "zod";
-
-// Mirror the schema from the route (kept in sync manually)
-const storeSchema = z.object({
-  platform: z.enum(["MT5", "MT4"]).default("MT5"),
-  login: z.string().min(1, "Login is required").max(50).trim(),
-  password: z.string().min(1, "Password is required").max(200).trim(),
-  server: z.string().min(1, "Server is required").max(100).trim(),
-  brokerName: z.string().max(100).trim().optional(),
-});
+const storeSchema = brokerConnectionSchema;
 
 describe("broker credential store — input validation", () => {
   test("accepts valid MT5 payload", () => {
@@ -42,6 +34,18 @@ describe("broker credential store — input validation", () => {
       server: "Broker-Demo",
     });
     expect(result.success).toBe(true);
+  });
+
+  test("normalizes lowercase platform values", () => {
+    const result = storeSchema.safeParse({
+      platform: "mt4",
+      login: "99887766",
+      password: "pass",
+      server: "Broker-Demo",
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.platform).toBe("MT4");
   });
 
   test("defaults platform to MT5 when omitted", () => {
@@ -102,6 +106,17 @@ describe("broker credential store — input validation", () => {
     if (!result.success) return;
     expect(result.data.login).toBe("12345");
     expect(result.data.server).toBe("Broker-Demo");
+  });
+
+  test("preserves password whitespace exactly", () => {
+    const result = storeSchema.safeParse({
+      login: "12345",
+      password: " pass with spaces ",
+      server: "Broker-Demo",
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.password).toBe(" pass with spaces ");
   });
 
   test("login max length enforced", () => {

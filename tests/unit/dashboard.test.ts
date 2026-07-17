@@ -12,6 +12,7 @@ function trade(
 ): TradeDto {
   return {
     id,
+    shortTradeId: `TRD-${id}`,
     accountId: "account-1",
     symbol: "EURUSD",
     side: "BUY",

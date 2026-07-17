@@ -6,6 +6,8 @@ const account: TraderAccountSummary = {
   accountId: "a1",
   accountName: "Evaluation 100K",
   brokerName: "MetaTrader 5 Demo",
+  serverName: "Demo-Server",
+  platform: "MT5",
   status: "CONNECTED",
   balance: { amount: 100000, currency: "USD" },
   equity: { amount: 96000, currency: "USD" },
@@ -39,6 +41,7 @@ const rules: RiskRuleDto[] = [
 const trades: TradeDto[] = [
   {
     id: "open-1",
+    shortTradeId: "TRD-00000001",
     accountId: "a1",
     symbol: "XAUUSD",
     side: "BUY",

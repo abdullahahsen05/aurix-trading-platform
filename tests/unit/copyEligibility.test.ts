@@ -54,4 +54,57 @@ describe("evaluateFollowerEligibility", () => {
       evaluateFollowerEligibility({ ...base, currentDrawdownPercent: 11, maxDrawdownPercent: 10 }).eligible,
     ).toBe(false);
   });
+
+  test("global and account pause rules identify their scope", () => {
+    expect(evaluateFollowerEligibility({ ...base, globalCopyEnabled: false })).toMatchObject({
+      eligible: false,
+      ruleCode: "GLOBAL_COPY_PAUSED",
+      scope: "GLOBAL",
+    });
+    expect(evaluateFollowerEligibility({ ...base, accountCopyEnabled: false })).toMatchObject({
+      eligible: false,
+      ruleCode: "ACCOUNT_COPY_PAUSED",
+      scope: "ACCOUNT",
+    });
+  });
+
+  test("uses the strictest global and account position limit", () => {
+    expect(evaluateFollowerEligibility({
+      ...base,
+      openCopiedTrades: 3,
+      maxOpenTrades: 8,
+      globalMaxOpenTrades: 3,
+    })).toMatchObject({ eligible: false, ruleCode: "GLOBAL_MAX_OPEN_POSITIONS" });
+  });
+
+  test("blocks lots above account or global limits", () => {
+    expect(evaluateFollowerEligibility({ ...base, proposedLot: 1.5, maxLot: 1 })).toMatchObject({
+      eligible: false,
+      ruleCode: "ACCOUNT_MAX_LOT",
+    });
+    expect(evaluateFollowerEligibility({ ...base, proposedLot: 1.5, maxLot: 2, globalMaxLot: 1 })).toMatchObject({
+      eligible: false,
+      ruleCode: "GLOBAL_MAX_LOT",
+    });
+  });
+
+  test("blocks after the configured consecutive losses", () => {
+    expect(evaluateFollowerEligibility({ ...base, consecutiveLosses: 4, stopAfterLosses: 4 })).toMatchObject({
+      eligible: false,
+      ruleCode: "ACCOUNT_CONSECUTIVE_LOSSES",
+    });
+  });
+
+  test("blocks excessive or unverifiable slippage", () => {
+    expect(evaluateFollowerEligibility({ ...base, slippagePoints: 6, maxSlippagePoints: 5 })).toMatchObject({
+      eligible: false,
+      ruleCode: "GLOBAL_MAX_SLIPPAGE",
+    });
+    expect(evaluateFollowerEligibility({
+      ...base,
+      slippagePoints: null,
+      maxSlippagePoints: 5,
+      enforceSlippageAvailability: true,
+    })).toMatchObject({ eligible: false, ruleCode: "GLOBAL_SLIPPAGE_UNAVAILABLE" });
+  });
 });

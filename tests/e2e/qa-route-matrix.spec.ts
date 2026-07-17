@@ -202,7 +202,7 @@ async function loginAs(page: Page, email: string, password: string, expectedPath
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: /sign in/i }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL(`**${expectedPath}`);
 }
 
@@ -245,7 +245,7 @@ test.describe("literal QA route matrix", () => {
     const publicRoutes: RouteSpec[] = [
       { path: "/", expectedText: /AURIX|Welcome/i },
       { path: "/login", expectedText: /Welcome back/i },
-      { path: "/register", expectedText: /Create your trading workspace/i },
+      { path: "/register", expectedText: /How will you use Aurix\?/i },
       { path: "/forgot-password", expectedText: /Forgot password/i },
       { path: "/reset-password", expectedText: /Create a new password/i },
       { path: `/certificates/verify/${fixtures.certificateVerificationId ?? "missing-certificate"}`, expectedText: /Certificate|Verified|Revoked|Not Found/i },
@@ -257,6 +257,7 @@ test.describe("literal QA route matrix", () => {
     }
 
     await page.goto("/register");
+    await page.getByRole("button", { name: /I am a Trader/i }).click();
     await page.getByLabel("Full name").fill("QA Visitor");
     await page.getByLabel("Email").fill("qa-visitor@example.com");
     await page.getByLabel("Password", { exact: true }).fill("Password123!");
@@ -356,7 +357,7 @@ test.describe("literal QA route matrix", () => {
       const approved = await createApprovedTraderFixture();
       await loginAs(page, approved.email, approved.password, "/dashboard");
       const routes: RouteSpec[] = [
-        { path: "/dashboard", expectedText: /Trading overview/i },
+        { path: "/dashboard", expectedText: /Trader workspace|Welcome,/i },
         { path: "/accounts", expectedText: /Accounts/i },
         { path: "/copy-trading", expectedText: /Copy Trading|Per-account copy access/i },
         { path: "/marketplace", expectedText: /Marketplace|Bot/i },
@@ -480,7 +481,7 @@ test.describe("literal QA route matrix", () => {
         { width: 1024, height: 768 },
         { width: 390, height: 844 },
       ]) {
-        await expectResponsivePage(traderContext, "/dashboard", /Trading overview/i, size.width, size.height);
+        await expectResponsivePage(traderContext, "/dashboard", /Trader workspace|Welcome,/i, size.width, size.height);
         await expectResponsivePage(adminContext, "/admin/copy", /Copy Trading Control Center|Copy/i, size.width, size.height);
         await expectResponsivePage(adminContext, "/admin/accounts", /Account supervision|Accounts/i, size.width, size.height);
         await expectResponsivePage(traderContext, "/copy-trading", /Copy Trading|Per-account copy access/i, size.width, size.height);

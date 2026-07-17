@@ -25,17 +25,20 @@ const roles = [
   },
 ] as const;
 
-test("create storage state for demo roles", async ({ page }) => {
+test("create storage state for demo roles", async ({ browser }) => {
   await fs.mkdir(authDir, { recursive: true });
 
   for (const role of roles) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
     await page.goto("/login");
     await page.getByLabel("Email").fill(role.email);
     await page.getByLabel("Password").fill(role.password);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await page.waitForURL(`**${role.homePath}`);
     await expect(page).toHaveURL(new RegExp(`${role.homePath.replace("/", "\\/")}$`));
-    await page.context().storageState({ path: path.join(authDir, `${role.name}.json`) });
-    await page.context().clearCookies();
+    await context.storageState({ path: path.join(authDir, `${role.name}.json`) });
+    await context.close();
   }
 });

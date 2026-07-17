@@ -5,6 +5,7 @@ import {
   deriveCopyEntitlementAccess,
   deriveMentorshipAccess,
   derivePlatformSubscriptionAccess,
+  getVerifiedPaymentProvisioningDecision,
   type BillingAccessState,
 } from "@/lib/services/billingService";
 
@@ -91,7 +92,7 @@ describe("deriveCopyEntitlementAccess", () => {
     expect(result.tier).toBe("PREMIUM");
   });
 
-  test("returns PENDING_APPROVAL when payment is complete for the account but access is not yet approved", () => {
+  test("keeps a verified payment in processing until the ACTIVE entitlement exists", () => {
     const result = deriveCopyEntitlementAccess({
       tradingAccountId: "acct_1",
       entitlements: [],
@@ -107,7 +108,7 @@ describe("deriveCopyEntitlementAccess", () => {
       nowIso: "2026-07-21T00:00:00.000Z",
     });
 
-    expect(result.status).toBe("PENDING_APPROVAL");
+    expect(result.status).toBe("PENDING_PAYMENT");
     expect(result.tier).toBe("NORMAL");
   });
 
@@ -130,6 +131,30 @@ describe("deriveCopyEntitlementAccess", () => {
     });
 
     expect(result.status).toBe("EXPIRED");
+  });
+});
+
+describe("verified payment provisioning", () => {
+  test("auto-activates platform, copy, and bot access after verified payment", () => {
+    expect(getVerifiedPaymentProvisioningDecision("COPY_ACCOUNT")).toEqual({
+      kind: "COPY_ACCOUNT",
+      status: "ACTIVE",
+    });
+    expect(getVerifiedPaymentProvisioningDecision("BOT")).toEqual({
+      kind: "BOT",
+      status: "ACTIVE",
+    });
+    expect(getVerifiedPaymentProvisioningDecision("MENTORSHIP")).toEqual({
+      kind: "MANUAL",
+      status: null,
+    });
+  });
+
+  test("auto-activates platform subscriptions after verified payment", () => {
+    expect(getVerifiedPaymentProvisioningDecision("SUBSCRIPTION")).toEqual({
+      kind: "SUBSCRIPTION",
+      status: "ACTIVE",
+    });
   });
 });
 
@@ -171,6 +196,54 @@ describe("deriveBotPurchaseAccess", () => {
     });
 
     expect(result.status).toBe("PENDING_PAYMENT");
+  });
+
+  test("does not treat an unpaid legacy access request as verified bot payment", () => {
+    const result = deriveBotPurchaseAccess({
+      botProductId: "bot_1",
+      botName: "Alpha Bot",
+      accessRecords: [
+        {
+          id: "bar_unpaid",
+          botProductId: "bot_1",
+          botName: "Alpha Bot",
+          status: "REQUESTED",
+          grantedAt: null,
+          createdAt: "2026-07-21T00:00:00.000Z",
+        },
+      ],
+      orders: [],
+    });
+
+    expect(result.status).toBe("NONE");
+  });
+
+  test("keeps verified bot payment in processing until active access is visible", () => {
+    const result = deriveBotPurchaseAccess({
+      botProductId: "bot_1",
+      botName: "Alpha Bot",
+      accessRecords: [
+        {
+          id: "bar_paid",
+          botProductId: "bot_1",
+          botName: "Alpha Bot",
+          status: "REQUESTED",
+          grantedAt: null,
+          createdAt: "2026-07-21T00:00:00.000Z",
+        },
+      ],
+      orders: [
+        {
+          id: "ord_bot_paid",
+          status: "PAID",
+          createdAt: "2026-07-21T00:01:00.000Z",
+          botProductId: "bot_1",
+        },
+      ],
+    });
+
+    expect(result.status).toBe("PENDING_PAYMENT");
+    expect(result.orderId).toBe("ord_bot_paid");
   });
 });
 

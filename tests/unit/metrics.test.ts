@@ -13,6 +13,7 @@ const usd = (amount: number) => ({ amount, currency: "USD" });
 const trades: TradeDto[] = [
   {
     id: "t1",
+    shortTradeId: "TRD-00000001",
     accountId: "a1",
     symbol: "EURUSD",
     side: "BUY",
@@ -26,6 +27,7 @@ const trades: TradeDto[] = [
   },
   {
     id: "t2",
+    shortTradeId: "TRD-00000002",
     accountId: "a1",
     symbol: "XAUUSD",
     side: "SELL",
@@ -39,6 +41,7 @@ const trades: TradeDto[] = [
   },
   {
     id: "t3",
+    shortTradeId: "TRD-00000003",
     accountId: "a1",
     symbol: "GBPUSD",
     side: "BUY",

@@ -5,9 +5,9 @@ describe("system prompt — Aurix identity", () => {
   const chat = buildChatSystemPrompt();
   const chart = buildChartSystemPrompt();
 
-  test("declares the Aurix identity", () => {
-    expect(chat).toContain("Aurix AI Trading Assistant");
-    expect(chart).toContain("Aurix AI Trading Assistant");
+  test("declares the WSA Assistant identity", () => {
+    expect(chat).toContain("WSA Assistant");
+    expect(chart).toContain("WSA Assistant");
   });
 
   test("explicitly disavows Gemini/Google", () => {
@@ -28,5 +28,11 @@ describe("system prompt — Aurix identity", () => {
   test("chart prompt requires a risk disclaimer and bans 'buy now'", () => {
     expect(chart).toContain("educational-risk disclaimer");
     expect(chart).toContain('"buy now"');
+  });
+
+  test("chart prompt recognizes a supplied temporary chart frame", () => {
+    expect(chart).toContain("temporary frame");
+    expect(chart).toContain("not a continuous live feed");
+    expect(chart).toContain("Do not begin by claiming that you cannot see the chart");
   });
 });

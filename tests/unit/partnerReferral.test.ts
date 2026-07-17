@@ -36,7 +36,7 @@ describe("isValidReferralCodeFormat", () => {
 describe("referralLink", () => {
   test("builds a register link and trims trailing slash", () => {
     expect(referralLink("https://app.aurix.com/", "ABC-12345")).toBe(
-      "https://app.aurix.com/register?partner=ABC-12345",
+      "https://app.aurix.com/register?ref=ABC-12345",
     );
   });
 });

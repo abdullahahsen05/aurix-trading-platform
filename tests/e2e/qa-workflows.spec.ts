@@ -68,7 +68,7 @@ async function loginAs(page: Page, email: string, password: string, expectedPath
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL(`**${expectedPath}`);
 }
 
@@ -419,7 +419,7 @@ test.describe("QA workflow coverage", () => {
     expect(externalCalls).toEqual([]);
   });
 
-  test("mock billing, admin approval, duplicate prevention, and partner commission workflows hold end-to-end", async ({
+  test("mock billing auto-activation, duplicate prevention, and partner commission workflows hold end-to-end", async ({
     browser,
     page,
   }) => {
@@ -436,19 +436,13 @@ test.describe("QA workflow coverage", () => {
 
     const platformOrder = await waitForLatestOrder(qa.userId, "PLATFORM_MONTHLY");
     expect(platformOrder.status).toBe("PAID");
-    await waitForSubscription(platformOrder.id, "PENDING_APPROVAL");
+    await waitForSubscription(platformOrder.id, "ACTIVE");
     await waitForPartnerCommission(platformOrder.id);
 
     await page.goto("/dashboard");
-    await expect(page.locator("body")).toContainText(/pending admin approval/i);
-    await expectDuplicateCheckoutBlocked(page, { productCode: "PLATFORM_MONTHLY" });
-
-    await approvePendingOrder(browser, platformOrder.id);
-
-    await waitForSubscription(platformOrder.id, "ACTIVE");
-    await page.goto("/dashboard");
-    await expect(page.locator("body")).toContainText(/Trading overview/i);
+    await expect(page.locator("body")).toContainText(/Trader workspace|Welcome,/i);
     await expect(page.locator("body")).not.toContainText(/Platform subscription required/i);
+    await expectDuplicateCheckoutBlocked(page, { productCode: "PLATFORM_MONTHLY" });
 
     await page.goto("/copy-trading");
     await expect(page.locator("body")).toContainText(/Per-account copy access/i);
@@ -460,9 +454,7 @@ test.describe("QA workflow coverage", () => {
 
     const normalOrder = await waitForLatestOrder(qa.userId, "COPY_NORMAL");
     expect(normalOrder.trading_account_id).toBe(qa.accounts[0].id);
-    await waitForCopyEntitlement(normalOrder.id, "PENDING_APPROVAL");
     await waitForPartnerCommission(normalOrder.id);
-    await approvePendingOrder(browser, normalOrder.id);
     const normalEntitlement = await waitForCopyEntitlement(normalOrder.id, "ACTIVE");
     expect(normalEntitlement.tier).toBe("NORMAL");
 
@@ -482,9 +474,7 @@ test.describe("QA workflow coverage", () => {
 
     const premiumOrder = await waitForLatestOrder(qa.userId, "COPY_ULTRA_FAST");
     expect(premiumOrder.trading_account_id).toBe(qa.accounts[1].id);
-    await waitForCopyEntitlement(premiumOrder.id, "PENDING_APPROVAL");
     await waitForPartnerCommission(premiumOrder.id);
-    await approvePendingOrder(browser, premiumOrder.id);
     const premiumEntitlement = await waitForCopyEntitlement(premiumOrder.id, "ACTIVE");
     expect(premiumEntitlement.tier).toBe("PREMIUM");
 
