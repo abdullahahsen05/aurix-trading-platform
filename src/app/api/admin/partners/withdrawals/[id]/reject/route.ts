@@ -1,0 +1,17 @@
+import { NextRequest } from "next/server";
+import { AuthError, requireAdmin } from "@/lib/auth/session";
+import { jsonFail, jsonOk } from "@/lib/api/envelope";
+import { transitionPartnerWithdrawal } from "@/lib/services/partnerWithdrawalService";
+
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try {
+    const admin = await requireAdmin();
+    const { id } = await context.params;
+    const body = await req.json().catch(() => ({})) as { adminNote?: string; rejectionReason?: string };
+    if (!body.rejectionReason?.trim()) return jsonFail("VALIDATION_ERROR", "Rejection reason is required", 400);
+    return jsonOk({ withdrawal: await transitionPartnerWithdrawal({ withdrawalId: id, adminId: admin.id, nextStatus: "REJECTED", adminNote: body.adminNote, rejectionReason: body.rejectionReason }) });
+  } catch (error) {
+    if (error instanceof AuthError) return jsonFail(error.code, error.message, error.statusCode);
+    return jsonFail("WITHDRAWAL_ACTION_FAILED", error instanceof Error ? error.message : "Rejection failed", 400);
+  }
+}

@@ -58,6 +58,13 @@ declare module 'lucide-react' {
   // Icons used in AURIX — AI assistant module
   export const Bot: LucideIcon
   export const CalendarClock: LucideIcon
+  export const CalendarDays: LucideIcon
+  export const Clock3: LucideIcon
+  export const ExternalLink: LucideIcon
+  export const Eye: LucideIcon
+  export const MapPin: LucideIcon
+  export const ScreenShare: LucideIcon
+  export const ScreenShareOff: LucideIcon
   export const Send: LucideIcon
   export const Upload: LucideIcon
   export const ImagePlus: LucideIcon

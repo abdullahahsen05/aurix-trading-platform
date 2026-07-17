@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, RefreshCcw, ShieldCheck, X } from "lucide-react";
 import { GhostButton, Panel, PrimaryButton, StatusPill } from "@/components/app/WorkspaceUI";
@@ -13,6 +13,14 @@ interface CredentialStatus {
   lastSyncedAt: string | null;
   syncError: string | null;
   status: string | null;
+  brokerName: string | null;
+  serverName: string | null;
+  platform: "MT4" | "MT5" | null;
+}
+
+interface ConnectionResult extends SyncResult {
+  credentialsStored: boolean;
+  connected: boolean;
 }
 
 interface SyncResult {
@@ -33,6 +41,22 @@ interface VerifyResult {
   message?: string | null;
 }
 
+interface ConnectionStatusResult {
+  accountId: string;
+  status: "PENDING" | "SYNCING" | "CONNECTED" | "DISCONNECTED" | "RESTRICTED";
+  providerState: string | null;
+  providerConnectionStatus: string | null;
+  providerReady: boolean;
+  lastSyncedAt: string | null;
+  message: string;
+}
+
+function isDeploymentPendingMessage(message: string | null | undefined): boolean {
+  if (!message) return false;
+  const value = message.toLowerCase();
+  return value.includes("still pending") || value.includes("still deploying") || value.includes("timeout");
+}
+
 async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(url, opts);
   const json = await res.json();
@@ -42,6 +66,7 @@ async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
 
 export function BrokerConnectPanel({ accountId }: { accountId: string }) {
   const queryClient = useQueryClient();
+  const statusPollCount = useRef(0);
 
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({
@@ -60,9 +85,33 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
     refetchOnWindowFocus: false,
   });
 
+  const connectionStatusQuery = useQuery<ConnectionStatusResult>({
+    queryKey: ["broker-connection-status", accountId],
+    queryFn: async () => {
+      statusPollCount.current += 1;
+      const result = await apiFetch<ConnectionStatusResult>(`/api/trading-accounts/${accountId}/connection-status`);
+      if (result.status === "CONNECTED") {
+        void queryClient.invalidateQueries({ queryKey: ["broker-cred-status", accountId] });
+        void queryClient.invalidateQueries({ queryKey: ["trading-accounts"] });
+      }
+      return result;
+    },
+    enabled: Boolean(
+      credStatus?.credentialsStored &&
+      (credStatus.status === "PENDING" || credStatus.status === "SYNCING"),
+    ),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status ?? credStatus?.status;
+      return statusPollCount.current < 20 && (status === "PENDING" || status === "SYNCING")
+        ? 12_000
+        : false;
+    },
+    refetchOnWindowFocus: false,
+  });
+
   const storeMutation = useMutation({
     mutationFn: () =>
-      apiFetch(`/api/trading-accounts/${accountId}/broker-credentials`, {
+      apiFetch<ConnectionResult>(`/api/trading-accounts/${accountId}/broker-credentials`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -73,11 +122,28 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
           brokerName: form.brokerName.trim() || undefined,
         }),
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["broker-cred-status", accountId] });
+      queryClient.invalidateQueries({ queryKey: ["trading-accounts"] });
       setFormOpen(false);
       setForm({ platform: "MT5", login: "", password: "", server: "", brokerName: "" });
-      setNotice({ type: "success", text: "Credentials stored. You can now sync the account." });
+      if (data.connected) {
+        setNotice({
+          type: "success",
+          text: `Account connected and synced. ${data.tradesUpserted} trade${data.tradesUpserted === 1 ? "" : "s"} updated.`,
+        });
+      } else if (data.status === "PENDING" || data.status === "SYNCING") {
+        statusPollCount.current = 0;
+        setNotice({
+          type: "info",
+          text: data.message ?? "Credentials stored. The broker connection is still deploying; sync it again shortly.",
+        });
+      } else {
+        setNotice({
+          type: "error",
+          text: data.message ?? "Credentials were stored, but the broker connection could not be established.",
+        });
+      }
     },
     onError: (err: Error) => setNotice({ type: "error", text: err.message }),
   });
@@ -107,7 +173,8 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
       }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["broker-cred-status", accountId] });
-      if (data.status === "PENDING") {
+      if (data.status === "PENDING" || data.status === "SYNCING") {
+        statusPollCount.current = 0;
         setNotice({
           type: "info",
           text: data.message ?? "MetaAPI is still deploying. Check back in a moment.",
@@ -122,7 +189,11 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
     onError: (err: Error) => setNotice({ type: "error", text: err.message }),
   });
 
-  const busy = storeMutation.isPending || verifyMutation.isPending || syncMutation.isPending;
+  const busy =
+    storeMutation.isPending ||
+    verifyMutation.isPending ||
+    syncMutation.isPending ||
+    connectionStatusQuery.isFetching;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -138,10 +209,22 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
     );
   }
 
+  const displayedStatus = connectionStatusQuery.data?.status ?? credStatus?.status;
+  const providerNotice = connectionStatusQuery.data
+    ? {
+        type: connectionStatusQuery.data.status === "CONNECTED"
+          ? ("success" as const)
+          : connectionStatusQuery.data.status === "DISCONNECTED"
+            ? ("error" as const)
+            : ("info" as const),
+        text: connectionStatusQuery.data.message,
+      }
+    : null;
+  const displayedNotice = notice ?? providerNotice;
   const statusTone =
-    credStatus?.status === "CONNECTED"
+    displayedStatus === "CONNECTED"
       ? ("lime" as const)
-      : credStatus?.status === "SYNCING"
+      : displayedStatus === "SYNCING" || displayedStatus === "PENDING"
         ? ("accent" as const)
         : ("muted" as const);
 
@@ -152,13 +235,20 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">
             Broker connection
           </p>
-          <h2 className="mt-2 text-lg font-semibold text-foreground">MT5 credentials</h2>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">MT4 / MT5 connection</h2>
           <p className="mt-1 text-sm text-muted">
-            Store your demo MT5 login to enable account sync and copy trading.
+            Store broker credentials and run the initial read-only account sync.
           </p>
+          {credStatus?.credentialsStored ? (
+            <p className="mt-2 text-xs text-muted">
+              {[credStatus.brokerName, credStatus.platform, credStatus.serverName]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          ) : null}
         </div>
-        {credStatus?.status ? (
-          <StatusPill tone={statusTone}>{credStatus.status}</StatusPill>
+        {displayedStatus ? (
+          <StatusPill tone={statusTone}>{displayedStatus}</StatusPill>
         ) : null}
       </div>
 
@@ -200,29 +290,29 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
       </div>
 
       {/* Sync error */}
-      {credStatus?.syncError ? (
+      {credStatus?.syncError && !isDeploymentPendingMessage(credStatus.syncError) ? (
         <div className="mt-3 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
           <strong>Sync error:</strong> {credStatus.syncError}
         </div>
       ) : null}
 
       {/* Notice */}
-      {notice ? (
+      {displayedNotice ? (
         <div
           className={`mt-3 rounded-2xl border px-4 py-3 text-sm font-medium ${
-            notice.type === "success"
+            displayedNotice.type === "success"
               ? "border-accent/20 bg-accent/10 text-accent"
-              : notice.type === "error"
+              : displayedNotice.type === "error"
                 ? "border-danger/20 bg-danger/10 text-danger"
                 : "border-line bg-panel text-muted"
           }`}
         >
-          {notice.text}
+          {displayedNotice.text}
         </div>
       ) : null}
 
       {/* Verify result */}
-      {verifyResult && !notice?.type.startsWith("e") ? (
+      {verifyResult && !displayedNotice?.type.startsWith("e") ? (
         <div className="mt-3 flex items-center gap-2 rounded-2xl border border-line bg-background px-4 py-3 text-sm">
           {verifyResult.connected ? (
             <CheckCircle2 className="h-4 w-4 shrink-0 text-accent-2" />
@@ -238,10 +328,22 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
       {/* Actions */}
       <div className="mt-4 flex flex-wrap gap-3">
         <GhostButton type="button" onClick={() => { setFormOpen((o) => !o); setNotice(null); }}>
-          {credStatus?.credentialsStored ? "Update credentials" : "Store MT5 credentials"}
+          {credStatus?.credentialsStored ? "Update connection" : "Add broker connection"}
         </GhostButton>
         {credStatus?.credentialsStored ? (
           <>
+            <GhostButton
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setNotice(null);
+                statusPollCount.current = 0;
+                void connectionStatusQuery.refetch();
+              }}
+            >
+              <RefreshCcw className={`mr-1.5 inline-block h-3.5 w-3.5 ${connectionStatusQuery.isFetching ? "animate-spin" : ""}`} />
+              {connectionStatusQuery.isFetching ? "Checking…" : "Check status"}
+            </GhostButton>
             <GhostButton
               type="button"
               disabled={busy}
@@ -353,7 +455,7 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
                 Cancel
               </GhostButton>
               <PrimaryButton type="submit" disabled={busy}>
-                {storeMutation.isPending ? "Storing…" : "Store credentials"}
+                {storeMutation.isPending ? "Connecting…" : "Connect and sync"}
               </PrimaryButton>
             </div>
           </div>

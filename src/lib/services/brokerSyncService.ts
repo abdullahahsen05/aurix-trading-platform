@@ -27,6 +27,17 @@ export interface SyncSummary {
   snapshotInserted: boolean;
   tradesUpserted: number;
   error?: string;
+  pendingMessage?: string;
+}
+
+export interface BrokerConnectionStatusSummary {
+  accountId: string;
+  status: 'PENDING' | 'SYNCING' | 'CONNECTED' | 'DISCONNECTED' | 'RESTRICTED';
+  providerState: string | null;
+  providerConnectionStatus: string | null;
+  providerReady: boolean;
+  lastSyncedAt: string | null;
+  message: string;
 }
 
 export interface TradeRefreshSummary {
@@ -207,6 +218,10 @@ function normalizeDeals(value: unknown): MetaApiDeal[] {
   }, []);
 }
 
+export function isClosingDeal(entryType: string | undefined): boolean {
+  return entryType === 'DEAL_ENTRY_OUT' || entryType === 'DEAL_ENTRY_OUT_BY';
+}
+
 async function loadMetaApi(): Promise<MetaApiConstructor> {
   const metaApiModule = await import('metaapi.cloud-sdk/node');
   return (metaApiModule as unknown as { default: MetaApiConstructor }).default;
@@ -337,11 +352,8 @@ async function runMetaApiSync(params: {
     });
 
     // ── 7. Sync trades ─────────────────────────────────────────────────────
-    // NOTE: We avoid supabase .upsert() here because the unique index on
-    // (trading_account_id, external_trade_id) is a partial index
-    // (WHERE external_trade_id IS NOT NULL), which PostgREST's ON CONFLICT
-    // clause cannot resolve by column names alone. Instead we do a manual
-    // insert-new / update-existing / close-gone split.
+    // Use an explicit insert/update split so open positions can transition to
+    // closed trades without changing their internal UUID or display ID.
     const openRows = normalizePositions(positions).map((p) => ({
       trading_account_id: accountId,
       external_trade_id: String(p.id),
@@ -357,7 +369,7 @@ async function runMetaApiSync(params: {
       closed_at: null as null,
     }));
 
-    const closeDeals = deals.filter((d) => d.entryType === 'DEAL_ENTRY_OUT');
+    const closeDeals = deals.filter((d) => isClosingDeal(d.entryType));
 
     const allExtIds = [
       ...openRows.map((r) => r.external_trade_id),
@@ -437,6 +449,9 @@ async function runMetaApiSync(params: {
         sync_error: null,
         provider: credentials.provider,
         provider_account_id: metaAccount.id,
+        broker_name: info?.brokerName?.trim() || credentials.brokerName?.trim() || 'WSA GLOBAL',
+        broker_server: info?.server?.trim() || credentials.server,
+        broker_platform: platform.toUpperCase(),
       })
       .eq('id', accountId);
 
@@ -457,8 +472,7 @@ async function runMetaApiSync(params: {
     const safeMsg = sanitizeMessage(rawMsg, credentials);
     console.error('[SYNC_ERROR]', {
       tradingAccountId: accountId,
-      message: rawMsg,
-      stack: error instanceof Error ? error.stack : undefined,
+      message: safeMsg,
     });
     await markFailed(supabase, accountId, actorUserId, safeMsg);
     return { accountId, status: 'DISCONNECTED', snapshotInserted: false, tradesUpserted: 0, error: safeMsg };
@@ -548,15 +562,14 @@ export async function syncTradingAccount(
 
   if (result === '__timeout__') {
     const msg =
-      'MetaAPI connection still pending (50 s timeout). ' +
-      'The account may still be deploying. Use "Check status" to poll MetaAPI for the current state.';
+      'MetaApi is still deploying or synchronizing this account. This can take a few minutes; status checks will continue automatically.';
     // Leave status as SYNCING — it may still complete in the background
     await supabase
       .from('trading_accounts')
-      .update({ sync_error: msg })
+      .update({ sync_error: null })
       .eq('id', accountId);
     console.log('[SYNC_TIMEOUT]', { tradingAccountId: accountId });
-    return { accountId, status: 'PENDING', snapshotInserted: false, tradesUpserted: 0, error: msg };
+    return { accountId, status: 'PENDING', snapshotInserted: false, tradesUpserted: 0, pendingMessage: msg };
   }
 
   // ── Post-sync: risk evaluation and notifications ──────────────────────────
@@ -603,6 +616,86 @@ export async function syncTradingAccount(
 // No account creation. No credentials required.
 // Intended for trader-triggered "Sync Trades" button.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Lightweight provider-state lookup; no RPC, trade fetch, or execution. */
+export async function getBrokerConnectionStatus(
+  accountId: string,
+): Promise<BrokerConnectionStatusSummary> {
+  const supabase = createAdminClient();
+  const { data: account, error } = await supabase
+    .from('trading_accounts')
+    .select('id, status, provider_account_id, last_synced_at')
+    .eq('id', accountId)
+    .maybeSingle();
+
+  if (error || !account) throw new Error('Trading account not found.');
+  const localStatus = account.status as BrokerConnectionStatusSummary['status'];
+  const token = process.env.METAAPI_TOKEN;
+
+  if (!account.provider_account_id || !token) {
+    return {
+      accountId,
+      status: localStatus,
+      providerState: null,
+      providerConnectionStatus: null,
+      providerReady: false,
+      lastSyncedAt: account.last_synced_at,
+      message: account.provider_account_id
+        ? 'MetaApi status is unavailable because the provider is not configured.'
+        : 'Credentials are stored. The MetaApi account has not been provisioned yet.',
+    };
+  }
+
+  const MetaApi = await loadMetaApi();
+  const api = new MetaApi(token);
+  try {
+    const providerAccount = await api.metatraderAccountApi.getAccount(account.provider_account_id);
+    const providerState = providerAccount.state ?? null;
+    const providerConnectionStatus = providerAccount.connectionStatus ?? null;
+    const providerReady = providerState === 'DEPLOYED' && providerConnectionStatus === 'CONNECTED';
+
+    if (providerReady && localStatus !== 'CONNECTED') {
+      await supabase
+        .from('trading_accounts')
+        .update({ status: 'CONNECTED', sync_error: null })
+        .eq('id', accountId);
+    }
+
+    return {
+      accountId,
+      status: providerReady
+        ? 'CONNECTED'
+        : localStatus === 'DISCONNECTED'
+          ? 'DISCONNECTED'
+          : 'SYNCING',
+      providerState,
+      providerConnectionStatus,
+      providerReady,
+      lastSyncedAt: account.last_synced_at,
+      message: providerReady
+        ? account.last_synced_at
+          ? 'MetaApi is connected and the account has synchronized.'
+          : 'MetaApi is connected. Account data synchronization is finishing in the background.'
+        : 'MetaApi is still deploying or connecting this account. No action is required yet.',
+    };
+  } catch (providerError) {
+    const safeMessage = (providerError instanceof Error ? providerError.message : 'Provider status lookup failed.')
+      .replace(/password[^,\s]*/gi, '[redacted]')
+      .replace(/login[^,\s]*/gi, '[redacted]')
+      .slice(0, 300);
+    return {
+      accountId,
+      status: localStatus,
+      providerState: null,
+      providerConnectionStatus: null,
+      providerReady: false,
+      lastSyncedAt: account.last_synced_at,
+      message: safeMessage,
+    };
+  } finally {
+    try { api.close(); } catch { /* ignore */ }
+  }
+}
 
 export async function refreshAccountTrades(
   accountId: string,
@@ -706,7 +799,7 @@ export async function refreshAccountTrades(
       // getDealsByTimeRange returns { deals: [] } in some SDK versions, plain array in others
       const deals = normalizeDeals(dealsResult);
 
-      const outDeals = deals.filter((d) => d.entryType === 'DEAL_ENTRY_OUT');
+      const outDeals = deals.filter((d) => isClosingDeal(d.entryType));
 
       console.log('[REFRESH_RAW_DEALS]', {
         tradingAccountId: accountId,
@@ -834,7 +927,12 @@ export async function refreshAccountTrades(
       // Update last_synced_at (keep status as-is — admin sets CONNECTED)
       await supabase
         .from('trading_accounts')
-        .update({ last_synced_at: new Date().toISOString(), sync_error: null })
+        .update({
+          last_synced_at: new Date().toISOString(),
+          sync_error: null,
+          broker_name: info?.brokerName?.trim() || 'WSA GLOBAL',
+          broker_server: info?.server?.trim() || null,
+        })
         .eq('id', accountId);
 
       console.log('[REFRESH_SUCCESS]', { tradingAccountId: accountId, openPositions: positions.length, tradesUpserted });

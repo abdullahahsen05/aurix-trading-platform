@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   EmptyState,
   Panel,
@@ -9,12 +9,13 @@ import {
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
-import type { BotProductDto, BotAccessRecordDto } from "@/lib/domain/types";
+import { BillingCheckoutModal } from "@/components/app/BillingCheckoutModal";
+import type { BotProductDto } from "@/lib/domain/types";
+import type { UserBillingSummaryDto } from "@/lib/services/billingService";
 import { CheckCircle2 } from "lucide-react";
 
 interface PageData {
   product: BotProductDto;
-  access: BotAccessRecordDto | null;
 }
 
 async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
@@ -26,10 +27,19 @@ async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
 
 const ACCESS_STATUS_TONE: Record<string, "lime" | "accent" | "danger" | "muted"> = {
   ACTIVE: "lime",
-  REQUESTED: "accent",
-  SUSPENDED: "danger",
-  REVOKED: "danger",
-  EXPIRED: "muted",
+  PENDING_APPROVAL: "accent",
+  PENDING_PAYMENT: "muted",
+  FAILED: "danger",
+  CANCELLED: "muted",
+};
+
+const BOT_EA_PRODUCT = {
+  code: "BOT_EA",
+  name: "Trading Bot / EA",
+  amount: 500,
+  currency: "USD",
+  billingInterval: "ONE_TIME",
+  description: "One-time purchase — access activates after verified payment.",
 };
 
 export default function MarketplaceProductPage({
@@ -38,25 +48,17 @@ export default function MarketplaceProductPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = use(params);
-  const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const { data, isLoading, isError } = useQuery<PageData>({
     queryKey: ["marketplace-product", slug],
     queryFn: () => apiFetch(`/api/marketplace/products/${slug}`),
   });
 
-  const requestMutation = useMutation({
-    mutationFn: () =>
-      apiFetch(`/api/marketplace/products/${data!.product.id}/request-access`, {
-        method: "POST",
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["marketplace-product", slug] });
-      queryClient.invalidateQueries({ queryKey: ["my-bots"] });
-      setNotice({ type: "success", text: "Access requested. An admin will review your request shortly." });
-    },
-    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  const { data: billingSummary, isLoading: billingLoading } = useQuery<UserBillingSummaryDto>({
+    queryKey: ["billing-me"],
+    queryFn: () => apiFetch("/api/billing/me"),
+    staleTime: 60_000,
   });
 
   if (isLoading) {
@@ -78,7 +80,13 @@ export default function MarketplaceProductPage({
     );
   }
 
-  const { product, access } = data;
+  const { product } = data;
+  const purchase = billingSummary?.botAccess.find((entry) => entry.botProductId === product.id);
+  const canPurchase =
+    !purchase ||
+    purchase.status === "NONE" ||
+    purchase.status === "FAILED" ||
+    purchase.status === "CANCELLED";
 
   return (
     <WorkspacePage
@@ -86,19 +94,6 @@ export default function MarketplaceProductPage({
       title={product.name}
       description={product.shortDescription ?? ""}
     >
-      {/* Notice */}
-      {notice ? (
-        <div
-          className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
-            notice.type === "success"
-              ? "border-accent/20 bg-accent/10 text-accent"
-              : "border-danger/20 bg-danger/10 text-danger"
-          }`}
-        >
-          {notice.text}
-        </div>
-      ) : null}
-
       <Panel>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex flex-wrap gap-2">
@@ -112,10 +107,8 @@ export default function MarketplaceProductPage({
             {product.version ? <StatusPill tone="muted">v{product.version}</StatusPill> : null}
           </div>
           <div className="text-right">
-            <p className="text-xl font-bold text-foreground">
-              {product.pricingLabel ?? (product.priceAmount != null ? `$${product.priceAmount}` : "Free")}
-            </p>
-            <p className="text-xs text-muted">{product.priceCurrency}</p>
+            <p className="text-xl font-bold text-foreground">$500 one-time</p>
+            <p className="text-xs text-muted">USD</p>
           </div>
         </div>
 
@@ -125,42 +118,47 @@ export default function MarketplaceProductPage({
 
         {product.features && product.features.length > 0 ? (
           <ul className="mt-4 grid gap-1.5 sm:grid-cols-2">
-            {product.features.map((f, i) => (
-              <li key={i} className="flex items-center gap-2 text-sm text-foreground">
+            {product.features.map((feature, index) => (
+              <li key={index} className="flex items-center gap-2 text-sm text-foreground">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-accent-2" />
-                {f}
+                {feature}
               </li>
             ))}
           </ul>
         ) : null}
 
         <div className="mt-6 flex items-center gap-3">
-          {!access ? (
-            <PrimaryButton
-              type="button"
-              disabled={requestMutation.isPending}
-              onClick={() => { setNotice(null); requestMutation.mutate(); }}
-            >
-              {requestMutation.isPending ? "Requesting…" : "Request Access"}
+          {billingLoading ? (
+            <p className="text-sm text-muted">Checking purchase status…</p>
+          ) : canPurchase ? (
+            <PrimaryButton type="button" onClick={() => setCheckoutOpen(true)}>
+              Buy Bot — $500
             </PrimaryButton>
-          ) : (
+          ) : purchase ? (
             <div className="flex items-center gap-2">
-              <StatusPill tone={ACCESS_STATUS_TONE[access.status] ?? "muted"}>
-                {access.status}
+              <StatusPill tone={ACCESS_STATUS_TONE[purchase.status] ?? "muted"}>
+                {purchase.status.replaceAll("_", " ")}
               </StatusPill>
               <p className="text-sm text-muted">
-                {access.status === "REQUESTED"
-                  ? "Your request is pending admin review."
-                  : access.status === "ACTIVE"
-                  ? "You have active access to this bot."
-                  : access.status === "REVOKED"
-                  ? "Your access has been revoked."
-                  : ""}
+                {purchase.status === "PENDING_APPROVAL"
+                  ? "Payment verified. Your bot access is being activated."
+                  : purchase.status === "PENDING_PAYMENT"
+                    ? "Payment is being confirmed or access is being activated."
+                    : purchase.status === "ACTIVE"
+                      ? "You have active access to this bot."
+                      : purchase.message}
               </p>
             </div>
-          )}
+          ) : null}
         </div>
       </Panel>
+
+      <BillingCheckoutModal
+        open={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        product={{ ...BOT_EA_PRODUCT, name: `${product.name} — Bot / EA` }}
+        botProductId={product.id}
+      />
     </WorkspacePage>
   );
 }

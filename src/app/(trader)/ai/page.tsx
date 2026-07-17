@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ImagePlus, Loader2, Send, Sparkles, Trash2 } from "lucide-react";
+import { Loader2, Send, Sparkles, Trash2 } from "lucide-react";
 import {
   EmptyState,
   GhostButton,
@@ -10,11 +10,10 @@ import {
   Panel,
   PageActionGroup,
   PrimaryButton,
-  StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
-import { SelectField, TextAreaField } from "@/components/app/FormFields";
+import { SelectField } from "@/components/app/FormFields";
 import { queryKeys } from "@/lib/data/queryKeys";
 import type { TraderAccountSummary } from "@/lib/domain/types";
 import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
@@ -26,9 +25,6 @@ const SUGGESTED_PROMPTS = [
   "Explain my recent drawdown.",
   "What should I watch before today's session?",
 ];
-
-const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
-const MAX_BYTES = 5 * 1024 * 1024;
 
 // Persist chat in the browser, keyed by user id, so it survives refresh and
 // navigation without leaking to a different user on a shared browser.
@@ -47,7 +43,7 @@ export default function AiAssistantPage() {
 
   if (accessLoading && !summary) {
     return (
-      <WorkspacePage eyebrow="Assistant" title="Aurix AI Trading Assistant" description="Loading your platform access status.">
+      <WorkspacePage eyebrow="Assistant" title="WSA Assistant" description="Loading your platform access status.">
         <Panel>
           <p className="text-sm text-muted">Loading…</p>
         </Panel>
@@ -59,12 +55,12 @@ export default function AiAssistantPage() {
     return (
       <WorkspacePage
         eyebrow="Assistant"
-        title="Aurix AI Trading Assistant"
+        title="WSA Assistant"
         description="Activate your platform subscription to unlock the AI trading assistant."
       >
         <PlatformSubscriptionLocked
           access={access}
-          description="Activate the Aurix platform subscription to unlock the AI trading assistant, account-aware prompts, and chart analysis workflows."
+          description="Activate the WSA Global platform subscription to unlock the AI trading assistant, account-aware prompts, and chart analysis workflows."
         />
       </WorkspacePage>
     );
@@ -191,15 +187,6 @@ function AiAssistantContent() {
     }
   }
 
-  // ── Chart analysis state ─────────────────────────────────────────────────────
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [chartFile, setChartFile] = useState<File | null>(null);
-  const [chartFocus, setChartFocus] = useState("");
-  const [chartLoading, setChartLoading] = useState(false);
-  const [chartError, setChartError] = useState<string | null>(null);
-  const [chartResult, setChartResult] = useState<string | null>(null);
-  const [chartRemaining, setChartRemaining] = useState<number | null>(null);
-
   const { data: creditsData } = useQuery<{ credits: number }>({
     queryKey: ["ai-credits"],
     queryFn: async () => {
@@ -211,59 +198,11 @@ function AiAssistantContent() {
     staleTime: 60_000,
   });
 
-  function onPickFile(file: File | null) {
-    setChartError(null);
-    setChartResult(null);
-    if (!file) {
-      setChartFile(null);
-      return;
-    }
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      setChartError("Unsupported image type. Use PNG, JPG, or WebP.");
-      setChartFile(null);
-      return;
-    }
-    if (file.size > MAX_BYTES) {
-      setChartError("Chart image is too large. Max size is 5MB.");
-      setChartFile(null);
-      return;
-    }
-    setChartFile(file);
-  }
-
-  async function runChartAnalysis() {
-    if (!chartFile || chartLoading) return;
-    setChartError(null);
-    setChartResult(null);
-    setChartLoading(true);
-    try {
-      const form = new FormData();
-      form.append("image", chartFile);
-      if (chartFocus.trim()) form.append("prompt", chartFocus.trim());
-      if (accountId) form.append("accountId", accountId);
-
-      const res = await fetch("/api/ai/chart-analysis", { method: "POST", body: form });
-      const json = await res.json();
-      if (!json.ok) {
-        setChartError(json.error?.message ?? "We couldn't analyze this chart right now.");
-        return;
-      }
-      setChartResult(json.data.message);
-      if (typeof json.data.usage?.requestsRemainingToday === "number") {
-        setChartRemaining(json.data.usage.requestsRemainingToday);
-      }
-    } catch {
-      setChartError("Network error. Please check your connection and try again.");
-    } finally {
-      setChartLoading(false);
-    }
-  }
-
   return (
     <WorkspacePage
       eyebrow="Assistant"
-      title="Aurix AI Trading Assistant"
-      description="Your built-in trading copilot. Ask about your account risk, performance, exposure, and upcoming news — grounded in your live Aurix data."
+      title="WSA Assistant"
+      description="Your built-in trading copilot. Ask about your account risk, performance, exposure, and upcoming news — grounded in your live WSA Global data."
       action={
         <PageActionGroup>
           <div className="min-w-[220px]">
@@ -300,11 +239,6 @@ function AiAssistantContent() {
             tone: "lime",
           },
           {
-            label: "Chart analyses left",
-            value: chartRemaining === null ? "—" : chartRemaining,
-            tone: "lime",
-          },
-          {
             label: "Token credits",
             value: creditsData ? creditsData.credits.toLocaleString() : "—",
             tone: creditsData && creditsData.credits < 5000 ? "danger" : "lime",
@@ -312,7 +246,7 @@ function AiAssistantContent() {
         ]}
       />
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]">
+      <div className="mt-5">
         {/* ── Chat panel ─────────────────────────────────────────────── */}
         <Panel className="flex min-h-[520px] flex-col">
           <div className="flex items-center justify-between gap-2 border-b border-line pb-4">
@@ -321,7 +255,7 @@ function AiAssistantContent() {
                 <Sparkles className="h-4 w-4" />
               </span>
               <div>
-                <p className="text-sm font-semibold text-foreground">Aurix Assistant</p>
+                <p className="text-sm font-semibold text-foreground">WSA Assistant</p>
                 <p className="text-xs text-muted">Professional Forex &amp; prop-risk copilot</p>
               </div>
             </div>
@@ -338,7 +272,7 @@ function AiAssistantContent() {
               <div className="py-6">
                 <EmptyState
                   title="Ask your first question"
-                  description="The assistant reads your live Aurix account data to answer. Try one of these:"
+                  description="The assistant reads your live WSA Global account data to answer. Try one of these:"
                 />
                 <div className="mx-auto mt-5 flex max-w-xl flex-wrap justify-center gap-2">
                   {SUGGESTED_PROMPTS.map((p) => (
@@ -416,80 +350,6 @@ function AiAssistantContent() {
           </p>
         </Panel>
 
-        {/* ── Advanced chart analysis ────────────────────────────────── */}
-        <Panel className="flex flex-col">
-          <div className="flex items-center gap-2 border-b border-line pb-4">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent-2/10 text-accent-2">
-              <ImagePlus className="h-4 w-4" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-foreground">Advanced Chart Analysis</p>
-              <p className="text-xs text-muted">Upload a TradingView screenshot</p>
-            </div>
-          </div>
-
-          <div className="space-y-4 py-4">
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="hidden"
-                onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
-              />
-              <GhostButton type="button" onClick={() => fileInputRef.current?.click()}>
-                <ImagePlus className="mr-2 inline-block h-4 w-4" />
-                {chartFile ? "Change image" : "Choose image"}
-              </GhostButton>
-              {chartFile ? (
-                <p className="mt-2 truncate text-xs text-muted">
-                  {chartFile.name} · {(chartFile.size / 1024).toFixed(0)} KB
-                </p>
-              ) : (
-                <p className="mt-2 text-xs text-muted">PNG, JPG, or WebP · max 5MB</p>
-              )}
-            </div>
-
-            <TextAreaField
-              label="Focus (optional)"
-              placeholder="e.g. Focus on the 15m structure and nearby liquidity."
-              value={chartFocus}
-              onChange={(e) => setChartFocus(e.target.value)}
-              maxLength={1000}
-            />
-
-            {chartError ? (
-              <div className="rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
-                {chartError}
-              </div>
-            ) : null}
-
-            <PrimaryButton type="button" disabled={!chartFile || chartLoading} onClick={runChartAnalysis}>
-              {chartLoading ? (
-                <>
-                  <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" />
-                  Analyzing…
-                </>
-              ) : (
-                "Analyze chart"
-              )}
-            </PrimaryButton>
-
-            {chartResult ? (
-              <div className="rounded-2xl border border-line bg-background px-4 py-4">
-                <div className="mb-2 flex items-center gap-2">
-                  <StatusPill tone="lime">Analysis</StatusPill>
-                </div>
-                <p className="whitespace-pre-wrap text-sm leading-6 text-foreground/90">{chartResult}</p>
-              </div>
-            ) : (
-              <p className="text-[11px] leading-5 text-muted">
-                Screenshot analysis lacks live order-book, spread, and execution context. It is educational only
-                and not a guaranteed signal.
-              </p>
-            )}
-          </div>
-        </Panel>
       </div>
     </WorkspacePage>
   );

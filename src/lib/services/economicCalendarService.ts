@@ -9,6 +9,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type EconomicImpact = "LOW" | "MEDIUM" | "HIGH";
+export type CalendarEventStatus = "DRAFT" | "PUBLISHED" | "CANCELLED";
+export type CalendarAudience = "ALL" | "TRADER";
+export type CalendarEventType = "ECONOMIC" | "WEBINAR" | "ACADEMY" | "PLATFORM" | "OTHER";
 
 export interface EconomicEventDto {
   id: string;
@@ -17,6 +20,12 @@ export interface EconomicEventDto {
   currency: string;
   impact: EconomicImpact;
   eventTime: string;
+  endTime: string | null;
+  timezone: string;
+  eventType: CalendarEventType;
+  locationUrl: string | null;
+  status: CalendarEventStatus;
+  audience: CalendarAudience;
   actual: string | null;
   forecast: string | null;
   previous: string | null;
@@ -34,6 +43,12 @@ interface EventRow {
   currency: string;
   impact: EconomicImpact;
   event_time: string;
+  end_time: string | null;
+  timezone: string;
+  event_type: CalendarEventType;
+  location_url: string | null;
+  status: CalendarEventStatus;
+  audience: CalendarAudience;
   actual: string | null;
   forecast: string | null;
   previous: string | null;
@@ -45,7 +60,7 @@ interface EventRow {
 }
 
 const SELECT_COLS =
-  "id, title, country_code, currency, impact, event_time, actual, forecast, previous, source, description, category, created_at, updated_at";
+  "id, title, country_code, currency, impact, event_time, end_time, timezone, event_type, location_url, status, audience, actual, forecast, previous, source, description, category, created_at, updated_at";
 
 function mapEvent(row: EventRow): EconomicEventDto {
   return {
@@ -55,6 +70,12 @@ function mapEvent(row: EventRow): EconomicEventDto {
     currency: row.currency,
     impact: row.impact,
     eventTime: row.event_time,
+    endTime: row.end_time,
+    timezone: row.timezone,
+    eventType: row.event_type,
+    locationUrl: row.location_url,
+    status: row.status,
+    audience: row.audience,
     actual: row.actual,
     forecast: row.forecast,
     previous: row.previous,
@@ -84,6 +105,8 @@ export async function listUpcomingEvents(params: {
     .from("economic_calendar_events")
     .select(SELECT_COLS)
     .in("currency", params.currencies)
+    .eq("status", "PUBLISHED")
+    .in("audience", ["ALL", "TRADER"])
     .gte("event_time", params.fromIso)
     .lte("event_time", params.toIso)
     .order("event_time", { ascending: true })
@@ -112,12 +135,31 @@ export async function listEvents(limit = 200): Promise<EconomicEventDto[]> {
   return (data ?? []).map(mapEvent);
 }
 
+export async function listPublishedEvents(limit = 200): Promise<EconomicEventDto[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("economic_calendar_events")
+    .select(SELECT_COLS)
+    .eq("status", "PUBLISHED")
+    .in("audience", ["ALL", "TRADER"])
+    .order("event_time", { ascending: true })
+    .limit(limit);
+  if (error) throw new Error(`Failed to fetch calendar events: ${error.message}`);
+  return (data ?? []).map(mapEvent);
+}
+
 export interface EconomicEventInput {
   title: string;
   countryCode?: string | null;
   currency: string;
   impact: EconomicImpact;
   eventTime: string;
+  endTime?: string | null;
+  timezone?: string;
+  eventType?: CalendarEventType;
+  locationUrl?: string | null;
+  status?: CalendarEventStatus;
+  audience?: CalendarAudience;
   actual?: string | null;
   forecast?: string | null;
   previous?: string | null;
@@ -126,7 +168,7 @@ export interface EconomicEventInput {
   category?: string | null;
 }
 
-export async function createEvent(input: EconomicEventInput): Promise<EconomicEventDto> {
+export async function createEvent(input: EconomicEventInput, createdBy?: string): Promise<EconomicEventDto> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("economic_calendar_events")
@@ -136,6 +178,13 @@ export async function createEvent(input: EconomicEventInput): Promise<EconomicEv
       currency: input.currency,
       impact: input.impact,
       event_time: input.eventTime,
+      end_time: input.endTime ?? null,
+      timezone: input.timezone ?? "UTC",
+      event_type: input.eventType ?? "ECONOMIC",
+      location_url: input.locationUrl ?? null,
+      status: input.status ?? "DRAFT",
+      audience: input.audience ?? "ALL",
+      created_by: createdBy ?? null,
       actual: input.actual ?? null,
       forecast: input.forecast ?? null,
       previous: input.previous ?? null,
@@ -160,6 +209,12 @@ export async function updateEvent(
   if (input.currency !== undefined) patch.currency = input.currency;
   if (input.impact !== undefined) patch.impact = input.impact;
   if (input.eventTime !== undefined) patch.event_time = input.eventTime;
+  if (input.endTime !== undefined) patch.end_time = input.endTime;
+  if (input.timezone !== undefined) patch.timezone = input.timezone;
+  if (input.eventType !== undefined) patch.event_type = input.eventType;
+  if (input.locationUrl !== undefined) patch.location_url = input.locationUrl;
+  if (input.status !== undefined) patch.status = input.status;
+  if (input.audience !== undefined) patch.audience = input.audience;
   if (input.actual !== undefined) patch.actual = input.actual;
   if (input.forecast !== undefined) patch.forecast = input.forecast;
   if (input.previous !== undefined) patch.previous = input.previous;

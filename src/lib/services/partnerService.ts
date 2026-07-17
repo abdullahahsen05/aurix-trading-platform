@@ -27,7 +27,7 @@ interface TraderProfileRow {
   user_id: string;
   segment: string;
   partner_assigned_at: string | null;
-  profiles?: { full_name: string | null; email: string | null; status: string | null };
+  profiles?: { full_name: string | null; email: string | null; status: string | null; created_at: string | null };
 }
 
 interface AccountRow {
@@ -63,7 +63,7 @@ async function loadAssignedContext(partnerUserId: string): Promise<AssignedConte
     .from("trader_profiles")
     // trader_profiles now has TWO FKs to profiles (user_id, partner_id), so the
     // embed must be disambiguated with the user_id column hint.
-    .select("id, user_id, segment, partner_assigned_at, profiles!user_id(full_name, email, status)")
+    .select("id, user_id, segment, partner_assigned_at, profiles!user_id(full_name, email, status, created_at)")
     .eq("partner_id", partnerUserId)
     .order("partner_assigned_at", { ascending: false })
     .limit(1000);
@@ -174,6 +174,7 @@ function buildTraderDto(
     openRiskEvents,
     riskStatus,
     assignedAt: profile.partner_assigned_at,
+    registeredAt: profile.profiles?.created_at ?? null,
     accounts: accountStatuses,
   };
 }
@@ -271,7 +272,7 @@ export async function getPartnerTraderDetail(
     const { data } = await supabase
       .from("trades")
       .select(
-        "id, trading_account_id, symbol, side, status, volume, open_price, close_price, profit, currency, opened_at, closed_at",
+        "id, short_trade_id, trading_account_id, symbol, side, status, volume, open_price, close_price, profit, currency, opened_at, closed_at",
       )
       .in("trading_account_id", traderAccountIds)
       .order("opened_at", { ascending: false })

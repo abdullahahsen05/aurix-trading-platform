@@ -48,7 +48,7 @@ function CommissionRulePanel({ summary }: { summary: PartnerCommissionSummaryDto
           <div className="rounded-xl border border-line bg-background px-4 py-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">CPA amount</p>
             <p className="mt-1 text-sm font-semibold text-foreground">
-              {summary.cpaAmount != null ? formatMoney({ amount: summary.cpaAmount, currency: summary.currency }) : "—"}
+              {summary.cpaAmount != null ? formatMoney({ amount: summary.cpaAmount, currency: summary.currency }) : "-"}
             </p>
           </div>
         ) : (
@@ -88,7 +88,7 @@ export default function PartnerCommissionsPage() {
     <WorkspacePage
       eyebrow="Partner"
       title="Commissions"
-      description="Your attributed commission ledger. Reporting only — payouts are handled separately."
+      description="Your attributed commission ledger. Reporting only - payouts are handled separately."
       action={
         <PageActionGroup>
           <a href="/api/partner/commissions/export" download>
@@ -102,12 +102,12 @@ export default function PartnerCommissionsPage() {
     >
       <InlineStatusStrip
         items={[
-          { label: "Pending", value: summary ? formatMoney(summary.pending) : "—", tone: "accent" },
-          { label: "Approved", value: summary ? formatMoney(summary.approved) : "—", tone: "lime" },
-          { label: "Paid", value: summary ? formatMoney(summary.paid) : "—", tone: "lime" },
+          { label: "Pending", value: summary ? formatMoney(summary.pending) : "-", tone: "accent" },
+          { label: "Approved", value: summary ? formatMoney(summary.approved) : "-", tone: "lime" },
+          { label: "Paid", value: summary ? formatMoney(summary.paid) : "-", tone: "lime" },
           {
             label: "Commission rate",
-            value: summary ? `${summary.commissionPercent}%` : "—",
+            value: summary ? `${summary.commissionPercent}%` : "-",
           },
         ]}
       />
@@ -128,7 +128,7 @@ export default function PartnerCommissionsPage() {
         {isLoading ? (
           <div className="space-y-2">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-12 rounded-xl border border-line bg-panel animate-pulse" />
+              <div key={i} className="h-12 animate-pulse rounded-xl border border-line bg-panel" />
             ))}
           </div>
         ) : isError ? (
@@ -146,7 +146,7 @@ export default function PartnerCommissionsPage() {
               headers={["Date", "Trader", "Source", "Gross", "Rate", "Commission", "Status"]}
               rows={records.map((r) => [
                 <span key="d">{new Date(r.createdAt).toLocaleDateString()}</span>,
-                <span key="t">{r.traderName ?? "—"}</span>,
+                <span key="t">{r.traderName ?? "-"}</span>,
                 <span key="s">{r.sourceType}</span>,
                 <span key="g">{formatMoney({ amount: r.grossAmount, currency: r.currency })}</span>,
                 <span key="r">{r.commissionPercent}%</span>,

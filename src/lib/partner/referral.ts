@@ -32,5 +32,5 @@ export function isValidReferralCodeFormat(code: string): boolean {
 /** Build the shareable referral link for a code. */
 export function referralLink(siteUrl: string, code: string): string {
   const base = siteUrl.replace(/\/$/, "");
-  return `${base}/register?partner=${encodeURIComponent(code)}`;
+  return `${base}/register?ref=${encodeURIComponent(code.trim().toUpperCase())}`;
 }

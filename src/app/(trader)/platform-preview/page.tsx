@@ -47,7 +47,7 @@ export default function PlatformPreviewPage() {
   return (
     <WorkspacePage
       eyebrow="Platform Preview"
-      title="Unlock the Aurix Trading Platform"
+      title="Unlock the WSA Global Trading Platform"
       description="Access MT5 account tracking, copy trading, AI tools, and professional trading workflows."
       action={
         access.status === "ACTIVE" ? (

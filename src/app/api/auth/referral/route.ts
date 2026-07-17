@@ -15,6 +15,7 @@ export async function POST(request: Request) {
       return jsonFail("INVALID_REFERRAL_CODE", "Invalid referral code", 400);
     }
     const claimed = await claimReferral(user.id, parsed.data.code);
+    if (!claimed) return jsonFail("INVALID_REFERRAL_CODE", "Referral code is invalid, inactive, or already claimed", 400);
     return jsonOk({ claimed });
   } catch (err) {
     if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);

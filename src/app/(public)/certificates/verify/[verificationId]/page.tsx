@@ -21,9 +21,9 @@ export default async function PublicCertificateVerifyPage({
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-16">
       <div className="w-full max-w-lg">
-        {/* Aurix branding */}
+        {/* WSA Global branding */}
         <div className="mb-8 text-center">
-          <span className="text-xl font-bold tracking-tight text-foreground">AURIX</span>
+          <span className="text-xl font-bold tracking-tight text-foreground">WSA GLOBAL</span>
           <p className="mt-1 text-xs text-muted-foreground">Certificate Verification</p>
         </div>
 
@@ -78,7 +78,7 @@ export default async function PublicCertificateVerifyPage({
                 <div className="mb-6 text-lg font-semibold text-foreground">{cert.programName}</div>
                 <div className="border-t border-border pt-4">
                   <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>Issued by Aurix Trading Platform</span>
+                    <span>Issued by WSA Global Trading Platform</span>
                     <span>{new Date(cert.issuedAt).toLocaleDateString()}</span>
                   </div>
                 </div>
@@ -101,7 +101,7 @@ export default async function PublicCertificateVerifyPage({
         )}
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Aurix Trading Platform &mdash; {new Date().getFullYear()}
+          WSA Global Trading Platform &mdash; {new Date().getFullYear()}
         </p>
       </div>
     </div>

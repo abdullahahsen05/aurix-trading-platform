@@ -52,7 +52,7 @@ export default function AccountsPage() {
       >
         <PlatformSubscriptionLocked
           access={access}
-          description="Activate the Aurix platform subscription to unlock MT5 account connection, account detail views, and core broker-account workflow tools."
+          description="Activate the WSA Global platform subscription to unlock MT5 account connection, account detail views, and core broker-account workflow tools."
         />
       </WorkspacePage>
     );
@@ -71,6 +71,7 @@ function AccountsContent() {
   const [errorMessage, setErrorMessage] = useState("");
   // Holds the accountId created in step 1, used in step 2
   const [pendingAccountId, setPendingAccountId] = useState<string | null>(null);
+  const [pendingBrokerName, setPendingBrokerName] = useState("");
   const queryClient = useQueryClient();
 
   const { data: tradingAccounts = [], isLoading, isError } = useQuery<TraderAccountSummary[]>({
@@ -95,6 +96,7 @@ function AccountsContent() {
   const resetDialog = () => {
     setStep("setup");
     setPendingAccountId(null);
+    setPendingBrokerName("");
     setIsSubmitting(false);
     setErrorMessage("");
   };
@@ -125,6 +127,7 @@ function AccountsContent() {
       const json = await res.json();
       if (json.ok) {
         setPendingAccountId(json.data.accountId);
+        setPendingBrokerName(brokerName);
         setStep("credentials");
         setErrorMessage("");
       } else {
@@ -146,7 +149,6 @@ function AccountsContent() {
 
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const provider = formData.get("provider") as string;
     const login = (formData.get("login") as string)?.trim();
     const password = formData.get("password") as string;
     const server = (formData.get("server") as string)?.trim();
@@ -164,7 +166,14 @@ function AccountsContent() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, login, password, server, platform }),
+          body: JSON.stringify({
+            login,
+            password,
+            server,
+            platform,
+            brokerName: pendingBrokerName || undefined,
+            connectNow: true,
+          }),
         }
       );
 
@@ -173,13 +182,25 @@ function AccountsContent() {
       // Clear the password from the form immediately — do not keep it in DOM
       form.reset();
 
-      if (json.ok) {
+      if (json.ok && json.data.connected) {
         await queryClient.invalidateQueries({ queryKey: ["trading-accounts"] });
         setConnectOpen(false);
         resetDialog();
         setSuccessMessage(
-          `Account connected. Credentials stored securely. ` +
-            `Status: PENDING — an admin will trigger broker sync shortly.`
+          `Account connected. Credentials were stored securely and the initial broker sync completed.`,
+        );
+      } else if (json.ok && json.data.status === "PENDING") {
+        await queryClient.invalidateQueries({ queryKey: ["trading-accounts"] });
+        setConnectOpen(false);
+        resetDialog();
+        setSuccessMessage(
+          json.data.message ??
+            "Credentials were stored securely. The broker connection is still deploying; sync it again shortly.",
+        );
+      } else if (json.ok) {
+        setErrorMessage(
+          json.data.message ??
+            "Credentials were stored, but the broker connection could not be established. Check the values and try again.",
         );
       } else {
         // If credential storage fails, the account was already created.
@@ -333,16 +354,6 @@ function AccountsContent() {
                     <form className="mt-4 grid gap-4" onSubmit={handleCredentials}>
                       <div className="grid gap-4 md:grid-cols-2">
                         <SelectField
-                          label="Provider"
-                          name="provider"
-                          defaultValue="MT5"
-                        >
-                          <option value="MT5">MetaTrader 5 (MT5)</option>
-                          <option value="METAAPI">MetaAPI</option>
-                          <option value="CTRADER">cTrader</option>
-                          <option value="OTHER">Other</option>
-                        </SelectField>
-                        <SelectField
                           label="Platform"
                           name="platform"
                           defaultValue="mt5"
@@ -399,7 +410,7 @@ function AccountsContent() {
                             Back
                           </GhostButton>
                           <PrimaryButton type="submit" disabled={isSubmitting}>
-                            {isSubmitting ? "Encrypting & saving…" : "Connect account"}
+                            {isSubmitting ? "Connecting…" : "Connect and sync"}
                           </PrimaryButton>
                         </div>
                       </div>
@@ -498,6 +509,10 @@ function AccountsContent() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-muted">{account.brokerName}</p>
+                  <p className="mt-1 text-xs text-muted">
+                    {[account.platform, account.serverName].filter(Boolean).join(" · ") ||
+                      "Broker details pending"}
+                  </p>
                   <h2 className="mt-2 text-xl font-semibold text-foreground">{account.accountName}</h2>
                 </div>
                 <StatusPill tone={account.status === "CONNECTED" ? "lime" : account.status === "RESTRICTED" ? "danger" : account.status === "PENDING" || account.status === "SYNCING" ? "accent" : "muted"}>

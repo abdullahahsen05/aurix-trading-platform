@@ -32,7 +32,7 @@ export default function TradesPage() {
       >
         <PlatformSubscriptionLocked
           access={access}
-          description="Activate the Aurix platform subscription to unlock trade history, trade-search tools, and the trader trade ledger workspace."
+          description="Activate the WSA Global platform subscription to unlock trade history, trade-search tools, and the trader trade ledger workspace."
         />
       </WorkspacePage>
     );
@@ -170,13 +170,13 @@ function TradesContent() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected trade</p>
                 <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedTrade.symbol}</h2>
                 <p className="mt-1 text-sm text-muted">
-                  {selectedTrade.side} - {selectedTrade.accountId}
+                  {selectedTrade.shortTradeId} · {selectedTrade.side}
                 </p>
               </div>
               <StatusPill tone={selectedTrade.status === "OPEN" ? "accent" : "muted"}>{selectedTrade.status}</StatusPill>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Volume</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{selectedTrade.volume}</p>
@@ -197,7 +197,19 @@ function TradesContent() {
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Opened</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedTrade.openedAt).toLocaleDateString()}</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedTrade.openedAt).toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Close price</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {selectedTrade.closePrice ?? "—"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Closed</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {selectedTrade.closedAt ? new Date(selectedTrade.closedAt).toLocaleString() : "—"}
+                </p>
               </div>
             </div>
 
@@ -214,7 +226,7 @@ function TradesContent() {
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a");
                   a.href = url;
-                  a.download = `aurix-trades-${new Date().toISOString().slice(0, 10)}.csv`;
+                  a.download = `wsa-global-trades-${new Date().toISOString().slice(0, 10)}.csv`;
                   document.body.appendChild(a);
                   a.click();
                   a.remove();
@@ -240,7 +252,7 @@ function TradesContent() {
           setSearchOpen(false);
         }}
         searchLabel="Search ledger"
-        searchPlaceholder="Search symbol or account"
+        searchPlaceholder="Search trade ID, symbol, or account"
         filters={[
           {
             key: "status",
@@ -259,6 +271,7 @@ function TradesContent() {
           const search = state.query.trim().toLowerCase();
           const matchesQuery =
             search.length === 0 ||
+            trade.shortTradeId.toLowerCase().includes(search) ||
             trade.symbol.toLowerCase().includes(search) ||
             trade.accountId.toLowerCase().includes(search);
           const matchesStatus = state.filters.status === "ALL" || trade.status === state.filters.status;
@@ -269,7 +282,7 @@ function TradesContent() {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{trade.symbol}</p>
-                <p className="mt-1 truncate text-xs text-muted">{trade.accountId}</p>
+                <p className="mt-1 truncate text-xs text-muted">{trade.shortTradeId}</p>
               </div>
               <StatusPill tone={trade.status === "OPEN" ? "accent" : "muted"}>{trade.status}</StatusPill>
             </div>
@@ -290,7 +303,7 @@ function TradesContent() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Trade preview</p>
                 <h3 className="mt-2 text-lg font-semibold text-foreground">{trade.symbol}</h3>
                 <p className="mt-1 text-sm text-muted">
-                  {trade.side} - {trade.accountId}
+                  {trade.shortTradeId} · {trade.side}
                 </p>
               </div>
               <StatusPill tone={trade.status === "OPEN" ? "accent" : "muted"}>{trade.status}</StatusPill>
@@ -317,6 +330,16 @@ function TradesContent() {
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Opened</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{new Date(trade.openedAt).toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Close price</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">{trade.closePrice ?? "—"}</p>
+              </div>
+              <div className="rounded-2xl border border-line bg-background px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Closed</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {trade.closedAt ? new Date(trade.closedAt).toLocaleString() : "—"}
+                </p>
               </div>
             </div>
           </Panel>

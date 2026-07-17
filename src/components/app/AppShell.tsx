@@ -11,8 +11,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isShellFreeRoute =
-    ["/login", "/register", "/forgot-password"].includes(pathname) ||
-    pathname.startsWith("/certificates/verify/");
+    ["/login", "/register", "/forgot-password", "/reset-password"].includes(pathname) ||
+    pathname.startsWith("/certificates/verify/") ||
+    pathname === "/demo" ||
+    pathname.startsWith("/demo/");
   const role: UserRole = pathname.startsWith("/admin")
     ? "ADMIN"
     : pathname.startsWith("/partner")

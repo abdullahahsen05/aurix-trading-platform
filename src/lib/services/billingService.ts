@@ -15,7 +15,7 @@ export interface BillingProductDto {
   id: string;
   code: string;
   name: string;
-  type: string;
+  type: "SUBSCRIPTION" | "COPY_ACCOUNT" | "BOT" | "MENTORSHIP" | "EVALUATION";
   amount: number;
   currency: string;
   billingInterval: string;
@@ -90,6 +90,21 @@ export interface UserBillingSummaryDto {
     productName: string;
     paidAt: string;
   }>;
+}
+
+export type BillingReturnState =
+  | "PROCESSING"
+  | "PAYMENT_RECEIVED"
+  | "PENDING_APPROVAL"
+  | "ACTIVE"
+  | "FAILED"
+  | "CANCELLED";
+
+export interface BillingReturnStatusDto {
+  order: PaymentOrderDto;
+  state: BillingReturnState;
+  title: string;
+  message: string;
 }
 
 export interface AdminBillingPendingApprovalDto {
@@ -331,11 +346,11 @@ export function derivePlatformSubscriptionAccess(params: {
       id: "",
       productCode: paidOrder.productCode ?? "PLATFORM_MONTHLY",
       productName: paidOrder.productName ?? "Platform Subscription",
-      status: "PENDING_APPROVAL",
+      status: "PENDING_PAYMENT",
       currentPeriodEnd: null,
       approvedAt: paidOrder.approvedAt ?? null,
       orderId: paidOrder.id,
-      message: defaultMessage("PENDING_APPROVAL", "Platform Subscription"),
+      message: "Payment verified — activating platform access",
     };
   }
 
@@ -430,11 +445,11 @@ export function deriveCopyEntitlementAccess(params: {
       id: "",
       tier: paidOrder.tier ?? "NORMAL",
       tradingAccountId: params.tradingAccountId,
-      status: "PENDING_APPROVAL",
+      status: "PENDING_PAYMENT",
       currentPeriodEnd: null,
       approvedAt: paidOrder.approvedAt ?? null,
       orderId: paidOrder.id,
-      message: defaultMessage("PENDING_APPROVAL", "Copy trading access"),
+      message: "Payment verified. Copy access activation is still processing.",
     };
   }
 
@@ -510,33 +525,33 @@ export function deriveBotPurchaseAccess(params: {
     };
   }
 
+  const paidOrder = orders.find((order) => order.status === "PAID");
   const requested = accessRecords.find((entry) => entry.status === "REQUESTED");
-  if (requested) {
+  if (requested && paidOrder) {
     return {
       id: requested.id,
       botProductId: requested.botProductId,
       botName: requested.botName,
-      status: "PENDING_APPROVAL",
+      status: "PENDING_PAYMENT",
       currentPeriodEnd: null,
       approvedAt: null,
       grantedAt: requested.grantedAt,
-      orderId: null,
-      message: defaultMessage("PENDING_APPROVAL", "Bot access"),
+      orderId: paidOrder.id,
+      message: "Payment confirmed. Bot access is being activated.",
     };
   }
 
-  const paidOrder = orders.find((order) => order.status === "PAID");
   if (paidOrder) {
     return {
       id: "",
       botProductId: params.botProductId,
       botName: params.botName,
-      status: "PENDING_APPROVAL",
+      status: "PENDING_PAYMENT",
       currentPeriodEnd: null,
       approvedAt: paidOrder.approvedAt ?? null,
       grantedAt: null,
       orderId: paidOrder.id,
-      message: defaultMessage("PENDING_APPROVAL", "Bot access"),
+      message: "Payment confirmed. Bot access is being activated.",
     };
   }
 
@@ -756,6 +771,21 @@ export interface CheckoutResult {
   checkoutUrl: string;
 }
 
+export type VerifiedPaymentProvisioningDecision =
+  | { kind: "SUBSCRIPTION"; status: "ACTIVE" }
+  | { kind: "COPY_ACCOUNT"; status: "ACTIVE" }
+  | { kind: "BOT"; status: "ACTIVE" }
+  | { kind: "MANUAL"; status: null };
+
+export function getVerifiedPaymentProvisioningDecision(
+  productType: BillingProductDto["type"],
+): VerifiedPaymentProvisioningDecision {
+  if (productType === "SUBSCRIPTION") return { kind: "SUBSCRIPTION", status: "ACTIVE" };
+  if (productType === "COPY_ACCOUNT") return { kind: "COPY_ACCOUNT", status: "ACTIVE" };
+  if (productType === "BOT") return { kind: "BOT", status: "ACTIVE" };
+  return { kind: "MANUAL", status: null };
+}
+
 async function ensurePaidOrderProvisioned(
   order: PaidOrderProvisionRow,
   product: BillingProductProvisionRow,
@@ -764,58 +794,93 @@ async function ensurePaidOrderProvisioned(
   const periodEnd = product.billing_interval === "MONTHLY" ? monthlyPeriodEndIso() : null;
 
   if (product.type === "SUBSCRIPTION") {
+    const decision = getVerifiedPaymentProvisioningDecision(product.type);
     const { data: existing } = await supabase
       .from("subscriptions")
-      .select("id")
+      .select("id, status")
       .eq("payment_order_id", order.id)
       .maybeSingle();
 
+    const activatedAt = new Date().toISOString();
     if (!existing) {
       const traderProfileId = await ensureTraderProfileId(order.user_id);
       const { error: insertError } = await supabase.from("subscriptions").insert({
         trader_profile_id: traderProfileId,
         plan_name: product.code === "PLATFORM_MONTHLY" ? "Platform Subscription" : product.code,
-        started_at: new Date().toISOString(),
+        starts_at: activatedAt,
+        started_at: activatedAt,
         ends_at: periodEnd,
         user_id: order.user_id,
         product_id: order.product_id,
         payment_order_id: order.id,
-        status: "PENDING_APPROVAL",
+        status: decision.status,
+        approved_at: activatedAt,
+        approved_by_admin_id: null,
         current_period_end: periodEnd,
       });
       if (insertError) {
         throw new Error(`Failed to provision subscription access: ${insertError.message}`);
+      }
+    } else if (existing.status === "PENDING_APPROVAL") {
+      const { error: updateError } = await supabase
+        .from("subscriptions")
+        .update({
+          status: decision.status,
+          approved_at: activatedAt,
+          approved_by_admin_id: null,
+        })
+        .eq("id", existing.id);
+      if (updateError) {
+        throw new Error(`Failed to activate subscription access: ${updateError.message}`);
       }
     }
     return;
   }
 
   if (product.type === "COPY_ACCOUNT") {
+    const decision = getVerifiedPaymentProvisioningDecision(product.type);
     const { data: existing } = await supabase
       .from("copy_account_entitlements")
-      .select("id")
+      .select("id, status")
       .eq("payment_order_id", order.id)
       .maybeSingle();
 
+    const activatedAt = new Date().toISOString();
     if (!existing) {
       const { error: insertError } = await supabase.from("copy_account_entitlements").insert({
         user_id: order.user_id,
         trading_account_id: order.trading_account_id,
         payment_order_id: order.id,
         tier: order.tier ?? (product.code === "COPY_ULTRA_FAST" ? "PREMIUM" : "NORMAL"),
-        status: "PENDING_APPROVAL",
+        status: decision.status,
         amount: order.amount,
         currency: order.currency,
         current_period_end: periodEnd,
+        approved_at: activatedAt,
       });
       if (insertError) {
         throw new Error(`Failed to provision copy entitlement: ${insertError.message}`);
+      }
+    } else if (existing.status !== "ACTIVE") {
+      const { error: updateError } = await supabase
+        .from("copy_account_entitlements")
+        .update({
+          status: decision.status,
+          current_period_end: periodEnd,
+          approved_at: activatedAt,
+          approved_by_admin_id: null,
+        })
+        .eq("id", existing.id);
+      if (updateError) {
+        throw new Error(`Failed to activate copy entitlement: ${updateError.message}`);
       }
     }
     return;
   }
 
   if (product.type === "BOT" && order.bot_product_id) {
+    const decision = getVerifiedPaymentProvisioningDecision(product.type);
+    const activatedAt = new Date().toISOString();
     const { data: existing } = await supabase
       .from("bot_access_records")
       .select("id, status")
@@ -827,10 +892,12 @@ async function ensurePaidOrderProvisioned(
       const { error: insertError } = await supabase.from("bot_access_records").insert({
         product_id: order.bot_product_id,
         user_id: order.user_id,
-        status: "REQUESTED",
+        status: decision.status,
         source: "FUTURE_PAYMENT",
         price_amount: order.amount,
         price_currency: order.currency,
+        granted_by: null,
+        granted_at: activatedAt,
       });
       if (insertError) {
         throw new Error(`Failed to provision bot access: ${insertError.message}`);
@@ -842,14 +909,16 @@ async function ensurePaidOrderProvisioned(
       const { error: updateError } = await supabase
         .from("bot_access_records")
         .update({
-          status: "REQUESTED",
+          status: decision.status,
           source: "FUTURE_PAYMENT",
           price_amount: order.amount,
           price_currency: order.currency,
+          granted_by: null,
+          granted_at: activatedAt,
         })
         .eq("id", existing.id);
       if (updateError) {
-        throw new Error(`Failed to refresh bot access request: ${updateError.message}`);
+        throw new Error(`Failed to activate bot access: ${updateError.message}`);
       }
     }
   }
@@ -869,12 +938,12 @@ async function markOrderPaid(orderId: string): Promise<void> {
     return;
   }
 
-  if (order.status === "PAID") return;
-
-  await supabase
-    .from("payment_orders")
-    .update({ status: "PAID", paid_at: new Date().toISOString() })
-    .eq("id", order.id);
+  if (order.status !== "PAID") {
+    await supabase
+      .from("payment_orders")
+      .update({ status: "PAID", paid_at: new Date().toISOString() })
+      .eq("id", order.id);
+  }
 
   const { data: product } = await supabase
     .from("billing_products")
@@ -900,6 +969,23 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
   }
 
   const supabase = createAdminClient();
+
+  if (product.type === "COPY_ACCOUNT") {
+    const [{ data: account }, platformAccess] = await Promise.all([
+      supabase
+        .from("trading_accounts")
+        .select("id, user_id")
+        .eq("id", params.tradingAccountId!)
+        .eq("user_id", params.userId)
+        .maybeSingle(),
+      getPlatformSubscriptionAccess(params.userId),
+    ]);
+    if (!account) throw new Error("Trading account not found or access denied");
+    if (platformAccess.status !== "ACTIVE") {
+      throw new Error("An active platform subscription is required before purchasing copy access");
+    }
+    params.tier = product.code === "COPY_ULTRA_FAST" ? "PREMIUM" : "NORMAL";
+  }
   const runtimeMode = getBillingRuntimeMode({ BILLING_PROVIDER: process.env.BILLING_PROVIDER });
 
   // Create the payment_order record first (PENDING)
@@ -1205,13 +1291,16 @@ export async function confirmMockPayment(
 
   if (error || !order) return { ok: false, message: "Order not found" };
   if (order.provider !== "MOCK") return { ok: false, message: "Order is not using mock billing" };
-  if (order.status === "PAID") return { ok: true, message: "Payment already recorded" };
+  if (order.status === "PAID") {
+    await markOrderPaid(order.id);
+    return { ok: true, message: "Payment already recorded and access provisioned" };
+  }
   if (order.status !== "PENDING") {
     return { ok: false, message: `Order cannot be confirmed from status ${order.status}` };
   }
 
   await markOrderPaid(order.id);
-  return { ok: true, message: "Mock payment recorded" };
+  return { ok: true, message: "Payment verified and access provisioned" };
 }
 
 async function maybeCreatePartnerCommission(
@@ -1221,6 +1310,13 @@ async function maybeCreatePartnerCommission(
   currency: string,
 ): Promise<void> {
   const supabase = createAdminClient();
+
+  const { data: existingCommission } = await supabase
+    .from("partner_commissions")
+    .select("id")
+    .eq("purchase_id", purchaseId)
+    .maybeSingle();
+  if (existingCommission) return;
 
   // Find assigned partner for this trader
   const { data: tp } = await supabase
@@ -1261,7 +1357,115 @@ async function maybeCreatePartnerCommission(
 
 // ─── User billing summary ─────────────────────────────────────────────────────
 
+/**
+ * Repairs subscriptions created under the previous manual-approval policy.
+ * A PAID payment order is server-verified, so its platform subscription can be
+ * activated safely and idempotently when the trader next loads billing access.
+ */
+async function activateVerifiedPaidPlatformSubscriptions(userId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { data: pending } = await supabase
+    .from("subscriptions")
+    .select("id, payment_order_id")
+    .eq("user_id", userId)
+    .eq("status", "PENDING_APPROVAL")
+    .not("payment_order_id", "is", null);
+
+  const pendingRows = pending ?? [];
+  const orderIds = pendingRows
+    .map((row) => row.payment_order_id)
+    .filter((value): value is string => Boolean(value));
+  if (orderIds.length === 0) return;
+
+  const { data: platformProduct } = await supabase
+    .from("billing_products")
+    .select("id")
+    .eq("code", "PLATFORM_MONTHLY")
+    .maybeSingle();
+  if (!platformProduct) return;
+
+  const { data: paidOrders } = await supabase
+    .from("payment_orders")
+    .select("id")
+    .in("id", orderIds)
+    .eq("status", "PAID")
+    .eq("product_id", platformProduct.id);
+  const paidOrderIds = new Set((paidOrders ?? []).map((row) => row.id));
+  const subscriptionIds = pendingRows
+    .filter((row) => row.payment_order_id && paidOrderIds.has(row.payment_order_id))
+    .map((row) => row.id);
+  if (subscriptionIds.length === 0) return;
+
+  const activatedAt = new Date().toISOString();
+  await supabase
+    .from("subscriptions")
+    .update({
+      status: "ACTIVE",
+      approved_at: activatedAt,
+      approved_by_admin_id: null,
+    })
+    .in("id", subscriptionIds)
+    .eq("status", "PENDING_APPROVAL");
+}
+
+/**
+ * Repairs Bot/EA purchases created under the previous manual-approval policy.
+ * Only access records backed by a server-recorded PAID Bot/EA order qualify.
+ */
+async function activateVerifiedPaidBotAccess(userId: string): Promise<void> {
+  const supabase = createAdminClient();
+  const { data: requested } = await supabase
+    .from("bot_access_records")
+    .select("id, product_id")
+    .eq("user_id", userId)
+    .eq("status", "REQUESTED")
+    .eq("source", "FUTURE_PAYMENT");
+
+  const requestedRows = requested ?? [];
+  const productIds = requestedRows.map((row) => row.product_id);
+  if (productIds.length === 0) return;
+
+  const { data: botBillingProduct } = await supabase
+    .from("billing_products")
+    .select("id")
+    .eq("code", "BOT_EA")
+    .maybeSingle();
+  if (!botBillingProduct) return;
+
+  const { data: paidOrders } = await supabase
+    .from("payment_orders")
+    .select("bot_product_id")
+    .eq("user_id", userId)
+    .eq("product_id", botBillingProduct.id)
+    .eq("status", "PAID")
+    .in("bot_product_id", productIds);
+
+  const paidProductIds = new Set(
+    (paidOrders ?? [])
+      .map((row) => row.bot_product_id)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const accessIds = requestedRows
+    .filter((row) => paidProductIds.has(row.product_id))
+    .map((row) => row.id);
+  if (accessIds.length === 0) return;
+
+  await supabase
+    .from("bot_access_records")
+    .update({
+      status: "ACTIVE",
+      granted_at: new Date().toISOString(),
+      granted_by: null,
+    })
+    .in("id", accessIds)
+    .eq("status", "REQUESTED");
+}
+
 export async function getTraderAccessSummary(userId: string): Promise<UserBillingSummaryDto> {
+  await Promise.all([
+    activateVerifiedPaidPlatformSubscriptions(userId),
+    activateVerifiedPaidBotAccess(userId),
+  ]);
   const supabase = createAdminClient();
 
   const [{ data: subs }, { data: entitlements }, { data: orders }, { data: botRecs }] = await Promise.all([
@@ -1433,28 +1637,12 @@ export async function getTraderAccessSummary(userId: string): Promise<UserBillin
   });
 
   const pendingApprovals = [
-    ...platformOrders
-      .filter((o) => o.status === "PAID")
-      .map((o) => ({
-        type: "SUBSCRIPTION",
-        orderId: o.id,
-        productName: o.productName ?? "Platform Subscription",
-        paidAt: allOrders.find((row) => row.id === o.id)?.paid_at ?? "",
-      })),
     ...normalizedOrders
       .filter((o) => (o.productCode === "COPY_NORMAL" || o.productCode === "COPY_ULTRA_FAST") && o.status === "PAID")
       .map((o) => ({
         type: "COPY_ENTITLEMENT",
         orderId: o.id,
         productName: o.productName ?? `Copy Trading (${o.tier ?? "NORMAL"})`,
-        paidAt: allOrders.find((row) => row.id === o.id)?.paid_at ?? "",
-      })),
-    ...normalizedOrders
-      .filter((o) => o.productCode === "BOT_EA" && o.status === "PAID")
-      .map((o) => ({
-        type: "BOT",
-        orderId: o.id,
-        productName: o.productName ?? "Trading Bot / EA",
         paidAt: allOrders.find((row) => row.id === o.id)?.paid_at ?? "",
       })),
     ...normalizedOrders
@@ -1491,6 +1679,153 @@ export async function getTraderAccessSummary(userId: string): Promise<UserBillin
 
 export async function getUserBillingSummary(userId: string): Promise<UserBillingSummaryDto> {
   return getTraderAccessSummary(userId);
+}
+
+export function deriveBillingReturnState(
+  order: PaymentOrderDto,
+  summary: UserBillingSummaryDto,
+): Omit<BillingReturnStatusDto, "order"> {
+  if (order.status === "FAILED" || order.status === "REFUNDED") {
+    return {
+      state: "FAILED",
+      title: order.status === "REFUNDED" ? "Payment refunded" : "Payment failed",
+      message: "No access has been activated for this order.",
+    };
+  }
+  if (order.status === "CANCELLED") {
+    return { state: "CANCELLED", title: "Checkout cancelled", message: "No payment was recorded." };
+  }
+  if (order.status !== "PAID") {
+    return {
+      state: "PROCESSING",
+      title: "Confirming payment",
+      message: "We are waiting for the payment provider to confirm this order. This page refreshes automatically.",
+    };
+  }
+
+  if (order.productCode === "BOT_EA") {
+    const access = summary.botAccess.find((entry) => entry.botProductId === order.botProductId);
+    if (access?.status === "ACTIVE") {
+      return { state: "ACTIVE", title: "Bot access active", message: "Your bot is ready in My Bots." };
+    }
+    return {
+      state: "PROCESSING",
+      title: "Activating bot access",
+      message: "Your Bot/EA payment is confirmed. Access is being activated automatically.",
+    };
+  }
+
+  if (order.productCode === "COPY_NORMAL" || order.productCode === "COPY_ULTRA_FAST") {
+    const active = summary.copyEntitlements.some(
+      (entry) => entry.tradingAccountId === order.tradingAccountId && entry.status === "ACTIVE",
+    );
+    return active
+      ? { state: "ACTIVE", title: "Copy access active", message: "Copy access is active for the selected account." }
+      : { state: "PROCESSING", title: "Activating copy access", message: "Payment is confirmed and copy access is being activated." };
+  }
+
+  if (order.productCode === "PLATFORM_MONTHLY") {
+    return summary.platformSubscription.status === "ACTIVE"
+      ? {
+          state: "ACTIVE",
+          title: "Platform access active",
+          message: "Your payment is confirmed and the WSA Global trader portal is unlocked.",
+        }
+      : {
+          state: "PROCESSING",
+          title: "Activating platform access",
+          message: "Your payment is confirmed. Platform access is being activated automatically.",
+        };
+  }
+
+  if (order.productCode === "MENTORSHIP_1_1") {
+    return summary.mentorshipAccess.status === "ACTIVE"
+      ? { state: "ACTIVE", title: "Mentorship access active", message: "Your mentorship access is active." }
+      : { state: "PENDING_APPROVAL", title: "Payment received — pending admin approval", message: "An admin will review and activate your mentorship access." };
+  }
+
+  return {
+    state: "PAYMENT_RECEIVED",
+    title: "Payment received",
+    message: "The payment is confirmed. Product-specific access processing may still be required.",
+  };
+}
+
+type StripeCheckoutReturnSession = {
+  id: string;
+  status: string | null;
+  payment_status: string;
+  client_reference_id: string | null;
+  metadata?: Record<string, string> | null;
+  subscription?: string | { id: string } | null;
+  payment_intent?: string | { id: string } | null;
+};
+
+export function canReconcileStripeCheckoutReturn(
+  orderId: string,
+  storedSessionId: string,
+  session: StripeCheckoutReturnSession,
+): boolean {
+  const referencedOrderId = session.client_reference_id ?? session.metadata?.localOrderId ?? null;
+  return (
+    session.id === storedSessionId &&
+    referencedOrderId === orderId &&
+    session.status === "complete" &&
+    (session.payment_status === "paid" || session.payment_status === "no_payment_required")
+  );
+}
+
+function stripeResourceId(value: string | { id: string } | null | undefined): string | null {
+  if (!value) return null;
+  return typeof value === "string" ? value : value.id;
+}
+
+export async function getBillingReturnStatus(
+  userId: string,
+  orderId: string,
+  stripeSessionId?: string | null,
+): Promise<BillingReturnStatusDto | null> {
+  const supabase = createAdminClient();
+  const { data: storedOrder, error } = await supabase
+    .from("payment_orders")
+    .select("id, status, provider, stripe_checkout_session_id")
+    .eq("id", orderId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error || !storedOrder) return null;
+
+  if (stripeSessionId && storedOrder.stripe_checkout_session_id !== stripeSessionId) {
+    return null;
+  }
+
+  // Local development cannot receive Stripe webhooks without a forwarding tunnel.
+  // Verify the signed-in user's exact Checkout Session with Stripe on the secure
+  // return path so a completed test/live Checkout does not remain stuck at PENDING.
+  // The webhook remains the primary asynchronous source and this path is idempotent.
+  if (
+    (storedOrder.status === "PENDING" || storedOrder.status === "PAID") &&
+    storedOrder.provider === "STRIPE" &&
+    stripeSessionId &&
+    storedOrder.stripe_checkout_session_id
+  ) {
+    try {
+      const session = (await getStripe().checkout.sessions.retrieve(stripeSessionId)) as StripeCheckoutReturnSession;
+      if (canReconcileStripeCheckoutReturn(orderId, storedOrder.stripe_checkout_session_id, session)) {
+        await handleStripeCheckoutCompleted({
+          id: session.id,
+          subscription: stripeResourceId(session.subscription),
+          payment_intent: stripeResourceId(session.payment_intent),
+        });
+      }
+    } catch {
+      // Keep the honest PROCESSING state; polling or a later webhook can retry.
+    }
+  }
+
+  const summary = await getTraderAccessSummary(userId);
+  const order = summary.paymentHistory.find((entry) => entry.id === orderId);
+  if (!order) return null;
+  return { order, ...deriveBillingReturnState(order, summary) };
 }
 
 // ─── Admin helpers ────────────────────────────────────────────────────────────

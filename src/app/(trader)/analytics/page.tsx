@@ -1,52 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download, FileSpreadsheet, TrendingDown, TrendingUp } from "lucide-react";
+import { TrendingDown, TrendingUp } from "lucide-react";
 import {
   DataTable,
+  EmptyState,
   InlineStatusStrip,
-  GhostButton,
   Panel,
-  PageActionGroup,
-  PrimaryButton,
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import { EquityCurve } from "@/components/dashboard/EquityCurve";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
-import type { AnalyticsSummary, EquityPoint, TraderAccountSummary, TradeDto } from "@/lib/domain/types";
+import type { AnalyticsSummary, EquityPoint, TraderAccountSummary } from "@/lib/domain/types";
 import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
 
 const periods = ["DAILY", "WEEKLY", "MONTHLY", "ALL_TIME"] as const;
-
-const kpiSnapshots = {
-  DAILY: {
-    netProfit: 1240,
-    winRate: 61.2,
-    riskUtilization: 47,
-    avgR: 1.84,
-    status: "Above baseline",
-    note: "Intraday performance is constructive with contained risk pressure.",
-  },
-  WEEKLY: {
-    netProfit: 6840,
-    winRate: 58.6,
-    riskUtilization: 53,
-    avgR: 2.1,
-    status: "Strong week",
-    note: "Weekly output stays above average while risk remains disciplined.",
-  },
-  MONTHLY: {
-    netProfit: 28740,
-    winRate: 56.8,
-    riskUtilization: 61,
-    avgR: 2.36,
-    status: "Healthy month",
-    note: "Monthly performance is steady and the equity curve keeps rising.",
-  },
-} as const;
 
 function DrawdownMeter({ value }: { value: number }) {
   const capped = Math.min(value, 12);
@@ -152,7 +123,7 @@ export default function AnalyticsPage() {
       >
         <PlatformSubscriptionLocked
           access={access}
-          description="Activate the Aurix platform subscription to unlock analytics, equity breakdowns, and performance reporting workflows."
+          description="Activate the WSA Global platform subscription to unlock analytics, equity breakdowns, and performance reporting workflows."
         />
       </WorkspacePage>
     );
@@ -163,10 +134,13 @@ export default function AnalyticsPage() {
 
 function AnalyticsContent() {
   const [period, setPeriod] = useState<(typeof periods)[number]>("ALL_TIME");
-  const [exportStatus, setExportStatus] = useState<string>("");
+  const [accountScope, setAccountScope] = useState("ALL");
 
-  // Fetch accounts to get the first account ID
-  const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({
+  const {
+    data: accounts = [],
+    isLoading: accountsLoading,
+    isError: accountsError,
+  } = useQuery<TraderAccountSummary[]>({
     queryKey: ["trading-accounts"],
     queryFn: async () => {
       const res = await fetch("/api/trading-accounts");
@@ -176,67 +150,86 @@ function AnalyticsContent() {
     },
   });
 
-  const firstAccountId = accounts[0]?.accountId;
+  const connectedAccounts = accounts.filter((account) => account.status === "CONNECTED");
 
-  // Fetch analytics summary
-  const { data: analyticsSummary } = useQuery<AnalyticsSummary>({
-    queryKey: ["analytics-summary", firstAccountId, period],
+  const {
+    data: analyticsSummary,
+    isLoading: analyticsLoading,
+    isError: analyticsError,
+  } = useQuery<AnalyticsSummary>({
+    queryKey: ["analytics-summary", accountScope, period],
     queryFn: async () => {
-      const res = await fetch(`/api/analytics/summary?accountId=${firstAccountId}&period=${period}`);
+      const res = await fetch(`/api/analytics/summary?accountId=${accountScope}&period=${period}`);
       const json = await res.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load analytics");
       return json.data;
     },
-    enabled: !!firstAccountId,
+    enabled: !accountsLoading && connectedAccounts.length > 0,
   });
 
-  // Fetch equity curve
-  const { data: equityCurve = [] } = useQuery<EquityPoint[]>({
-    queryKey: ["equity-curve", firstAccountId],
+  const {
+    data: equityCurve = [],
+    isLoading: curveLoading,
+    isError: curveError,
+  } = useQuery<EquityPoint[]>({
+    queryKey: ["equity-curve", accountScope, period],
     queryFn: async () => {
-      const res = await fetch(`/api/analytics/equity-curve?accountId=${firstAccountId}`);
+      const res = await fetch(
+        `/api/analytics/equity-curve?accountId=${accountScope}&period=${period}`,
+      );
       const json = await res.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load equity curve");
       return json.data;
     },
-    enabled: !!firstAccountId,
+    enabled: !accountsLoading && connectedAccounts.length > 0,
   });
 
-  // Fetch trades for closed-trade stats
-  const { data: trades = [] } = useQuery<TradeDto[]>({
-    queryKey: ["trades"],
-    queryFn: async () => {
-      const res = await fetch("/api/trades");
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load trades");
-      return json.data;
-    },
-  });
+  if (accountsLoading) {
+    return (
+      <WorkspacePage eyebrow="Analytics" title="Performance intelligence" description="Loading connected accounts.">
+        <Panel><p className="text-sm text-muted">Loading accounts…</p></Panel>
+      </WorkspacePage>
+    );
+  }
 
-  const closedTrades = useMemo(() => trades.filter((trade) => trade.status === "CLOSED"), [trades]);
-  const winningTrades = closedTrades.filter((trade) => trade.profit.amount > 0);
-  const losingTrades = closedTrades.filter((trade) => trade.profit.amount < 0);
-  const averageWin = winningTrades.reduce((sum, trade) => sum + trade.profit.amount, 0) / Math.max(winningTrades.length, 1);
-  const averageLoss = Math.abs(losingTrades.reduce((sum, trade) => sum + trade.profit.amount, 0)) / Math.max(losingTrades.length, 1);
+  if (accountsError) {
+    return (
+      <WorkspacePage eyebrow="Analytics" title="Performance intelligence" description="Account-scoped performance analytics.">
+        <div className="rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+          Connected accounts could not be loaded. Refresh and try again.
+        </div>
+      </WorkspacePage>
+    );
+  }
 
-  // KPI for selected period (use API data for ALL_TIME, static for others)
-  const kpi = period === "ALL_TIME"
-    ? {
-        netProfit: analyticsSummary?.totalProfit.amount ?? 0,
-        winRate: analyticsSummary?.winRatePercent ?? 0,
-        riskUtilization: Math.min(((analyticsSummary?.maxDrawdownPercent ?? 0) / 8) * 100, 100),
-        avgR: analyticsSummary?.riskRewardRatio ?? 0,
-        status: "Controlled",
-        note: "All-time metrics remain balanced with a positive long-term slope.",
-      }
-    : kpiSnapshots[period];
+  if (connectedAccounts.length === 0) {
+    return (
+      <WorkspacePage eyebrow="Analytics" title="Performance intelligence" description="Account-scoped performance analytics.">
+        <EmptyState
+          title="No connected accounts"
+          description="Connect and sync an MT4 or MT5 account before opening analytics."
+        />
+      </WorkspacePage>
+    );
+  }
+
+  const kpi = {
+    netProfit: analyticsSummary?.totalProfit.amount ?? 0,
+    winRate: analyticsSummary?.winRatePercent ?? 0,
+    riskUtilization: Math.min(((analyticsSummary?.maxDrawdownPercent ?? 0) / 8) * 100, 100),
+    avgR: analyticsSummary?.riskRewardRatio ?? 0,
+    status: analyticsSummary?.totalProfit.amount && analyticsSummary.totalProfit.amount > 0
+      ? "Positive"
+      : "Review",
+    note: "Metrics are calculated from the selected account scope and period.",
+  };
 
   const performanceRows = [
-    ["Profit factor", (analyticsSummary?.riskRewardRatio ?? 0).toFixed(2), "Higher is better"],
+    ["Profit factor", (analyticsSummary?.profitFactor ?? 0).toFixed(2), "Gross profit / gross loss"],
     ["Win rate", formatPercent(analyticsSummary?.winRatePercent ?? 0), "Closed trades only"],
     ["Consistency", formatPercent(analyticsSummary?.consistencyScore ?? 0), "Profitable trading days"],
-    ["Average win", formatMoney({ amount: averageWin, currency: "USD" }), "Mean profitable trade"],
-    ["Average loss", formatMoney({ amount: averageLoss, currency: "USD" }), "Mean losing trade"],
+    ["Average win", formatMoney(analyticsSummary?.averageWin ?? { amount: 0, currency: "USD" }), "Mean profitable trade"],
+    ["Average loss", formatMoney(analyticsSummary?.averageLoss ?? { amount: 0, currency: "USD" }), "Mean losing trade"],
   ];
 
   return (
@@ -244,43 +237,48 @@ function AnalyticsContent() {
       eyebrow="Analytics"
       title="Performance intelligence"
       description="Profitability, drawdown, consistency, account growth, and risk-adjusted trade quality."
-      action={
-        <PageActionGroup>
-          <GhostButton
-            type="button"
-            onClick={() => setExportStatus("PDF export queued. The mock report packet is ready to download next.")}
-          >
-            <Download className="mr-2 inline-block h-4 w-4" />
-            Export PDF
-          </GhostButton>
-          <PrimaryButton
-            type="button"
-            onClick={() => setExportStatus("Excel export queued. The mock spreadsheet packet is ready.")}
-          >
-            <FileSpreadsheet className="mr-2 inline-block h-4 w-4" />
-            Export Excel
-          </PrimaryButton>
-        </PageActionGroup>
-      }
     >
-      <div className="flex flex-wrap gap-2 rounded-full border border-line bg-panel p-1">
-        {periods.map((item) => (
-          <button
-            key={item}
-            type="button"
-            onClick={() => setPeriod(item)}
-            className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
-              period === item ? "bg-accent text-background" : "text-muted hover:text-foreground"
-            }`}
+      <div className="grid gap-4 rounded-2xl border border-line bg-panel p-4 lg:grid-cols-[minmax(220px,0.35fr)_1fr] lg:items-end">
+        <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+          Account scope
+          <select
+            value={accountScope}
+            onChange={(event) => setAccountScope(event.target.value)}
+            className="min-h-11 rounded-xl border border-line bg-background px-3 text-sm font-semibold normal-case tracking-normal text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
           >
-            {item.replace("_", " ")}
-          </button>
-        ))}
+            <option value="ALL">All Accounts</option>
+            {connectedAccounts.map((account) => (
+              <option key={account.accountId} value={account.accountId}>
+                {account.accountName} · {account.brokerName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex flex-wrap gap-2 rounded-full border border-line bg-background p-1">
+          {periods.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setPeriod(item)}
+              className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+                period === item ? "bg-accent text-background" : "text-muted hover:text-foreground"
+              }`}
+            >
+              {item.replace("_", " ")}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {exportStatus ? (
-        <div className="mt-5 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-medium text-accent">
-          {exportStatus}
+      {analyticsError || curveError ? (
+        <div className="mt-5 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+          Analytics for this account scope could not be loaded. The selection may be unavailable or outside your access.
+        </div>
+      ) : null}
+
+      {analyticsLoading || curveLoading ? (
+        <div className="mt-5 rounded-2xl border border-line bg-panel px-4 py-3 text-sm text-muted">
+          Recalculating metrics for this scope…
         </div>
       ) : null}
 
@@ -399,9 +397,9 @@ function AnalyticsContent() {
           </div>
           <div className="mt-5 space-y-3">
             {[
-              ["Winning trades", winningTrades.length.toString(), "Positive profit"],
-              ["Losing trades", losingTrades.length.toString(), "Controlled drawdown"],
-              ["Closed trades", closedTrades.length.toString(), "Current review set"],
+              ["Winning trades", String(analyticsSummary?.winningTradeCount ?? 0), "Positive profit"],
+              ["Losing trades", String(analyticsSummary?.losingTradeCount ?? 0), "Negative profit"],
+              ["Closed trades", String(analyticsSummary?.tradeCount ?? 0), "Selected scope and period"],
             ].map(([label, value, note]) => (
               <div key={label} className="rounded-xl border border-line bg-background p-4">
                 <div className="flex items-center justify-between gap-4">

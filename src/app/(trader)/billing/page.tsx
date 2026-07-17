@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Clock } from "lucide-react";
 import {
   DataTable,
   EmptyState,
@@ -11,8 +13,6 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { formatMoney } from "@/lib/utils/format";
-import { Clock } from "lucide-react";
-import { useState } from "react";
 import type { UserBillingSummaryDto } from "@/lib/services/billingService";
 
 const STATUS_TONE: Record<string, "lime" | "accent" | "muted" | "danger"> = {
@@ -76,7 +76,7 @@ export default function BillingPage() {
         items={[
           {
             label: "Platform subscription",
-            value: isLoading ? "…" : (platformSub?.status ?? "None"),
+            value: isLoading ? "..." : (platformSub?.status ?? "None"),
             tone: platformSub?.status === "ACTIVE"
               ? "lime"
               : platformSub?.status === "PENDING_APPROVAL"
@@ -107,7 +107,6 @@ export default function BillingPage() {
       )}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        {/* Platform subscription */}
         <Panel>
           <h2 className="mb-4 text-lg font-semibold text-foreground">Platform Subscription</h2>
           {platformSub.status !== "NONE" ? (
@@ -118,7 +117,7 @@ export default function BillingPage() {
                   {platformSub.status === "ACTIVE"
                     ? "Active"
                     : platformSub.status === "PENDING_APPROVAL"
-                      ? "Payment received — pending admin approval"
+                      ? "Payment verified - activating access"
                       : platformSub.status.replace(/_/g, " ")}
                 </StatusPill>
               </div>
@@ -141,7 +140,6 @@ export default function BillingPage() {
           )}
         </Panel>
 
-        {/* Copy trading entitlements */}
         <Panel>
           <h2 className="mb-4 text-lg font-semibold text-foreground">Copy Trading Entitlements</h2>
           {copyEntitlements.length === 0 ? (
@@ -168,7 +166,7 @@ export default function BillingPage() {
                   </div>
                   <StatusPill tone={STATUS_TONE[e.status] ?? "muted"}>
                     {e.status === "ACTIVE"
-                      ? "Active"
+                      ? "Copy access active"
                       : e.status === "PENDING_APPROVAL"
                         ? "Pending approval"
                         : e.status.replace(/_/g, " ")}
@@ -180,7 +178,6 @@ export default function BillingPage() {
         </Panel>
       </div>
 
-      {/* Bot access */}
       {botAccess.length > 0 && (
         <Panel className="mt-5">
           <h2 className="mb-4 text-lg font-semibold text-foreground">Bot / EA Access</h2>
@@ -195,7 +192,7 @@ export default function BillingPage() {
                   {b.status === "ACTIVE"
                     ? "Access granted"
                     : b.status === "PENDING_APPROVAL"
-                      ? "Pending admin approval"
+                      ? "Activating access"
                       : b.status.replace(/_/g, " ")}
                 </StatusPill>
               </div>
@@ -220,7 +217,6 @@ export default function BillingPage() {
         </Panel>
       )}
 
-      {/* Payment history */}
       <Panel className="mt-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-foreground">Payment history</h2>
@@ -255,7 +251,7 @@ export default function BillingPage() {
                   : h.status === "PENDING"
                     ? "Pending payment"
                     : h.status === "FAILED"
-                      ? "Failed — try again"
+                      ? "Failed - try again"
                       : h.status}
               </StatusPill>,
               <span key="d" className="text-xs text-muted">

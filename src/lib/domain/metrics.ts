@@ -96,6 +96,18 @@ export function buildAnalyticsSummary(
   equityCurve: EquityPoint[],
 ): AnalyticsSummary {
   const closedTradeCount = trades.filter((trade) => trade.status === "CLOSED").length;
+  const winningTrades = trades.filter(
+    (trade) => trade.status === "CLOSED" && trade.profit.amount > 0,
+  );
+  const losingTrades = trades.filter(
+    (trade) => trade.status === "CLOSED" && trade.profit.amount < 0,
+  );
+  const averageWin =
+    winningTrades.reduce((total, trade) => total + trade.profit.amount, 0) /
+    Math.max(winningTrades.length, 1);
+  const averageLoss =
+    Math.abs(losingTrades.reduce((total, trade) => total + trade.profit.amount, 0)) /
+    Math.max(losingTrades.length, 1);
 
   return {
     accountId,
@@ -104,6 +116,11 @@ export function buildAnalyticsSummary(
     maxDrawdownPercent: calculateMaxDrawdown(equityCurve),
     riskRewardRatio: calculateRiskRewardRatio(trades),
     consistencyScore: calculateConsistencyScore(trades),
+    profitFactor: calculateProfitFactor(trades),
+    averageWin: money(averageWin),
+    averageLoss: money(averageLoss),
+    winningTradeCount: winningTrades.length,
+    losingTradeCount: losingTrades.length,
     tradeCount: closedTradeCount,
     period: "ALL_TIME",
   };

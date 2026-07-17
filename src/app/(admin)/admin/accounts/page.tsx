@@ -99,11 +99,15 @@ export default function AdminAccountsPage() {
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to store credentials");
       return json.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["admin-accounts"] });
       setCredOpen(false);
       setCredForm({ platform: "MT5", login: "", password: "", server: "", brokerName: "" });
-      setSuccessMessage("Credentials stored for the selected account.");
+      setSuccessMessage(
+        data.connected
+          ? "Credentials stored and the selected account synced successfully."
+          : data.message ?? "Credentials stored, but the selected account is not connected yet.",
+      );
     },
     onError: (err: Error) => setAccountMessage(err.message),
   });
@@ -445,6 +449,9 @@ export default function AdminAccountsPage() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{account.accountName}</p>
                 <p className="mt-1 truncate text-xs text-muted">{account.brokerName}</p>
+                <p className="mt-1 truncate text-xs text-muted">
+                  {[account.platform, account.serverName].filter(Boolean).join(" · ") || "Details pending"}
+                </p>
               </div>
               <StatusPill tone={STATUS_TONE[account.status] ?? "muted"}>{account.status}</StatusPill>
             </div>
@@ -465,6 +472,9 @@ export default function AdminAccountsPage() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Account preview</p>
                 <h3 className="mt-2 text-lg font-semibold text-foreground">{account.accountName}</h3>
                 <p className="mt-1 text-sm text-muted">{account.brokerName}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {[account.platform, account.serverName].filter(Boolean).join(" · ") || "Details pending"}
+                </p>
               </div>
               <StatusPill tone={STATUS_TONE[account.status] ?? "muted"}>{account.status}</StatusPill>
             </div>

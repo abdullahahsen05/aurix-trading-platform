@@ -138,7 +138,7 @@ export default function CopyTradingPage() {
       >
         <PlatformSubscriptionLocked
           access={platformAccess}
-          description="Copy trading requires an active Aurix platform subscription first. After activation, you can choose a Normal or Ultra Fast copy tier for each trading account."
+          description="Copy trading requires an active WSA Global platform subscription first. After activation, you can choose a Normal or Ultra Fast copy tier for each trading account."
         />
       </WorkspacePage>
     );

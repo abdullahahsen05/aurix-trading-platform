@@ -106,11 +106,11 @@ function CreateProgramDialog({ courses, onCreated }: { courses: AcademyCourseDto
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Name</label>
-                <input className={fieldCls} value={form.name} onChange={set("name")} placeholder="Aurix Funded Trader" required />
+                <input className={fieldCls} value={form.name} onChange={set("name")} placeholder="WSA Global Funded Trader" required />
               </div>
               <div>
                 <label className={labelCls}>Slug</label>
-                <input className={fieldCls} value={form.slug} onChange={set("slug")} placeholder="aurix-funded-trader" required />
+                <input className={fieldCls} value={form.slug} onChange={set("slug")} placeholder="wsa-global-funded-trader" required />
               </div>
             </div>
             <div>

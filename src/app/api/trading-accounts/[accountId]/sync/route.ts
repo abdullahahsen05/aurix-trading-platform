@@ -45,13 +45,13 @@ export async function POST(
       // MetaAPI deploy/connect timed out — still in progress
       return jsonOk({
         accountId: result.accountId,
-        status: "PENDING",
+        status: "SYNCING",
         snapshotStored: false,
         tradesUpserted: 0,
         message:
-          result.error ??
-          "MetaAPI connection still deploying. Check status in a moment.",
-      });
+          result.pendingMessage ??
+          "MetaApi is still deploying or synchronizing. Status checks can continue safely.",
+      }, { status: 202 });
     }
 
     return jsonOk({

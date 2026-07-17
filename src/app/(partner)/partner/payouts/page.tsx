@@ -1,152 +1,102 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import {
-  DataTable,
-  EmptyState,
-  FilterChipRow,
-  InlineStatusStrip,
-  Panel,
-  StatusPill,
-  WorkspacePage,
-} from "@/components/app/WorkspaceUI";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { DataTable, EmptyState, InlineStatusStrip, Panel, PrimaryButton, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
 import { formatMoney } from "@/lib/utils/format";
-import { useState } from "react";
+import type { PartnerWithdrawalBalanceDto, PartnerWithdrawalDto } from "@/lib/partner/withdrawals";
 
-type PayoutRow = {
-  id: string;
-  month: string;
-  totalAmount: number;
-  currency: string;
-  status: string;
-  paidAt: string | null;
-  adminNote: string | null;
+type WithdrawalResponse = { balance: PartnerWithdrawalBalanceDto; withdrawals: PartnerWithdrawalDto[] };
+const TONES: Record<string, "lime" | "accent" | "danger" | "muted"> = {
+  PENDING_REVIEW: "accent", APPROVED: "lime", PAID: "lime", REJECTED: "danger",
 };
 
-type CommissionRow = {
-  id: string;
-  commissionAmount: number;
-  grossAmount: number;
-  currency: string;
-  status: string;
-  payoutMonth: string | null;
-  createdAt: string;
-  traderName: string;
-};
-
-const STATUS_TONE: Record<string, "lime" | "accent" | "muted" | "danger"> = {
-  PAID: "lime",
-  APPROVED: "accent",
-  DRAFT: "muted",
-  PENDING: "accent",
-  CANCELLED: "muted",
-};
+async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const json = await response.json();
+  if (!json.ok) throw new Error(json.error?.message ?? "Request failed");
+  return json.data as T;
+}
 
 export default function PartnerPayoutsPage() {
-  const [commissionFilter, setCommissionFilter] = useState<"ALL" | "PENDING" | "APPROVED" | "PAID">("ALL");
-
-  const { data: payoutsData, isLoading: payoutsLoading } = useQuery<{ payouts: PayoutRow[] }>({
-    queryKey: ["partner-my-payouts"],
-    queryFn: async () => {
-      const res = await fetch("/api/partner/payouts");
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error?.message ?? "Failed");
-      return json.data;
+  const queryClient = useQueryClient();
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const { data, isLoading } = useQuery<WithdrawalResponse>({
+    queryKey: ["partner-withdrawals"],
+    queryFn: () => getJson("/api/partner/withdrawals"),
+  });
+  const createRequest = useMutation({
+    mutationFn: (input: Record<string, unknown>) => getJson("/api/partner/withdrawals", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),
+    }),
+    onSuccess: () => {
+      setError("");
+      setMessage("Withdrawal request submitted for admin review.");
+      void queryClient.invalidateQueries({ queryKey: ["partner-withdrawals"] });
     },
-    staleTime: 60_000,
+    onError: (mutationError: Error) => { setMessage(""); setError(mutationError.message); },
   });
 
-  const { data: commissionsData } = useQuery<{ commissions: CommissionRow[] }>({
-    queryKey: ["partner-my-commissions"],
-    queryFn: async () => {
-      const res = await fetch("/api/partner/commissions");
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error?.message ?? "Failed");
-      return json.data;
-    },
-    staleTime: 60_000,
-  });
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    createRequest.mutate({
+      amount: Number(form.get("amount")), currency: "USD",
+      payoutMethod: form.get("payoutMethod"), payoutReference: form.get("payoutReference"), requestedNote: form.get("requestedNote"),
+    });
+  }
 
-  const payouts = payoutsData?.payouts ?? [];
-  const commissions = commissionsData?.commissions ?? [];
-
-  const filteredCommissions =
-    commissionFilter === "ALL" ? commissions : commissions.filter((c) => c.status === commissionFilter);
-
-  const totalPaid = payouts.filter((p) => p.status === "PAID").reduce((s, p) => s + p.totalAmount, 0);
-  const totalPending = commissions
-    .filter((c) => c.status === "PENDING" || c.status === "APPROVED")
-    .reduce((s, c) => s + c.commissionAmount, 0);
+  const balance = data?.balance;
+  const withdrawals = data?.withdrawals ?? [];
+  const hasActive = withdrawals.some((row) => row.status === "PENDING_REVIEW" || row.status === "APPROVED");
 
   return (
-    <WorkspacePage
-      eyebrow="Partner"
-      title="Payouts"
-      description="Your monthly commission payouts. Payouts are processed manually each month."
-    >
-      <InlineStatusStrip
-        items={[
-          { label: "Total paid out", value: formatMoney({ amount: totalPaid, currency: "USD" }), tone: "lime" },
-          { label: "Pending payout", value: formatMoney({ amount: totalPending, currency: "USD" }), tone: "accent" },
-          { label: "Payout records", value: payouts.length },
-          { label: "Commission records", value: commissions.length },
-        ]}
-      />
+    <WorkspacePage eyebrow="Partner" title="Withdrawals" description="Request payment from approved commission balance and track every review step.">
+      <InlineStatusStrip items={[
+        { label: "Approved commissions", value: balance ? formatMoney({ amount: balance.approved, currency: balance.currency }) : "…", tone: "lime" },
+        { label: "Reserved", value: balance ? formatMoney({ amount: balance.reserved, currency: balance.currency }) : "…", tone: "accent" },
+        { label: "Available", value: balance ? formatMoney({ amount: balance.available, currency: balance.currency }) : "…", tone: "lime" },
+        { label: "Minimum", value: balance ? formatMoney({ amount: balance.minimum, currency: balance.currency }) : "…" },
+      ]} />
 
-      <div className="mt-3 flex items-start gap-2 rounded-2xl border border-line bg-panel px-4 py-3 text-sm text-muted">
-        Payouts are processed monthly by the admin team. Approved commissions are batched and paid each month.
-        You will receive confirmation when a payout is marked as paid.
-      </div>
-
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_1fr]">
-        {/* Payout history */}
+      <div className="mt-5 grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
         <Panel>
-          <h2 className="mb-4 text-lg font-semibold text-foreground">Payout history</h2>
-          {payoutsLoading ? (
-            <p className="text-sm text-muted">Loading…</p>
-          ) : payouts.length === 0 ? (
-            <EmptyState title="No payouts yet" description="Payouts will appear here once processed." />
-          ) : (
-            <DataTable
-              headers={["Month", "Amount", "Status", "Paid on"]}
-              rows={payouts.map((p) => [
-                <span key="m" className="font-mono text-sm">{p.month}</span>,
-                <span key="a">{formatMoney({ amount: p.totalAmount, currency: p.currency })}</span>,
-                <StatusPill key="s" tone={STATUS_TONE[p.status] ?? "muted"}>{p.status}</StatusPill>,
-                <span key="d" className="text-xs text-muted">
-                  {p.paidAt ? new Date(p.paidAt).toLocaleDateString() : "—"}
-                </span>,
-              ])}
-            />
-          )}
+          <h2 className="text-lg font-semibold text-foreground">Request withdrawal</h2>
+          <p className="mt-1 text-sm leading-6 text-muted">Only approved, unreserved commissions are withdrawable. One active request is allowed at a time.</p>
+          {message ? <p className="mt-4 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-accent">{message}</p> : null}
+          {error ? <p className="mt-4 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</p> : null}
+          <form onSubmit={submit} className="mt-5 grid gap-4">
+            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Amount (USD)
+              <input name="amount" type="number" min={balance?.minimum ?? 100} max={balance?.available ?? 0} step="0.01" required defaultValue={balance?.available || ""} disabled={hasActive} className="mt-2 w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground" />
+            </label>
+            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Payout method
+              <input name="payoutMethod" required maxLength={80} placeholder="Bank transfer, USDT, etc." disabled={hasActive} className="mt-2 w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground" />
+            </label>
+            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Payout reference
+              <input name="payoutReference" required maxLength={240} placeholder="Account, wallet, or payment reference" disabled={hasActive} className="mt-2 w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground" />
+            </label>
+            <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Note (optional)
+              <textarea name="requestedNote" maxLength={1000} rows={3} disabled={hasActive} className="mt-2 w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground" />
+            </label>
+            <PrimaryButton type="submit" disabled={createRequest.isPending || hasActive || !balance || balance.available < balance.minimum}>
+              {createRequest.isPending ? "Submitting…" : hasActive ? "Active request in review" : "Submit withdrawal"}
+            </PrimaryButton>
+          </form>
         </Panel>
 
-        {/* Commission ledger */}
         <Panel>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-foreground">Commission ledger</h2>
-            {commissions.length > 0 && (
-              <FilterChipRow
-                chips={(["ALL", "PENDING", "APPROVED", "PAID"] as const).map((s) => ({
-                  label: s === "ALL" ? `All (${commissions.length})` : s,
-                  active: commissionFilter === s,
-                  onClick: () => setCommissionFilter(s),
-                }))}
-              />
-            )}
-          </div>
-          {commissions.length === 0 ? (
-            <EmptyState title="No commissions" description="Commission records appear when referred users make purchases." />
+          <h2 className="mb-4 text-lg font-semibold text-foreground">Request history</h2>
+          {isLoading ? <p className="text-sm text-muted">Loading…</p> : withdrawals.length === 0 ? (
+            <EmptyState title="No withdrawal requests" description="Your submitted requests will appear here." />
           ) : (
-            <DataTable
-              headers={["Trader", "Month", "Commission", "Status"]}
-              rows={filteredCommissions.slice(0, 100).map((c) => [
-                <span key="t" className="text-sm text-foreground">{c.traderName}</span>,
-                <span key="m" className="font-mono text-xs">{c.payoutMonth ?? "—"}</span>,
-                <span key="a">{formatMoney({ amount: c.commissionAmount, currency: c.currency })}</span>,
-                <StatusPill key="s" tone={STATUS_TONE[c.status] ?? "muted"}>{c.status}</StatusPill>,
-              ])}
-            />
+            <DataTable headers={["Requested", "Amount", "Method", "Status", "Review"]} rows={withdrawals.map((row) => [
+              <span key="d" className="text-xs text-muted">{new Date(row.createdAt).toLocaleDateString()}</span>,
+              <span key="a">{formatMoney({ amount: row.amount, currency: row.currency })}</span>,
+              <span key="m" className="text-sm text-foreground">{row.payoutMethod}</span>,
+              <StatusPill key="s" tone={TONES[row.status] ?? "muted"}>{row.status.replaceAll("_", " ")}</StatusPill>,
+              <span key="r" className="max-w-[220px] text-xs text-muted">{row.rejectionReason ?? row.adminNote ?? (row.paidAt ? `Paid ${new Date(row.paidAt).toLocaleDateString()}` : "-")}</span>,
+            ])} />
           )}
         </Panel>
       </div>

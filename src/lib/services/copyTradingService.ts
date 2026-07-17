@@ -9,6 +9,8 @@ import {
   CopyError,
   type CopyFollowerDto,
   type CopyGlobalSettingsDto,
+  type CopyAccountRuleDto,
+  type CopyRuleEventDto,
   type CopyLogDto,
   type CopyStrategyDto,
   type MasterEventDto,
@@ -28,24 +30,38 @@ export async function getCopyGlobalSettings(): Promise<CopyGlobalSettingsDto> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("copy_global_settings")
-    .select("live_copy_enabled, emergency_stop_enabled, updated_at")
+    .select("copy_enabled, live_copy_enabled, emergency_stop_enabled, max_daily_loss_percent, max_drawdown_percent, max_copied_open_positions, max_lot_size, max_slippage_points, pause_on_disconnect, updated_at")
     .eq("id", true)
     .maybeSingle();
   return {
+    copyEnabled: data?.copy_enabled ?? true,
     liveCopyEnabled: data?.live_copy_enabled ?? false,
     emergencyStopEnabled: data?.emergency_stop_enabled ?? false,
+    maxDailyLossPercent: data?.max_daily_loss_percent == null ? null : Number(data.max_daily_loss_percent),
+    maxDrawdownPercent: data?.max_drawdown_percent == null ? null : Number(data.max_drawdown_percent),
+    maxCopiedOpenPositions: data?.max_copied_open_positions ?? null,
+    maxLotSize: data?.max_lot_size == null ? null : Number(data.max_lot_size),
+    maxSlippagePoints: data?.max_slippage_points == null ? null : Number(data.max_slippage_points),
+    pauseOnDisconnect: data?.pause_on_disconnect ?? true,
     updatedAt: data?.updated_at ?? new Date(0).toISOString(),
   };
 }
 
 export async function updateCopyGlobalSettings(
-  patch: { liveCopyEnabled?: boolean; emergencyStopEnabled?: boolean },
+  patch: Partial<Omit<CopyGlobalSettingsDto, "updatedAt">>,
   actorUserId: string,
 ): Promise<CopyGlobalSettingsDto> {
   const supabase = createAdminClient();
   const row: Record<string, unknown> = { id: true, updated_by: actorUserId };
   if (patch.liveCopyEnabled !== undefined) row.live_copy_enabled = patch.liveCopyEnabled;
   if (patch.emergencyStopEnabled !== undefined) row.emergency_stop_enabled = patch.emergencyStopEnabled;
+  if (patch.copyEnabled !== undefined) row.copy_enabled = patch.copyEnabled;
+  if (patch.maxDailyLossPercent !== undefined) row.max_daily_loss_percent = patch.maxDailyLossPercent;
+  if (patch.maxDrawdownPercent !== undefined) row.max_drawdown_percent = patch.maxDrawdownPercent;
+  if (patch.maxCopiedOpenPositions !== undefined) row.max_copied_open_positions = patch.maxCopiedOpenPositions;
+  if (patch.maxLotSize !== undefined) row.max_lot_size = patch.maxLotSize;
+  if (patch.maxSlippagePoints !== undefined) row.max_slippage_points = patch.maxSlippagePoints;
+  if (patch.pauseOnDisconnect !== undefined) row.pause_on_disconnect = patch.pauseOnDisconnect;
 
   const { error } = await supabase.from("copy_global_settings").upsert(row, { onConflict: "id" });
   if (error) throw new Error(`Failed to update copy settings: ${error.message}`);
@@ -58,6 +74,118 @@ export async function updateCopyGlobalSettings(
     metadata: { ...patch },
   });
   return getCopyGlobalSettings();
+}
+
+function mapAccountRule(row: {
+  trading_account_id: string;
+  copy_enabled: boolean;
+  max_daily_loss_percent: number | string | null;
+  max_drawdown_percent: number | string | null;
+  max_copied_lots: number | string | null;
+  max_open_copied_positions: number | null;
+  stop_after_losses: number | null;
+  symbol_allowlist: string[] | null;
+  symbol_blocklist: string[] | null;
+  paused_at: string | null;
+  updated_at: string;
+  trading_accounts?: { account_name?: string } | null;
+}): CopyAccountRuleDto {
+  return {
+    tradingAccountId: row.trading_account_id,
+    accountName: row.trading_accounts?.account_name ?? null,
+    copyEnabled: row.copy_enabled,
+    maxDailyLossPercent: row.max_daily_loss_percent == null ? null : Number(row.max_daily_loss_percent),
+    maxDrawdownPercent: row.max_drawdown_percent == null ? null : Number(row.max_drawdown_percent),
+    maxCopiedLots: row.max_copied_lots == null ? null : Number(row.max_copied_lots),
+    maxOpenCopiedPositions: row.max_open_copied_positions,
+    stopAfterLosses: row.stop_after_losses,
+    symbolAllowlist: row.symbol_allowlist,
+    symbolBlocklist: row.symbol_blocklist,
+    pausedAt: row.paused_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function getCopyAccountRule(accountId: string): Promise<CopyAccountRuleDto> {
+  const supabase = createAdminClient();
+  const [{ data: rule }, { data: account }] = await Promise.all([
+    supabase
+      .from("copy_account_rules")
+      .select("trading_account_id, copy_enabled, max_daily_loss_percent, max_drawdown_percent, max_copied_lots, max_open_copied_positions, stop_after_losses, symbol_allowlist, symbol_blocklist, paused_at, updated_at, trading_accounts(account_name)")
+      .eq("trading_account_id", accountId)
+      .maybeSingle(),
+    supabase.from("trading_accounts").select("id, account_name").eq("id", accountId).maybeSingle(),
+  ]);
+  if (!account) throw new CopyError(COPY_ERROR.FOLLOWER_NOT_FOUND, "Trading account not found", 404);
+  if (rule) return mapAccountRule(rule as Parameters<typeof mapAccountRule>[0]);
+  return {
+    tradingAccountId: accountId,
+    accountName: account.account_name,
+    copyEnabled: true,
+    maxDailyLossPercent: null,
+    maxDrawdownPercent: null,
+    maxCopiedLots: null,
+    maxOpenCopiedPositions: null,
+    stopAfterLosses: null,
+    symbolAllowlist: null,
+    symbolBlocklist: null,
+    pausedAt: null,
+    updatedAt: new Date(0).toISOString(),
+  };
+}
+
+export async function upsertCopyAccountRule(
+  accountId: string,
+  input: Omit<CopyAccountRuleDto, "tradingAccountId" | "accountName" | "pausedAt" | "updatedAt">,
+  actorUserId: string,
+): Promise<CopyAccountRuleDto> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("copy_account_rules").upsert(
+    {
+      trading_account_id: accountId,
+      copy_enabled: input.copyEnabled,
+      max_daily_loss_percent: input.maxDailyLossPercent,
+      max_drawdown_percent: input.maxDrawdownPercent,
+      max_copied_lots: input.maxCopiedLots,
+      max_open_copied_positions: input.maxOpenCopiedPositions,
+      stop_after_losses: input.stopAfterLosses,
+      symbol_allowlist: input.symbolAllowlist,
+      symbol_blocklist: input.symbolBlocklist,
+      paused_at: input.copyEnabled ? null : new Date().toISOString(),
+      updated_by: actorUserId,
+    },
+    { onConflict: "trading_account_id" },
+  );
+  if (error) throw new Error(`Failed to save copy account rules: ${error.message}`);
+  await writeAuditLog({
+    actorUserId,
+    action: "COPY_ACCOUNT_RULES_CHANGED",
+    entityType: "trading_account",
+    entityId: accountId,
+    metadata: { ...input },
+  });
+  return getCopyAccountRule(accountId);
+}
+
+export async function listCopyRuleEvents(limit = 50): Promise<CopyRuleEventDto[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("copy_rule_events")
+    .select("id, scope, rule_code, reason, trading_account_id, strategy_id, master_event_id, mode, created_at")
+    .order("created_at", { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 200));
+  if (error) throw new Error(`Failed to load copy rule events: ${error.message}`);
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    scope: row.scope as "GLOBAL" | "ACCOUNT",
+    ruleCode: row.rule_code,
+    reason: row.reason,
+    tradingAccountId: row.trading_account_id,
+    strategyId: row.strategy_id,
+    masterEventId: row.master_event_id,
+    mode: row.mode as "SIMULATION" | "LIVE",
+    createdAt: row.created_at,
+  }));
 }
 
 // ── Strategies ───────────────────────────────────────────────────────────────
@@ -381,17 +509,22 @@ export async function listMasterEvents(strategyId: string): Promise<MasterEventD
 interface SnapshotLite {
   equity: number;
   balance: number;
+  drawdownPercent: number;
 }
 
 async function getSnapshot(accountId: string): Promise<SnapshotLite | null> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("latest_account_snapshots")
-    .select("equity, balance")
+    .select("equity, balance, drawdown_percent")
     .eq("trading_account_id", accountId)
     .maybeSingle();
   if (!data) return null;
-  return { equity: Number(data.equity), balance: Number(data.balance) };
+  return {
+    equity: Number(data.equity),
+    balance: Number(data.balance),
+    drawdownPercent: Number(data.drawdown_percent ?? 0),
+  };
 }
 
 interface FollowerRow {
@@ -427,6 +560,120 @@ async function loadActiveFollowers(strategyId: string): Promise<FollowerRow[]> {
   return rows.sort((a, b) => (a.tier === b.tier ? 0 : a.tier === "PREMIUM" ? -1 : 1));
 }
 
+type AccountRuleRuntime = Awaited<ReturnType<typeof getCopyAccountRule>>;
+
+async function loadAccountRuleMap(accountIds: string[]): Promise<Map<string, AccountRuleRuntime>> {
+  if (accountIds.length === 0) return new Map();
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("copy_account_rules")
+    .select("trading_account_id, copy_enabled, max_daily_loss_percent, max_drawdown_percent, max_copied_lots, max_open_copied_positions, stop_after_losses, symbol_allowlist, symbol_blocklist, paused_at, updated_at")
+    .in("trading_account_id", accountIds);
+  return new Map(
+    (data ?? []).map((row) => [
+      row.trading_account_id as string,
+      mapAccountRule(row as Parameters<typeof mapAccountRule>[0]),
+    ]),
+  );
+}
+
+interface AccountRiskRuntime {
+  currentDailyLossPercent: number;
+  currentDrawdownPercent: number;
+  openCopiedTrades: number;
+  consecutiveLosses: number;
+}
+
+async function loadAccountRiskRuntime(accountId: string, mode: "SIMULATION" | "LIVE"): Promise<AccountRiskRuntime> {
+  const supabase = createAdminClient();
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const [snapshot, tradesResult, logsResult] = await Promise.all([
+    getSnapshot(accountId),
+    supabase
+      .from("trades")
+      .select("profit, closed_at")
+      .eq("trading_account_id", accountId)
+      .eq("status", "CLOSED")
+      .order("closed_at", { ascending: false })
+      .limit(1000),
+    supabase
+      .from("copy_execution_logs")
+      .select("action")
+      .eq("follower_account_id", accountId)
+      .eq("mode", mode)
+      .eq("status", "SUCCESS")
+      .in("action", ["OPEN", "CLOSE"])
+      .limit(10_000),
+  ]);
+  const trades = tradesResult.data ?? [];
+  const dailyLoss = Math.abs(
+    trades
+      .filter((trade) => trade.closed_at && trade.closed_at >= today.toISOString())
+      .reduce((sum, trade) => sum + Math.min(0, Number(trade.profit)), 0),
+  );
+  let consecutiveLosses = 0;
+  for (const trade of trades) {
+    if (Number(trade.profit) >= 0) break;
+    consecutiveLosses++;
+  }
+  const opens = (logsResult.data ?? []).filter((log) => log.action === "OPEN").length;
+  const closes = (logsResult.data ?? []).filter((log) => log.action === "CLOSE").length;
+  return {
+    currentDailyLossPercent:
+      snapshot && snapshot.balance > 0 ? (dailyLoss / snapshot.balance) * 100 : 0,
+    currentDrawdownPercent: snapshot?.drawdownPercent ?? 0,
+    openCopiedTrades: Math.max(0, opens - closes),
+    consecutiveLosses,
+  };
+}
+
+function lowestRuntimeLimit(...values: Array<number | null | undefined>): number | null {
+  const numbers = values.filter((value): value is number => typeof value === "number");
+  return numbers.length > 0 ? Math.min(...numbers) : null;
+}
+
+function buildRuleEvent(params: {
+  eligibility: ReturnType<typeof evaluateFollowerEligibility>;
+  accountId: string;
+  strategyId: string;
+  masterEventId: string;
+  followerId: string;
+  mode: "SIMULATION" | "LIVE";
+}): Record<string, unknown> | null {
+  if (params.eligibility.eligible || !params.eligibility.ruleCode || !params.eligibility.reason) return null;
+  return {
+    scope: params.eligibility.scope ?? "ACCOUNT",
+    rule_code: params.eligibility.ruleCode,
+    reason: params.eligibility.reason,
+    trading_account_id: params.accountId,
+    strategy_id: params.strategyId,
+    master_event_id: params.masterEventId,
+    follower_id: params.followerId,
+    mode: params.mode,
+    details: { source: "copy_preflight" },
+  };
+}
+
+async function writeGlobalRuleEvent(params: {
+  ruleCode: string;
+  reason: string;
+  strategyId: string;
+  masterEventId: string;
+  mode: "SIMULATION" | "LIVE";
+}): Promise<void> {
+  const supabase = createAdminClient();
+  await supabase.from("copy_rule_events").insert({
+    scope: "GLOBAL",
+    rule_code: params.ruleCode,
+    reason: params.reason,
+    strategy_id: params.strategyId,
+    master_event_id: params.masterEventId,
+    mode: params.mode,
+    details: { source: "copy_preflight" },
+  });
+}
+
 interface SimResult {
   simulated: number;
   success: number;
@@ -441,7 +688,7 @@ async function simulateOneEvent(eventRow: {
   symbol: string;
   side: string | null;
   volume: number | string | null;
-}, strategy: StrategyRow, emergencyStop: boolean): Promise<SimResult> {
+}, strategy: StrategyRow, settings: CopyGlobalSettingsDto): Promise<SimResult> {
   const supabase = createAdminClient();
   const followers = await loadActiveFollowers(strategy.id);
   const result: SimResult = { simulated: 0, success: 0, skipped: 0, failed: 0 };
@@ -452,6 +699,7 @@ async function simulateOneEvent(eventRow: {
 
   // Follower account statuses + snapshots.
   const accountIds = followers.map((f) => f.follower_account_id);
+  const accountRules = await loadAccountRuleMap(accountIds);
   const { data: accountRows } = await supabase
     .from("trading_accounts")
     .select("id, status")
@@ -459,21 +707,42 @@ async function simulateOneEvent(eventRow: {
   const statusByAccount = new Map((accountRows ?? []).map((a) => [a.id, a.status as string]));
 
   const logs: Record<string, unknown>[] = [];
+  const ruleEvents: Record<string, unknown>[] = [];
 
   for (const f of followers) {
     const accountStatus = statusByAccount.get(f.follower_account_id) ?? "DISCONNECTED";
     const followerSnap = await getSnapshot(f.follower_account_id);
+    const accountRule = accountRules.get(f.follower_account_id);
+    const risk = await loadAccountRiskRuntime(f.follower_account_id, "SIMULATION");
 
     const elig = evaluateFollowerEligibility({
-      globalEmergencyStop: emergencyStop,
+      globalEmergencyStop: settings.emergencyStopEnabled,
+      globalCopyEnabled: settings.copyEnabled,
+      accountCopyEnabled: accountRule?.copyEnabled,
+      pauseOnDisconnect: settings.pauseOnDisconnect,
       followerStatus: f.status,
       consentAccepted: Boolean(f.consent_accepted_at),
       accountStatus,
       symbol: eventRow.symbol,
-      symbolAllowlist: f.symbol_allowlist ?? strategy.symbol_allowlist,
-      symbolBlocklist: f.symbol_blocklist ?? strategy.symbol_blocklist,
-      maxOpenTrades: f.max_open_trades,
-      maxDrawdownPercent: f.max_drawdown_percent === null ? null : Number(f.max_drawdown_percent),
+      symbolAllowlist: accountRule?.symbolAllowlist ?? f.symbol_allowlist ?? strategy.symbol_allowlist,
+      symbolBlocklist: accountRule?.symbolBlocklist ?? f.symbol_blocklist ?? strategy.symbol_blocklist,
+      openCopiedTrades: risk.openCopiedTrades,
+      maxOpenTrades: lowestRuntimeLimit(f.max_open_trades, accountRule?.maxOpenCopiedPositions),
+      globalMaxOpenTrades: settings.maxCopiedOpenPositions,
+      currentDailyLossPercent: risk.currentDailyLossPercent,
+      maxDailyLossPercent: lowestRuntimeLimit(
+        f.max_daily_loss_percent === null ? null : Number(f.max_daily_loss_percent),
+        accountRule?.maxDailyLossPercent,
+      ),
+      globalMaxDailyLossPercent: settings.maxDailyLossPercent,
+      currentDrawdownPercent: risk.currentDrawdownPercent,
+      maxDrawdownPercent: lowestRuntimeLimit(
+        f.max_drawdown_percent === null ? null : Number(f.max_drawdown_percent),
+        accountRule?.maxDrawdownPercent,
+      ),
+      globalMaxDrawdownPercent: settings.maxDrawdownPercent,
+      consecutiveLosses: risk.consecutiveLosses,
+      stopAfterLosses: accountRule?.stopAfterLosses,
     });
 
     const baseLog = {
@@ -488,6 +757,8 @@ async function simulateOneEvent(eventRow: {
 
     if (!elig.eligible) {
       logs.push({ ...baseLog, action: "SKIPPED", status: "SKIPPED", error_code: COPY_ERROR.FOLLOWER_NOT_ELIGIBLE, error_message: elig.reason });
+      const ruleEvent = buildRuleEvent({ eligibility: elig, accountId: f.follower_account_id, strategyId: strategy.id, masterEventId: eventRow.id, followerId: f.id, mode: "SIMULATION" });
+      if (ruleEvent) ruleEvents.push(ruleEvent);
       result.skipped++;
       continue;
     }
@@ -510,6 +781,28 @@ async function simulateOneEvent(eventRow: {
       continue;
     }
 
+    const lotEligibility = evaluateFollowerEligibility({
+      globalEmergencyStop: settings.emergencyStopEnabled,
+      globalCopyEnabled: settings.copyEnabled,
+      accountCopyEnabled: accountRule?.copyEnabled,
+      followerStatus: f.status,
+      consentAccepted: Boolean(f.consent_accepted_at),
+      accountStatus,
+      symbol: eventRow.symbol,
+      proposedLot: lot.lot,
+      maxLot: accountRule?.maxCopiedLots,
+      globalMaxLot: settings.maxLotSize,
+      slippagePoints: 0,
+      maxSlippagePoints: settings.maxSlippagePoints,
+    });
+    if (!lotEligibility.eligible) {
+      logs.push({ ...baseLog, action: "SKIPPED", status: "SKIPPED", error_code: COPY_ERROR.COPY_RISK_BLOCKED, error_message: lotEligibility.reason, calculated_lot: lot.lot });
+      const ruleEvent = buildRuleEvent({ eligibility: lotEligibility, accountId: f.follower_account_id, strategyId: strategy.id, masterEventId: eventRow.id, followerId: f.id, mode: "SIMULATION" });
+      if (ruleEvent) ruleEvents.push(ruleEvent);
+      result.skipped++;
+      continue;
+    }
+
     logs.push({ ...baseLog, action: eventRow.event_type, status: "SUCCESS", calculated_lot: lot.lot });
     result.success++;
   }
@@ -518,6 +811,9 @@ async function simulateOneEvent(eventRow: {
   if (logs.length > 0) {
     const { error } = await supabase.from("copy_execution_logs").insert(logs);
     if (error) throw new Error(`Failed to write simulation logs: ${error.message}`);
+  }
+  if (ruleEvents.length > 0) {
+    await supabase.from("copy_rule_events").insert(ruleEvents);
   }
   return result;
 }
@@ -533,7 +829,7 @@ export async function simulateCopyForEvent(eventId: string, actorUserId: string 
 
   const strategy = await getStrategyRow(ev.strategy_id);
   const settings = await getCopyGlobalSettings();
-  const result = await simulateOneEvent(ev as Parameters<typeof simulateOneEvent>[0], strategy, settings.emergencyStopEnabled);
+  const result = await simulateOneEvent(ev as Parameters<typeof simulateOneEvent>[0], strategy, settings);
 
   await writeAuditLog({
     actorUserId,
@@ -569,7 +865,7 @@ export async function simulateStrategy(strategyId: string, actorUserId: string |
   const total: SimResult = { simulated: 0, success: 0, skipped: 0, failed: 0 };
   for (const ev of events ?? []) {
     if (simmedSet.has(ev.id)) continue;
-    const r = await simulateOneEvent(ev as Parameters<typeof simulateOneEvent>[0], strategy, settings.emergencyStopEnabled);
+    const r = await simulateOneEvent(ev as Parameters<typeof simulateOneEvent>[0], strategy, settings);
     total.simulated += r.simulated;
     total.success += r.success;
     total.skipped += r.skipped;
@@ -660,7 +956,25 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
   const settings = await getCopyGlobalSettings();
 
   // Safety gates — every one must pass before any broker call is even attempted.
+  if (!settings.copyEnabled) {
+    const reason = "Global copy is paused - live copy blocked.";
+    await writeGlobalRuleEvent({
+      ruleCode: "GLOBAL_COPY_PAUSED",
+      reason,
+      strategyId: strategy.id,
+      masterEventId: ev.id,
+      mode: "LIVE",
+    });
+    throw new CopyError(COPY_ERROR.COPY_RISK_BLOCKED, reason, 423);
+  }
   if (settings.emergencyStopEnabled) {
+    await writeGlobalRuleEvent({
+      ruleCode: "EMERGENCY_STOP",
+      reason: "Emergency stop is enabled - live copy blocked.",
+      strategyId: strategy.id,
+      masterEventId: ev.id,
+      mode: "LIVE",
+    });
     throw new CopyError(COPY_ERROR.COPY_EMERGENCY_STOP, "Emergency stop is enabled — live copy blocked.", 423);
   }
   if (!settings.liveCopyEnabled) {
@@ -708,6 +1022,7 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
   const masterLot = ev.volume === null ? 0 : Number(ev.volume);
 
   const accountIds = followers.map((f) => f.follower_account_id);
+  const accountRules = await loadAccountRuleMap(accountIds);
   const { data: accountRows } = await supabase
     .from("trading_accounts")
     .select("id, status")
@@ -741,19 +1056,41 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
     }
 
     const accountStatus = statusByAccount.get(f.follower_account_id) ?? "DISCONNECTED";
+    const accountRule = accountRules.get(f.follower_account_id);
+    const risk = await loadAccountRiskRuntime(f.follower_account_id, "LIVE");
     const elig = evaluateFollowerEligibility({
       globalEmergencyStop: settings.emergencyStopEnabled,
+      globalCopyEnabled: settings.copyEnabled,
+      accountCopyEnabled: accountRule?.copyEnabled,
+      pauseOnDisconnect: settings.pauseOnDisconnect,
       followerStatus: f.status,
       consentAccepted: Boolean(f.consent_accepted_at),
       accountStatus,
       symbol: ev.symbol,
-      symbolAllowlist: f.symbol_allowlist ?? strategy.symbol_allowlist,
-      symbolBlocklist: f.symbol_blocklist ?? strategy.symbol_blocklist,
-      maxOpenTrades: f.max_open_trades,
-      maxDrawdownPercent: f.max_drawdown_percent === null ? null : Number(f.max_drawdown_percent),
+      symbolAllowlist: accountRule?.symbolAllowlist ?? f.symbol_allowlist ?? strategy.symbol_allowlist,
+      symbolBlocklist: accountRule?.symbolBlocklist ?? f.symbol_blocklist ?? strategy.symbol_blocklist,
+      openCopiedTrades: risk.openCopiedTrades,
+      maxOpenTrades: lowestRuntimeLimit(f.max_open_trades, accountRule?.maxOpenCopiedPositions),
+      globalMaxOpenTrades: settings.maxCopiedOpenPositions,
+      currentDailyLossPercent: risk.currentDailyLossPercent,
+      maxDailyLossPercent: lowestRuntimeLimit(
+        f.max_daily_loss_percent === null ? null : Number(f.max_daily_loss_percent),
+        accountRule?.maxDailyLossPercent,
+      ),
+      globalMaxDailyLossPercent: settings.maxDailyLossPercent,
+      currentDrawdownPercent: risk.currentDrawdownPercent,
+      maxDrawdownPercent: lowestRuntimeLimit(
+        f.max_drawdown_percent === null ? null : Number(f.max_drawdown_percent),
+        accountRule?.maxDrawdownPercent,
+      ),
+      globalMaxDrawdownPercent: settings.maxDrawdownPercent,
+      consecutiveLosses: risk.consecutiveLosses,
+      stopAfterLosses: accountRule?.stopAfterLosses,
     });
     if (!elig.eligible) {
       await supabase.from("copy_execution_logs").insert({ ...baseLog, action: "SKIPPED", status: "SKIPPED", error_code: COPY_ERROR.FOLLOWER_NOT_ELIGIBLE, error_message: elig.reason });
+      const ruleEvent = buildRuleEvent({ eligibility: elig, accountId: f.follower_account_id, strategyId: strategy.id, masterEventId: ev.id, followerId: f.id, mode: "LIVE" });
+      if (ruleEvent) await supabase.from("copy_rule_events").insert(ruleEvent);
       summary.skipped++;
       continue;
     }
@@ -772,6 +1109,29 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
     });
     if (lot.lot <= 0) {
       await supabase.from("copy_execution_logs").insert({ ...baseLog, action: "SKIPPED", status: "SKIPPED", error_code: COPY_ERROR.COPY_INVALID_LOT, error_message: lot.reason, calculated_lot: 0 });
+      summary.skipped++;
+      continue;
+    }
+
+    const lotEligibility = evaluateFollowerEligibility({
+      globalEmergencyStop: settings.emergencyStopEnabled,
+      globalCopyEnabled: settings.copyEnabled,
+      accountCopyEnabled: accountRule?.copyEnabled,
+      followerStatus: f.status,
+      consentAccepted: Boolean(f.consent_accepted_at),
+      accountStatus,
+      symbol: ev.symbol,
+      proposedLot: lot.lot,
+      maxLot: accountRule?.maxCopiedLots,
+      globalMaxLot: settings.maxLotSize,
+      slippagePoints: null,
+      maxSlippagePoints: settings.maxSlippagePoints,
+      enforceSlippageAvailability: true,
+    });
+    if (!lotEligibility.eligible) {
+      await supabase.from("copy_execution_logs").insert({ ...baseLog, action: "SKIPPED", status: "SKIPPED", error_code: COPY_ERROR.COPY_RISK_BLOCKED, error_message: lotEligibility.reason, calculated_lot: lot.lot });
+      const ruleEvent = buildRuleEvent({ eligibility: lotEligibility, accountId: f.follower_account_id, strategyId: strategy.id, masterEventId: ev.id, followerId: f.id, mode: "LIVE" });
+      if (ruleEvent) await supabase.from("copy_rule_events").insert(ruleEvent);
       summary.skipped++;
       continue;
     }

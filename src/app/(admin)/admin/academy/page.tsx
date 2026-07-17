@@ -22,6 +22,7 @@ import type {
   AcademyModuleDto,
   AcademyLessonDto,
   AcademyWebinarDto,
+  AcademyProgressSummaryDto,
 } from "@/lib/domain/types";
 
 async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
@@ -42,7 +43,7 @@ type Analytics = {
   upcomingWebinars: number;
 };
 
-type Tab = "courses" | "lessons" | "webinars";
+type Tab = "courses" | "lessons" | "webinars" | "progress";
 
 const STATUS_TONE: Record<string, "lime" | "accent" | "muted"> = {
   PUBLISHED: "lime",
@@ -433,6 +434,11 @@ export default function AdminAcademyPage() {
     queryFn: () => apiFetch("/api/admin/academy/webinars"),
   });
 
+  const { data: progress = [], isLoading: progressLoading } = useQuery<AcademyProgressSummaryDto[]>({
+    queryKey: ["admin-academy-progress"],
+    queryFn: () => apiFetch("/api/admin/academy/progress"),
+  });
+
   // Selected course for lesson view
   const [selectedCourseId, setSelectedCourseId] = useState<string>("");
 
@@ -447,6 +453,7 @@ export default function AdminAcademyPage() {
     qc.invalidateQueries({ queryKey: ["admin-academy-analytics"] });
     qc.invalidateQueries({ queryKey: ["admin-academy-lessons", selectedCourseId] });
     qc.invalidateQueries({ queryKey: ["admin-academy-webinars"] });
+    qc.invalidateQueries({ queryKey: ["admin-academy-progress"] });
   };
 
   return (
@@ -475,6 +482,7 @@ export default function AdminAcademyPage() {
           { label: "Courses", active: tab === "courses", onClick: () => setTab("courses") },
           { label: "Lessons", active: tab === "lessons", onClick: () => setTab("lessons") },
           { label: "Webinars", active: tab === "webinars", onClick: () => setTab("webinars") },
+          { label: "Trader progress", active: tab === "progress", onClick: () => setTab("progress") },
         ]}
       />
 
@@ -548,6 +556,36 @@ export default function AdminAcademyPage() {
                 new Date(w.startTime).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }),
                 <StatusPill key="st" tone={w.status === "LIVE" ? "lime" : w.status === "SCHEDULED" ? "accent" : w.status === "CANCELLED" ? "danger" : "muted"}>{w.status}</StatusPill>,
                 w.joinUrl ? <a key="j" href={w.joinUrl} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline truncate block max-w-[160px]">Open link</a> : "—",
+              ])}
+            />
+          )
+        )}
+
+        {tab === "progress" && (
+          progressLoading ? (
+            <div className="h-32 animate-pulse rounded-2xl bg-panel" />
+          ) : progress.length === 0 ? (
+            <EmptyState title="No learner activity yet" description="Trader course progress will appear after a lesson is started." icon={BookOpenCheck} />
+          ) : (
+            <DataTable
+              headers={["Trader", "Course", "Completion", "Status", "Last activity"]}
+              rows={progress.map((row) => [
+                <div key="trader">
+                  <p className="font-semibold text-foreground">{row.traderName ?? "Unnamed trader"}</p>
+                  <p className="text-xs text-muted">{row.traderEmail ?? "No email"}</p>
+                </div>,
+                <span key="course" className="font-semibold text-foreground">{row.courseTitle}</span>,
+                <div key="completion" className="min-w-36">
+                  <div className="flex justify-between gap-3 text-xs text-muted">
+                    <span>{row.completedLessons}/{row.totalLessons} lessons</span>
+                    <span>{row.completionPercent}%</span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-strong">
+                    <div className="h-full rounded-full bg-accent" style={{ width: `${row.completionPercent}%` }} />
+                  </div>
+                </div>,
+                <StatusPill key="label" tone={row.label === "EXCELLENT" ? "lime" : row.label === "GOOD" ? "accent" : "danger"}>{row.label}</StatusPill>,
+                <span key="activity">{row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString() : "Not started"}</span>,
               ])}
             />
           )

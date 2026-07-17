@@ -1,20 +1,12 @@
 import { jsonFail, jsonOk } from "@/lib/api/envelope";
 import { requireAuth, assertCanAccessAccount, AuthError } from "@/lib/auth/session";
 import {
-  storeBrokerCredentials,
   BrokerCredentialError,
 } from "@/lib/services/brokerCredentialService";
+import { connectBrokerAccount } from "@/lib/services/brokerConnectionService";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/services/auditService";
-import { z } from "zod";
-
-const storeSchema = z.object({
-  platform: z.enum(["MT5", "MT4"]).default("MT5"),
-  login: z.string().min(1, "Login is required").max(50).trim(),
-  password: z.string().min(1, "Password is required").max(200).trim(),
-  server: z.string().min(1, "Server is required").max(100).trim(),
-  brokerName: z.string().max(100).trim().optional(),
-});
+import { brokerConnectionSchema } from "@/lib/validation/schemas";
 
 // GET — safe credential status (never returns password or encrypted payload)
 export async function GET(
@@ -41,7 +33,7 @@ export async function GET(
         .maybeSingle(),
       supabase
         .from("trading_accounts")
-        .select("provider_account_id, last_synced_at, sync_error, status")
+        .select("provider_account_id, last_synced_at, sync_error, status, broker_name, broker_server, broker_platform")
         .eq("id", accountId)
         .maybeSingle(),
     ]);
@@ -54,6 +46,9 @@ export async function GET(
       lastSyncedAt: accountRow.data?.last_synced_at ?? null,
       syncError: accountRow.data?.sync_error ?? null,
       status: accountRow.data?.status ?? null,
+      brokerName: accountRow.data?.broker_name ?? "WSA GLOBAL",
+      serverName: accountRow.data?.broker_server ?? null,
+      platform: accountRow.data?.broker_platform ?? null,
     });
   } catch (err) {
     if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);
@@ -77,7 +72,7 @@ export async function POST(
     await assertCanAccessAccount(accountId);
 
     const body = await req.json().catch(() => null);
-    const parsed = storeSchema.safeParse(body);
+    const parsed = brokerConnectionSchema.safeParse(body);
     if (!parsed.success) {
       return jsonFail(
         "VALIDATION_ERROR",
@@ -86,25 +81,21 @@ export async function POST(
       );
     }
 
-    const { platform, login, password, server, brokerName } = parsed.data;
+    const { platform, login, password, server, brokerName, connectNow } = parsed.data;
 
-    await storeBrokerCredentials(accountId, {
-      login,
-      password,
-      server,
-      platform: platform.toLowerCase() as "mt4" | "mt5",
-      provider: process.env.BROKER_PROVIDER ?? "metaapi",
-      brokerName,
+    const result = await connectBrokerAccount({
+      accountId,
+      actorUserId: user.id,
+      connectNow,
+      credentials: {
+        login,
+        password,
+        server,
+        platform: platform.toLowerCase() as "mt4" | "mt5",
+        provider: process.env.BROKER_PROVIDER ?? "metaapi",
+        brokerName,
+      },
     });
-
-    // Update broker_name on trading_accounts if provided
-    if (brokerName) {
-      const supabase = createAdminClient();
-      await supabase
-        .from("trading_accounts")
-        .update({ broker_name: brokerName })
-        .eq("id", accountId);
-    }
 
     void writeAuditLog({
       actorUserId: user.id,
@@ -115,12 +106,7 @@ export async function POST(
       metadata: { platform, server: "[stored]" },
     });
 
-    return jsonOk({
-      accountId,
-      credentialsStored: true,
-      platform,
-      server,
-    });
+    return jsonOk(result);
   } catch (err) {
     if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);
     if (err instanceof BrokerCredentialError) return jsonFail(err.code, err.message, err.statusCode);

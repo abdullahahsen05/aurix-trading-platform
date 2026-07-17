@@ -77,7 +77,7 @@ export default function RiskPage() {
       >
         <PlatformSubscriptionLocked
           access={access}
-          description="Activate the Aurix platform subscription to unlock risk rules, event history, and account risk monitoring."
+          description="Activate the WSA Global platform subscription to unlock risk rules, event history, and account risk monitoring."
         />
       </WorkspacePage>
     );

@@ -117,7 +117,41 @@ export interface CopyLogDto {
 }
 
 export interface CopyGlobalSettingsDto {
+  copyEnabled: boolean;
   liveCopyEnabled: boolean;
   emergencyStopEnabled: boolean;
+  maxDailyLossPercent: number | null;
+  maxDrawdownPercent: number | null;
+  maxCopiedOpenPositions: number | null;
+  maxLotSize: number | null;
+  maxSlippagePoints: number | null;
+  pauseOnDisconnect: boolean;
   updatedAt: string;
+}
+
+export interface CopyAccountRuleDto {
+  tradingAccountId: string;
+  accountName: string | null;
+  copyEnabled: boolean;
+  maxDailyLossPercent: number | null;
+  maxDrawdownPercent: number | null;
+  maxCopiedLots: number | null;
+  maxOpenCopiedPositions: number | null;
+  stopAfterLosses: number | null;
+  symbolAllowlist: string[] | null;
+  symbolBlocklist: string[] | null;
+  pausedAt: string | null;
+  updatedAt: string;
+}
+
+export interface CopyRuleEventDto {
+  id: string;
+  scope: "GLOBAL" | "ACCOUNT";
+  ruleCode: string;
+  reason: string;
+  tradingAccountId: string | null;
+  strategyId: string | null;
+  masterEventId: string | null;
+  mode: CopyMode;
+  createdAt: string;
 }

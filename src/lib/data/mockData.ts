@@ -19,6 +19,8 @@ export const tradingAccounts: TraderAccountSummary[] = [
     accountId: "acc-orion-001",
     accountName: "Orion Growth 100K",
     brokerName: "MetaTrader 5 Demo",
+    serverName: "Demo-Server",
+    platform: "MT5",
     status: "CONNECTED",
     balance: usd(102480),
     equity: usd(103142),
@@ -31,6 +33,8 @@ export const tradingAccounts: TraderAccountSummary[] = [
     accountId: "acc-nova-002",
     accountName: "Nova Evaluation 50K",
     brokerName: "MetaApi Sandbox",
+    serverName: "Sandbox-Server",
+    platform: "MT5",
     status: "SYNCING",
     balance: usd(49820),
     equity: usd(49296),
@@ -57,6 +61,7 @@ export const trades: TradeDto[] = [
     const profit = index % 4 === 0 ? -240 - index * 11 : 320 + index * 17;
     return {
       id: `closed-${index + 1}`,
+      shortTradeId: `TRD-${String(index + 1).padStart(8, "0")}`,
       accountId: index % 3 === 0 ? "acc-nova-002" : "acc-orion-001",
       symbol: ["EURUSD", "XAUUSD", "GBPJPY", "NAS100"][index % 4],
       side: index % 2 === 0 ? "BUY" : "SELL",
@@ -71,6 +76,7 @@ export const trades: TradeDto[] = [
   }),
   {
     id: "open-1",
+    shortTradeId: "TRD-00000015",
     accountId: "acc-orion-001",
     symbol: "XAUUSD",
     side: "BUY",
@@ -84,6 +90,7 @@ export const trades: TradeDto[] = [
   },
   {
     id: "open-2",
+    shortTradeId: "TRD-00000016",
     accountId: "acc-orion-001",
     symbol: "EURUSD",
     side: "SELL",
@@ -97,6 +104,7 @@ export const trades: TradeDto[] = [
   },
   {
     id: "open-3",
+    shortTradeId: "TRD-00000017",
     accountId: "acc-nova-002",
     symbol: "NAS100",
     side: "SELL",

@@ -77,7 +77,7 @@ export default function TerminalPage() {
       >
         <PlatformSubscriptionLocked
           access={access}
-          description="Activate the Aurix platform subscription to unlock the professional terminal workspace, chart workflow, and trader terminal tools."
+          description="Activate the WSA Global platform subscription to unlock the professional terminal workspace, chart workflow, and trader terminal tools."
         />
       </WorkspacePage>
     );

@@ -7,7 +7,7 @@ import {
   type PartnerCommissionDto,
   type PartnerListItemDto,
 } from "@/lib/partner/types";
-import type { UserRole } from "@/lib/auth/rbac";
+import { isAdmin, type UserRole } from "@/lib/auth/rbac";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Partner Admin Service (server-only) — admin-gated partner management.
@@ -32,7 +32,7 @@ export async function listPartners(): Promise<PartnerListItemDto[]> {
   const [{ data: pps }, { data: assignedCounts }] = await Promise.all([
     supabase
       .from("partner_profiles")
-      .select("user_id, referral_code, commission_percent")
+      .select("user_id, referral_code, commission_percent, status")
       .in("user_id", partnerIds),
     supabase
       .from("trader_profiles")
@@ -53,6 +53,7 @@ export async function listPartners(): Promise<PartnerListItemDto[]> {
       name: (p.full_name as string) || (p.email as string),
       email: p.email as string,
       status: p.status as string,
+      partnerStatus: ((pp?.status as string) ?? "PENDING_REVIEW") as "PENDING_REVIEW" | "ACTIVE" | "SUSPENDED",
       referralCode: (pp?.referral_code as string) ?? "",
       commissionPercent: pp ? Number(pp.commission_percent) : 0,
       assignedTraders: countMap.get(p.id) ?? 0,
@@ -111,7 +112,7 @@ export async function setUserRole(
   } else if (role === "TRADER") {
     // Ensure a trader_profile exists (signup trigger normally creates it).
     await supabase.from("trader_profiles").upsert({ user_id: userId }, { onConflict: "user_id" });
-  } else if (role === "ADMIN") {
+  } else if (isAdmin(role)) {
     await supabase.from("trader_profiles").delete().eq("user_id", userId);
   }
 
@@ -308,6 +309,50 @@ export async function updateCommissionStatus(
   });
 }
 
+// ── Partner application approval / rejection ─────────────────────────────────
+
+export async function approvePartner(partnerId: string, actorUserId: string): Promise<void> {
+  const supabase = createAdminClient();
+
+  const { data, error } = await supabase
+    .from("partner_profiles")
+    .update({ status: "ACTIVE" })
+    .eq("user_id", partnerId)
+    .select("user_id")
+    .maybeSingle();
+  if (error) throw new Error(`Failed to approve partner: ${error.message}`);
+  if (!data) throw new PartnerError(PARTNER_ERROR.PARTNER_NOT_FOUND, "Partner profile not found", 404);
+
+  await writeAuditLog({
+    actorUserId,
+    action: "PARTNER_APPROVED",
+    entityType: "partner_profile",
+    entityId: partnerId,
+    metadata: {},
+  });
+}
+
+export async function rejectPartner(partnerId: string, actorUserId: string): Promise<void> {
+  const supabase = createAdminClient();
+
+  const { data, error } = await supabase
+    .from("partner_profiles")
+    .update({ status: "SUSPENDED" })
+    .eq("user_id", partnerId)
+    .select("user_id")
+    .maybeSingle();
+  if (error) throw new Error(`Failed to reject partner: ${error.message}`);
+  if (!data) throw new PartnerError(PARTNER_ERROR.PARTNER_NOT_FOUND, "Partner profile not found", 404);
+
+  await writeAuditLog({
+    actorUserId,
+    action: "PARTNER_REJECTED",
+    entityType: "partner_profile",
+    entityId: partnerId,
+    metadata: {},
+  });
+}
+
 // ── Referral claim (called right after a trader signs up via a referral link) ─
 
 export async function claimReferral(traderUserId: string, code: string): Promise<boolean> {
@@ -343,4 +388,18 @@ export async function claimReferral(traderUserId: string, code: string): Promise
     metadata: { partnerId: partner.user_id, via: "referral" },
   });
   return true;
+}
+
+export async function validateReferralCode(code: string): Promise<boolean> {
+  const normalized = code.trim().toUpperCase();
+  if (normalized.length < 2 || normalized.length > 40) return false;
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("partner_profiles")
+    .select("user_id")
+    .eq("referral_code", normalized)
+    .eq("status", "ACTIVE")
+    .maybeSingle();
+  if (error) throw new Error(`Failed to validate referral code: ${error.message}`);
+  return Boolean(data);
 }

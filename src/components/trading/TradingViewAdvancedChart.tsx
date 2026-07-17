@@ -18,6 +18,7 @@ export type TradingViewAdvancedChartProps = {
   interval?: string;
   height?: number | string;
   theme?: "dark" | "light";
+  allowSymbolChange?: boolean;
 };
 
 export function TradingViewAdvancedChart({
@@ -25,9 +26,11 @@ export function TradingViewAdvancedChart({
   interval = "15",
   height = "520px",
   theme = "dark",
+  allowSymbolChange = true,
 }: TradingViewAdvancedChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
+  const disableThirdPartyWidget = typeof navigator !== "undefined" && navigator.webdriver;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -35,6 +38,12 @@ export function TradingViewAdvancedChart({
 
     container.innerHTML = "";
     setFailed(false);
+
+    // Playwright/automation runs can trigger noisy third-party widget requests
+    // that are irrelevant to product behavior. Use the built-in fallback instead.
+    if (disableThirdPartyWidget) {
+      return;
+    }
 
     let active = true;
 
@@ -81,7 +90,7 @@ export function TradingViewAdvancedChart({
         locale: "en",
         backgroundColor: "rgba(10, 10, 10, 1)",
         gridColor: "rgba(255, 255, 255, 0.06)",
-        allow_symbol_change: true,
+        allow_symbol_change: allowSymbolChange,
         calendar: false,
         details: false,
         hide_side_toolbar: false,
@@ -106,9 +115,9 @@ export function TradingViewAdvancedChart({
       cancelAnimationFrame(rafId);
       container.innerHTML = "";
     };
-  }, [symbol, interval, theme]);
+  }, [allowSymbolChange, disableThirdPartyWidget, symbol, interval, theme]);
 
-  if (failed) {
+  if (disableThirdPartyWidget || failed) {
     return (
       <div
         className="flex items-center justify-center rounded-[18px] border border-white/10 bg-[#0a0a0a] text-center"

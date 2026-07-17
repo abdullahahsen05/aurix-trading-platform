@@ -19,7 +19,6 @@ const patchSchema = z.object({
   riskLevel: z.enum(["LOW", "MEDIUM", "HIGH"]).nullable().optional(),
   screenshotUrls: z.array(z.string().url()).max(8).optional(),
   videoUrl: z.string().url().nullable().optional(),
-  downloadUrl: z.string().url().nullable().optional(),
   version: z.string().max(30).nullable().optional(),
 });
 

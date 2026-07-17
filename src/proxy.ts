@@ -1,10 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-
-const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password', '/reset-password', '/certificates']
-const TRADER_ROUTES = ['/dashboard', '/accounts', '/trades', '/analytics', '/risk', '/reports', '/settings']
-const ADMIN_ROUTES = ['/admin']
-const PARTNER_ROUTES = ['/partner']
+import { parseUserRole } from '@/lib/auth/rbac'
+import {
+  AUTH_ROUTE_PREFIXES,
+  PUBLIC_ROUTE_PREFIXES,
+  pathMatches,
+  workspaceRedirect,
+} from '@/lib/auth/routeAccess'
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -46,15 +48,13 @@ export async function proxy(request: NextRequest) {
   // Get session (refreshes if needed)
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isPublicRoute = PUBLIC_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
-  const isAdminRoute = ADMIN_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
-  const isTraderRoute = TRADER_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
-  const isPartnerRoute = PARTNER_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))
+  const isAuthRoute = pathMatches(pathname, AUTH_ROUTE_PREFIXES)
+  const isPublicRoute = pathMatches(pathname, PUBLIC_ROUTE_PREFIXES)
   const isApiRoute = pathname.startsWith('/api/')
 
   // Not authenticated
   if (!user) {
-    if (isPublicRoute || isApiRoute) return response
+    if (isAuthRoute || isPublicRoute || isApiRoute) return response
     // Redirect unauthenticated users to login
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('redirectTo', pathname)
@@ -68,8 +68,15 @@ export async function proxy(request: NextRequest) {
     .eq('id', user.id)
     .single()
 
-  const role = profile?.role ?? 'TRADER'
+  const role = parseUserRole(profile?.role)
   const status = profile?.status ?? 'ACTIVE'
+
+  if (!role) {
+    await supabase.auth.signOut()
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('error', 'profile')
+    return NextResponse.redirect(loginUrl)
+  }
 
   // Suspended users get signed out
   if (status === 'SUSPENDED') {
@@ -79,36 +86,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  const home = role === 'ADMIN' ? '/admin' : role === 'PARTNER' ? '/partner' : '/dashboard'
+  // API handlers perform their own secure role checks and must return JSON,
+  // never an HTML redirect from Proxy.
+  if (isApiRoute) return response
 
-  // Authenticated user on public/auth route -> redirect to their home
-  if (isPublicRoute) {
-    return NextResponse.redirect(new URL(home, request.url))
-  }
-
-  // Partner isolation: partners may only use /partner/* pages. API routes are
-  // left to their own requirePartner() guards (never redirect /api/* here, or
-  // the partner's own data fetches would be bounced to an HTML page).
-  if (role === 'PARTNER') {
-    if (isApiRoute) return response
-    if (!isPartnerRoute) return NextResponse.redirect(new URL('/partner', request.url))
-    return response
-  }
-
-  // Non-partners may never enter the partner workspace.
-  if (isPartnerRoute) {
-    return NextResponse.redirect(new URL(home, request.url))
-  }
-
-  // Trader trying admin route -> redirect to dashboard
-  if (isAdminRoute && role !== 'ADMIN') {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
-  // Admin trying trader route -> redirect to admin
-  if (isTraderRoute && role === 'ADMIN') {
-    return NextResponse.redirect(new URL('/admin', request.url))
-  }
+  const redirectTo = workspaceRedirect(role, pathname)
+  if (redirectTo) return NextResponse.redirect(new URL(redirectTo, request.url))
 
   return response
 }

@@ -9,7 +9,20 @@ export const accountIdSchema = z.object({
   accountId: z.string().min(1),
 });
 
-export const analyticsSummaryQuerySchema = accountIdSchema.extend({
+export const brokerConnectionSchema = z.object({
+  platform: z
+    .enum(["MT5", "MT4", "mt5", "mt4"])
+    .transform((value) => value.toUpperCase() as "MT4" | "MT5")
+    .default("MT5"),
+  login: z.string().min(1, "Login is required").max(50).trim(),
+  password: z.string().min(1, "Password is required").max(200),
+  server: z.string().min(1, "Server is required").max(100).trim(),
+  brokerName: z.string().max(100).trim().optional(),
+  connectNow: z.boolean().default(true),
+});
+
+export const analyticsSummaryQuerySchema = z.object({
+  accountId: z.string().min(1).default("ALL"),
   period: z.enum(["DAILY", "WEEKLY", "MONTHLY", "ALL_TIME"]).default("ALL_TIME"),
 });
 
@@ -40,6 +53,13 @@ export const aiChatSchema = z.object({
   accountId: z.string().uuid().optional(),
 });
 
+export const traderChartAssistantSchema = z.object({
+  message: z.string().trim().min(1, "Question is required").max(2000),
+  symbol: z.string().trim().min(2).max(32).default("XAUUSD"),
+  timeframe: z.string().trim().min(1).max(16).default("15m"),
+  accountId: z.string().uuid().optional(),
+});
+
 // Used for the optional free-text focus on chart analysis (multipart field).
 export const aiChartPromptSchema = z
   .string()
@@ -49,7 +69,7 @@ export const aiChartPromptSchema = z
 
 const impactEnum = z.enum(["LOW", "MEDIUM", "HIGH"]);
 
-export const economicEventCreateSchema = z.object({
+const economicEventBaseSchema = z.object({
   title: z.string().trim().min(1).max(200),
   countryCode: z.string().trim().max(8).optional().nullable(),
   currency: z.string().trim().min(2).max(8),
@@ -61,9 +81,23 @@ export const economicEventCreateSchema = z.object({
   source: z.string().trim().max(120).optional().nullable(),
   description: z.string().trim().max(1000).optional().nullable(),
   category: z.string().trim().max(64).optional().nullable(),
+  endTime: z.string().datetime({ offset: true }).optional().nullable(),
+  timezone: z.string().trim().min(1).max(80).default("UTC"),
+  eventType: z.enum(["ECONOMIC", "WEBINAR", "ACADEMY", "PLATFORM", "OTHER"]).default("ECONOMIC"),
+  locationUrl: z.string().url().max(500).optional().nullable(),
+  status: z.enum(["DRAFT", "PUBLISHED", "CANCELLED"]).default("DRAFT"),
+  audience: z.enum(["ALL", "TRADER"]).default("ALL"),
 });
 
-export const economicEventUpdateSchema = economicEventCreateSchema.partial();
+export const economicEventCreateSchema = economicEventBaseSchema.refine((value) => !value.endTime || new Date(value.endTime) >= new Date(value.eventTime), {
+  message: "End time must be after the start time",
+  path: ["endTime"],
+});
+
+export const economicEventUpdateSchema = economicEventBaseSchema.partial().refine(
+  (value) => !value.endTime || !value.eventTime || new Date(value.endTime) >= new Date(value.eventTime),
+  { message: "End time must be after the start time", path: ["endTime"] },
+);
 
 export const aiUserLimitsUpdateSchema = z
   .object({
@@ -161,12 +195,35 @@ export const copyStrategyUpdateSchema = z
 
 export const copyGlobalSettingsSchema = z
   .object({
+    copyEnabled: z.boolean().optional(),
     liveCopyEnabled: z.boolean().optional(),
     emergencyStopEnabled: z.boolean().optional(),
+    maxDailyLossPercent: z.number().positive().max(100).nullable().optional(),
+    maxDrawdownPercent: z.number().positive().max(100).nullable().optional(),
+    maxCopiedOpenPositions: z.number().int().min(0).max(10000).nullable().optional(),
+    maxLotSize: z.number().positive().max(10000).nullable().optional(),
+    maxSlippagePoints: z.number().positive().max(100000).nullable().optional(),
+    pauseOnDisconnect: z.boolean().optional(),
   })
-  .refine((v) => v.liveCopyEnabled !== undefined || v.emergencyStopEnabled !== undefined, {
+  .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
     message: "No changes provided",
   });
+
+const copySymbolListSchema = z
+  .array(z.string().trim().min(2).max(32).transform((symbol) => symbol.toUpperCase()))
+  .max(100)
+  .nullable();
+
+export const copyAccountRuleSchema = z.object({
+  copyEnabled: z.boolean(),
+  maxDailyLossPercent: z.number().positive().max(100).nullable(),
+  maxDrawdownPercent: z.number().positive().max(100).nullable(),
+  maxCopiedLots: z.number().positive().max(10000).nullable(),
+  maxOpenCopiedPositions: z.number().int().min(0).max(10000).nullable(),
+  stopAfterLosses: z.number().int().positive().max(1000).nullable(),
+  symbolAllowlist: copySymbolListSchema,
+  symbolBlocklist: copySymbolListSchema,
+});
 
 export const copyFollowSchema = z.object({
   followerAccountId: z.string().uuid(),
@@ -185,6 +242,14 @@ export const copySubscriptionUpdateSchema = z
     scalingMode: scalingModeEnum.optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: "No changes provided" });
+
+export const contactRequestSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(254),
+  subject: z.string().trim().min(3).max(160),
+  message: z.string().trim().min(20).max(4000),
+  type: z.enum(["MENTORSHIP", "GENERAL"]).default("MENTORSHIP"),
+});
 
 // ── Background jobs (Phase 4.6) ──────────────────────────────────────────────
 

@@ -55,6 +55,7 @@ export interface PartnerTraderDto {
   openRiskEvents: number;
   riskStatus: TraderRiskStatus;
   assignedAt: string | null;
+  registeredAt: string | null;
   accounts?: PartnerAccountStatusSummary[];
 }
 
@@ -104,6 +105,7 @@ export interface PartnerListItemDto {
   name: string;
   email: string;
   status: string;
+  partnerStatus: "PENDING_REVIEW" | "ACTIVE" | "SUSPENDED";
   referralCode: string;
   commissionPercent: number;
   assignedTraders: number;

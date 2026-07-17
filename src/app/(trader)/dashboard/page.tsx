@@ -27,6 +27,9 @@ import {
 import type { TraderAccountSummary, TradeDto, RiskRuleDto } from "@/lib/domain/types";
 import { useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
 import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
+import { getAccountDisplayIdentity } from "@/lib/domain/accountIdentity";
+
+type SessionUser = { id: string; name: string; email: string };
 
 const TradingChart = dynamic(
   () => import("@/components/charts/TradingChart").then((mod) => mod.TradingChart),
@@ -83,7 +86,7 @@ export default function TraderDashboardPage() {
       >
         <PlatformSubscriptionLocked
           access={access}
-          description="Activate the Aurix platform subscription to unlock live dashboard metrics, MT5 account tracking, and the full trading workspace."
+          description="Activate the WSA Global platform subscription to unlock live dashboard metrics, MT5 account tracking, and the full trading workspace."
         />
       </WorkspacePage>
     );
@@ -98,6 +101,16 @@ function TraderDashboardContent() {
   const [activeOverlay, setActiveOverlay] = useState<DashboardView | null>(null);
   const [statsNow, setStatsNow] = useState(() => new Date());
   const [subModalOpen, setSubModalOpen] = useState(false);
+
+  const { data: sessionUser } = useQuery<SessionUser>({
+    queryKey: ["session"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/session");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load profile");
+      return json.data;
+    },
+  });
 
   const { data: billingSummary } = useQuery<UserBillingSummaryDto>({
     queryKey: ["billing-me"],
@@ -194,6 +207,7 @@ function TraderDashboardContent() {
   const pnlPositive = live.pnl >= 0;
   const pnlPrefix = pnlPositive ? "↑" : "↓";
   const accountDrawdown = baseAccount?.drawdownPercent ?? 0;
+  const accountIdentity = getAccountDisplayIdentity(baseAccount);
   const currentHour = new Date().getHours();
   const overlayPeriodStats = useMemo(
     () => ({
@@ -295,7 +309,7 @@ function TraderDashboardContent() {
     <>
     <WorkspacePage
       eyebrow="Trader workspace"
-      title="Trading overview"
+      title={`Welcome, ${sessionUser?.name?.trim() || "Trader"}`}
       description="Equity, risk, and performance across your connected accounts."
       action={
         <PageActionGroup>
@@ -355,7 +369,7 @@ function TraderDashboardContent() {
       )}
       {subStatus === "PENDING_APPROVAL" && (
         <div className="mb-5 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-3 text-sm text-accent">
-          Platform subscription payment received — pending admin approval.
+          Platform subscription payment verified — access activation is finishing automatically.
         </div>
       )}
 
@@ -382,6 +396,19 @@ function TraderDashboardContent() {
         </div>
       ) : (
         <>
+          <Panel className="mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">Connected account</p>
+                <h2 className="mt-2 text-lg font-semibold text-foreground">{baseAccount?.accountName ?? "Trading account"}</h2>
+              </div>
+              <div className="grid min-w-0 gap-3 text-sm sm:grid-cols-3">
+                <div className="rounded-xl border border-line bg-background px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Broker</p><p className="mt-1 font-semibold text-foreground">{accountIdentity.brokerName}</p></div>
+                <div className="rounded-xl border border-line bg-background px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Server</p><p className="mt-1 font-semibold text-foreground">{accountIdentity.serverName}</p></div>
+                <div className="rounded-xl border border-line bg-background px-4 py-3"><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Platform</p><p className="mt-1 font-semibold text-foreground">{accountIdentity.platform}</p></div>
+              </div>
+            </div>
+          </Panel>
           <DashboardKpiStrip items={kpiItems} />
           <div className="mt-4">
             <MarketSentimentStrip items={marketSentimentItems} />
@@ -390,7 +417,7 @@ function TraderDashboardContent() {
             <PerformanceRings items={performanceRings} />
           </Panel>
           <div className="mt-4">
-            <TradingChart />
+            <TradingChart accountId={baseAccount?.accountId} />
           </div>
           <DashboardModeOverlay
             open={activeOverlay !== null}
@@ -424,7 +451,7 @@ function TraderDashboardContent() {
         currency: "USD",
         billingInterval: "MONTHLY",
         description:
-          "Full access to all Aurix platform features. Renews monthly from your subscription start date.",
+          "Full access to all WSA Global platform features. Renews monthly from your subscription start date.",
       }}
     />
     </>

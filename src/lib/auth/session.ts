@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import type { UserRole } from '@/lib/auth/rbac'
+import { isAdmin, parseUserRole, type UserRole } from '@/lib/auth/rbac'
 
 export interface SessionUser {
   id: string
@@ -28,11 +28,14 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
 
     if (profileError || !profile) return null
 
+    const role = parseUserRole(profile.role)
+    if (!role) return null
+
     return {
       id: profile.id,
       email: profile.email,
       name: profile.full_name,
-      role: profile.role as UserRole,
+      role,
       status: profile.status as 'ACTIVE' | 'SUSPENDED' | 'PENDING',
     }
   } catch {
@@ -60,7 +63,7 @@ export async function requireAuth(): Promise<SessionUser> {
  */
 export async function requireAdmin(): Promise<SessionUser> {
   const user = await requireAuth()
-  if (user.role !== 'ADMIN') {
+  if (!isAdmin(user.role)) {
     throw new AuthError('FORBIDDEN', 'Admin access required', 403)
   }
   return user
@@ -71,7 +74,7 @@ export async function requireAdmin(): Promise<SessionUser> {
  */
 export async function requireTrader(): Promise<SessionUser> {
   const user = await requireAuth()
-  if (user.role !== 'TRADER' && user.role !== 'ADMIN') {
+  if (user.role !== 'TRADER' && !isAdmin(user.role)) {
     throw new AuthError('FORBIDDEN', 'Trader access required', 403)
   }
   return user
@@ -103,7 +106,7 @@ export async function getUserRole(): Promise<UserRole | null> {
 export async function assertCanAccessAccount(accountId: string): Promise<SessionUser> {
   const user = await requireAuth()
 
-  if (user.role === 'ADMIN') return user
+  if (isAdmin(user.role)) return user
 
   // Verify the account belongs to this user
   const supabase = await createClient()

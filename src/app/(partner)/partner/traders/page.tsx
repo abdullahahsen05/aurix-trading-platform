@@ -64,7 +64,7 @@ export default function PartnerTradersPage() {
     <WorkspacePage
       eyebrow="Partner"
       title="Traders"
-      description="Your assigned traders — performance, accounts, and risk status."
+      description="Your assigned traders - performance, accounts, and risk status."
       action={
         <PageActionGroup>
           <div className="min-w-[240px]">
@@ -79,7 +79,7 @@ export default function PartnerTradersPage() {
     >
       <InlineStatusStrip
         items={[
-          { label: "Assigned traders", value: isLoading ? "…" : traders.length, tone: "accent" },
+          { label: "Assigned traders", value: isLoading ? "..." : traders.length, tone: "accent" },
           { label: "At risk", value: traders.filter((t) => t.riskStatus === "AT_RISK").length, tone: "accent" },
           { label: "Restricted", value: traders.filter((t) => t.riskStatus === "RESTRICTED").length, tone: "danger" },
         ]}
@@ -99,7 +99,7 @@ export default function PartnerTradersPage() {
         {isLoading ? (
           <div className="space-y-2">
             {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-14 rounded-xl border border-line bg-panel animate-pulse" />
+              <div key={i} className="h-14 animate-pulse rounded-xl border border-line bg-panel" />
             ))}
           </div>
         ) : isError ? (
@@ -115,12 +115,15 @@ export default function PartnerTradersPage() {
           <div className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
             <Panel className="min-w-0">
               <DataTable
-                headers={["Trader", "Accounts", "Equity", "Risk", ""]}
+                headers={["Trader", "Joined", "Accounts", "Equity", "Risk", ""]}
                 rows={filtered.map((t) => [
                   <div key="n" className="min-w-0">
                     <p className="truncate text-sm font-semibold text-foreground">{t.name}</p>
                     <p className="truncate text-xs text-muted">{t.email}</p>
                   </div>,
+                  <span key="j" className="text-xs text-muted">
+                    {t.registeredAt ? new Date(t.registeredAt).toLocaleDateString() : "-"}
+                  </span>,
                   <span key="a">{t.connectedAccounts}/{t.accountCount}</span>,
                   <span key="e">{formatMoney(t.totalEquity)}</span>,
                   <StatusPill key="r" tone={RISK_TONE[t.riskStatus]}>{t.riskStatus}</StatusPill>,
@@ -149,6 +152,7 @@ export default function PartnerTradersPage() {
                   <Stat label="Floating PnL" value={formatMoney(selected.floatingPnl)} />
                   <Stat label="Max drawdown" value={`${selected.maxDrawdownPercent}%`} />
                   <Stat label="Open risk events" value={selected.openRiskEvents} />
+                  <Stat label="Referred / assigned" value={selected.assignedAt ? new Date(selected.assignedAt).toLocaleDateString() : "-"} />
                 </div>
 
                 {selected.accounts && selected.accounts.length > 0 ? (
@@ -172,7 +176,7 @@ export default function PartnerTradersPage() {
                           className="flex items-center justify-between gap-2 rounded-lg border border-line bg-background px-3 py-2 text-xs"
                         >
                           <span className="font-semibold text-foreground">
-                            {tr.symbol} · {tr.side}
+                            {tr.symbol} - {tr.side}
                           </span>
                           <span className={tr.profit.amount < 0 ? "text-danger" : "text-accent-2"}>
                             {formatMoney(tr.profit)}

@@ -11,6 +11,9 @@ import { chatModel, generateText } from "@/lib/ai/geminiClient";
 export async function POST(request: Request) {
   try {
     const user = await requireTrader();
+    if (user.role !== "TRADER") {
+      return jsonFail("FORBIDDEN", "Use the admin assistant from AI Controls.", 403);
+    }
 
     // 1. Validate (failed validation never consumes quota).
     const body = await request.json().catch(() => null);
@@ -47,6 +50,7 @@ export async function POST(request: Request) {
       await logUsage({
         userId: user.id,
         route: "chat",
+        feature: "TRADER_ASSISTANT",
         model,
         requestType: "text",
         status: "FAILED",
@@ -59,6 +63,7 @@ export async function POST(request: Request) {
     await logUsage({
       userId: user.id,
       route: "chat",
+      feature: "TRADER_ASSISTANT",
       model: result.model,
       requestType: "text",
       status: "SUCCESS",

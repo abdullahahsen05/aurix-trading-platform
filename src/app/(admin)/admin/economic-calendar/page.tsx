@@ -14,7 +14,7 @@ import {
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
-import { SelectField, TextField } from "@/components/app/FormFields";
+import { SelectField, TextAreaField, TextField } from "@/components/app/FormFields";
 import { queryKeys } from "@/lib/data/queryKeys";
 
 type Impact = "LOW" | "MEDIUM" | "HIGH";
@@ -26,16 +26,17 @@ interface EventDto {
   currency: string;
   impact: Impact;
   eventTime: string;
+  endTime: string | null;
+  timezone: string;
+  eventType: "ECONOMIC" | "WEBINAR" | "ACADEMY" | "PLATFORM" | "OTHER";
+  locationUrl: string | null;
+  status: "DRAFT" | "PUBLISHED" | "CANCELLED";
+  audience: "ALL" | "TRADER";
+  description: string | null;
   forecast: string | null;
   previous: string | null;
   source: string | null;
 }
-
-const IMPACT_TONE: Record<Impact, "lime" | "accent" | "danger"> = {
-  LOW: "lime",
-  MEDIUM: "accent",
-  HIGH: "danger",
-};
 
 function toLocalInput(iso: string): string {
   const d = new Date(iso);
@@ -49,6 +50,13 @@ const EMPTY_FORM = {
   currency: "",
   impact: "MEDIUM" as Impact,
   eventTime: "",
+  endTime: "",
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  eventType: "ECONOMIC" as EventDto["eventType"],
+  locationUrl: "",
+  status: "DRAFT" as EventDto["status"],
+  audience: "ALL" as EventDto["audience"],
+  description: "",
   countryCode: "",
   forecast: "",
   previous: "",
@@ -66,7 +74,7 @@ export default function AdminEconomicCalendarPage() {
   const { data: events = [], isLoading, isError } = useQuery<EventDto[]>({
     queryKey: queryKeys.economicCalendar,
     queryFn: async () => {
-      const res = await fetch("/api/economic-calendar");
+      const res = await fetch("/api/admin/economic-calendar");
       const json = await res.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load events");
       return json.data;
@@ -87,6 +95,13 @@ export default function AdminEconomicCalendarPage() {
       currency: e.currency,
       impact: e.impact,
       eventTime: toLocalInput(e.eventTime),
+      endTime: e.endTime ? toLocalInput(e.endTime) : "",
+      timezone: e.timezone,
+      eventType: e.eventType,
+      locationUrl: e.locationUrl ?? "",
+      status: e.status,
+      audience: e.audience,
+      description: e.description ?? "",
       countryCode: e.countryCode ?? "",
       forecast: e.forecast ?? "",
       previous: e.previous ?? "",
@@ -106,6 +121,13 @@ export default function AdminEconomicCalendarPage() {
         currency: form.currency.trim().toUpperCase(),
         impact: form.impact,
         eventTime: new Date(form.eventTime).toISOString(),
+        endTime: form.endTime ? new Date(form.endTime).toISOString() : null,
+        timezone: form.timezone.trim() || "UTC",
+        eventType: form.eventType,
+        locationUrl: form.locationUrl.trim() || null,
+        status: form.status,
+        audience: form.audience,
+        description: form.description.trim() || null,
         countryCode: form.countryCode.trim() || null,
         forecast: form.forecast.trim() || null,
         previous: form.previous.trim() || null,
@@ -206,14 +228,15 @@ export default function AdminEconomicCalendarPage() {
           />
         ) : (
           <DataTable
-            headers={["Event", "Currency", "Impact", "Time (local)", ""]}
+            headers={["Event", "Type", "Status", "Audience", "Time (local)", ""]}
             rows={events.map((e) => [
               <div key="t" className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{e.title}</p>
-                {e.source ? <p className="truncate text-xs text-muted">{e.source}</p> : null}
+                <p className="truncate text-xs text-muted">{e.currency} · {e.timezone}</p>
               </div>,
-              <span key="c" className="font-semibold text-foreground">{e.currency}</span>,
-              <StatusPill key="i" tone={IMPACT_TONE[e.impact]}>{e.impact}</StatusPill>,
+              <span key="type" className="font-semibold text-foreground">{e.eventType}</span>,
+              <StatusPill key="status" tone={e.status === "PUBLISHED" ? "lime" : e.status === "CANCELLED" ? "danger" : "muted"}>{e.status}</StatusPill>,
+              <span key="audience">{e.audience}</span>,
               <span key="ti">{new Date(e.eventTime).toLocaleString()}</span>,
               <div key="a" className="flex gap-2">
                 <GhostButton type="button" onClick={() => openEdit(e)}>
@@ -268,12 +291,57 @@ export default function AdminEconomicCalendarPage() {
                 <option value="MEDIUM">Medium</option>
                 <option value="HIGH">High</option>
               </SelectField>
-              <div className="sm:col-span-2">
+              <div>
                 <TextField
-                  label="Date &amp; time"
+                  label="Start date &amp; time"
                   type="datetime-local"
                   value={form.eventTime}
                   onChange={(e) => setForm((f) => ({ ...f, eventTime: e.target.value }))}
+                />
+              </div>
+              <TextField
+                label="End date &amp; time (optional)"
+                type="datetime-local"
+                value={form.endTime}
+                onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
+              />
+              <TextField
+                label="Timezone"
+                placeholder="Europe/London"
+                value={form.timezone}
+                onChange={(e) => setForm((f) => ({ ...f, timezone: e.target.value }))}
+              />
+              <SelectField label="Event type" value={form.eventType} onChange={(e) => setForm((f) => ({ ...f, eventType: e.target.value as EventDto["eventType"] }))}>
+                <option value="ECONOMIC">Economic</option>
+                <option value="WEBINAR">Webinar</option>
+                <option value="ACADEMY">Academy</option>
+                <option value="PLATFORM">Platform</option>
+                <option value="OTHER">Other</option>
+              </SelectField>
+              <SelectField label="Publication status" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as EventDto["status"] }))}>
+                <option value="DRAFT">Draft</option>
+                <option value="PUBLISHED">Published</option>
+                <option value="CANCELLED">Cancelled</option>
+              </SelectField>
+              <SelectField label="Audience" value={form.audience} onChange={(e) => setForm((f) => ({ ...f, audience: e.target.value as EventDto["audience"] }))}>
+                <option value="ALL">All traders</option>
+                <option value="TRADER">Traders</option>
+              </SelectField>
+              <div className="sm:col-span-2">
+                <TextField
+                  label="Location or meeting link (optional)"
+                  type="url"
+                  placeholder="https://..."
+                  value={form.locationUrl}
+                  onChange={(e) => setForm((f) => ({ ...f, locationUrl: e.target.value }))}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <TextAreaField
+                  label="Description (optional)"
+                  rows={3}
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 />
               </div>
               <TextField

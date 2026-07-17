@@ -27,7 +27,7 @@ const BOT_EA_PRODUCT = {
   amount: 500,
   currency: "USD",
   billingInterval: "ONE_TIME",
-  description: "One-time purchase — lifetime access after admin approval.",
+  description: "One-time purchase — access activates after verified payment.",
 };
 
 async function getJson<T>(url: string): Promise<T> {
@@ -145,9 +145,9 @@ export default function MarketplacePage() {
                   {accessState === "ACTIVE" ? (
                     <StatusPill tone="lime">Access granted</StatusPill>
                   ) : accessState === "PENDING_APPROVAL" ? (
-                    <StatusPill tone="accent">Pending admin approval</StatusPill>
+                    <StatusPill tone="accent">Activating access</StatusPill>
                   ) : accessState === "PENDING_PAYMENT" ? (
-                    <StatusPill tone="muted">Payment pending</StatusPill>
+                    <StatusPill tone="muted">Payment processing</StatusPill>
                   ) : (
                     <GhostButton
                       type="button"

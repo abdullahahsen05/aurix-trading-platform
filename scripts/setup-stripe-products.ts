@@ -63,10 +63,10 @@ const products: ProductSpec[] = [
   },
   {
     envVar: "STRIPE_PRICE_BOT_EA_ONE_TIME",
-    productName: "Aurix Trading Bot / EA",
+    productName: "WSA Global Trading Bot / EA",
     amount: 50000,
     currency: "usd",
-    description: "One-time purchase — lifetime bot/EA access after admin approval",
+    description: "One-time purchase — lifetime bot/EA access after verified payment",
   },
   {
     envVar: "STRIPE_PRICE_MENTORSHIP_ONE_TIME_EUR",

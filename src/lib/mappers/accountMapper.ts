@@ -4,6 +4,8 @@ interface AccountRow {
   id: string
   account_name: string
   broker_name: string
+  broker_server?: string | null
+  broker_platform?: string | null
   status: string
   currency: string
   updated_at: string
@@ -30,7 +32,11 @@ export function mapAccountToDto(
   return {
     accountId: account.id,
     accountName: account.account_name,
-    brokerName: account.broker_name,
+    brokerName: account.broker_name?.trim() || 'WSA GLOBAL',
+    serverName: account.broker_server ?? null,
+    platform: account.broker_platform === 'MT4' || account.broker_platform === 'MT5'
+      ? account.broker_platform
+      : null,
     status: account.status as TraderAccountSummary['status'],
     balance: { amount: balance, currency },
     equity: { amount: equity, currency },

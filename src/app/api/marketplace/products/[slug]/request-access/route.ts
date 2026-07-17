@@ -1,7 +1,6 @@
 import { jsonFail, jsonOk } from "@/lib/api/envelope";
 import { requireAuth, AuthError } from "@/lib/auth/session";
-import { requestAccess } from "@/lib/services/botMarketplaceService";
-import { writeAuditLog } from "@/lib/services/auditService";
+import { getAccessRecord } from "@/lib/services/botMarketplaceService";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // The [slug] param here receives the product UUID (not a human slug).
@@ -21,7 +20,7 @@ export async function POST(
     const supabase = createAdminClient();
     const { data: product, error } = await supabase
       .from("bot_products")
-      .select("id, name, status")
+      .select("id, status")
       .eq("id", productId)
       .maybeSingle();
 
@@ -30,17 +29,14 @@ export async function POST(
       return jsonFail("NOT_FOUND", "Product not found.", 404);
     }
 
-    const access = await requestAccess(productId, user.id);
+    const access = await getAccessRecord(productId, user.id);
+    if (access?.status === "ACTIVE") return jsonOk(access);
 
-    await writeAuditLog({
-      actorUserId: user.id,
-      action: "BOT_ACCESS_REQUESTED",
-      entityType: "bot_access_record",
-      entityId: access.id,
-      metadata: { productId, productName: product.name },
-    });
-
-    return jsonOk(access);
+    return jsonFail(
+      "PAYMENT_REQUIRED",
+      "Bot access can only be requested through a verified BOT_EA checkout.",
+      402,
+    );
   } catch (err) {
     if (err instanceof AuthError) return jsonFail("UNAUTHORIZED", err.message, 401);
     const msg = err instanceof Error ? err.message : "Unknown error";

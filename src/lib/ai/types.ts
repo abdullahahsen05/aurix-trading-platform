@@ -3,6 +3,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type AiRoute = "chat" | "chart-analysis";
+export type AiFeature =
+  | "ADMIN_ASSISTANT"
+  | "ADMIN_IMAGE_ANALYSIS"
+  | "TRADER_ASSISTANT"
+  | "TRADER_CHART_ASSISTANT";
 
 export type AiUsageStatus = "SUCCESS" | "FAILED";
 

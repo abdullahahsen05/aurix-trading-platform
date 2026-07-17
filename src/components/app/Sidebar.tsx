@@ -7,6 +7,7 @@ import { LogOut, X } from "lucide-react";
 import { navItems } from "@/components/app/navigation";
 import type { UserRole } from "@/lib/domain/types";
 import { createClient } from "@/lib/supabase/client";
+import { BRAND_INITIAL, BRAND_WORDMARK } from "@/lib/brand";
 
 export function Sidebar({
   role,
@@ -57,9 +58,9 @@ export function Sidebar({
         <div className="mb-7 px-2">
           <div className="flex items-center gap-2">
             <span className="grid h-8 w-8 place-items-center rounded-md bg-accent text-sm font-black text-background shadow-[0_8px_20px_rgba(255,207,0,0.14)]">
-              A
+              {BRAND_INITIAL}
             </span>
-            <h1 className="text-xl font-black tracking-tight text-foreground">AURIX</h1>
+            <h1 className="text-xl font-black tracking-tight text-foreground">{BRAND_WORDMARK}</h1>
           </div>
         </div>
         <div className="mb-3 px-2">
@@ -90,9 +91,9 @@ export function Sidebar({
           <div className="mb-7 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="grid h-8 w-8 place-items-center rounded-md bg-accent text-sm font-black text-background shadow-[0_8px_20px_rgba(255,207,0,0.14)]">
-                A
+                {BRAND_INITIAL}
                 </span>
-                <h2 className="text-xl font-black tracking-tight text-foreground">AURIX</h2>
+                <h2 className="text-xl font-black tracking-tight text-foreground">{BRAND_WORDMARK}</h2>
               </div>
               <Dialog.Close asChild>
                 <button className="grid h-10 w-10 place-items-center rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong text-muted">

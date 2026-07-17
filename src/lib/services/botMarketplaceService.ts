@@ -4,7 +4,10 @@ import type {
   BotAccessRecordDto,
 } from "@/lib/domain/types";
 
-function rowToProduct(row: Record<string, unknown>): BotProductDto {
+function rowToProduct(
+  row: Record<string, unknown>,
+  includeLegacyDownloadUrl = false,
+): BotProductDto {
   return {
     id: row.id as string,
     slug: row.slug as string,
@@ -21,7 +24,9 @@ function rowToProduct(row: Record<string, unknown>): BotProductDto {
     riskLevel: (row.risk_level as BotProductDto["riskLevel"]) ?? null,
     screenshotUrls: (row.screenshot_urls as string[]) ?? [],
     videoUrl: (row.video_url as string | null) ?? null,
-    downloadUrl: (row.download_url as string | null) ?? null,
+    downloadUrl: includeLegacyDownloadUrl
+      ? (row.download_url as string | null) ?? null
+      : null,
     version: (row.version as string | null) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -40,6 +45,9 @@ function rowToAccess(row: Record<string, unknown>): BotAccessRecordDto {
     source: row.source as BotAccessRecordDto["source"],
     grantedAt: (row.granted_at as string | null) ?? null,
     expiresAt: (row.expires_at as string | null) ?? null,
+    hasPublishedRelease: false,
+    releaseVersion: null,
+    releaseFileName: null,
     createdAt: row.created_at as string,
   };
 }
@@ -122,7 +130,43 @@ export async function listUserAccessRecords(
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => rowToAccess(r as Record<string, unknown>));
+  const records = (data ?? []).map((r) => rowToAccess(r as Record<string, unknown>));
+  const productIds = [...new Set(records.map((record) => record.productId))];
+  if (productIds.length === 0) return records;
+
+  const { data: releases, error: releaseError } = await supabase
+    .from("bot_file_releases")
+    .select("product_id, version, original_filename, published_at, created_at")
+    .in("product_id", productIds)
+    .eq("status", "PUBLISHED")
+    .order("published_at", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  // Keep My Bots usable before the release migration has been applied.
+  if (releaseError) return records;
+
+  const latestByProduct = new Map<
+    string,
+    { version: string; original_filename: string }
+  >();
+  for (const release of releases ?? []) {
+    if (!latestByProduct.has(release.product_id as string)) {
+      latestByProduct.set(release.product_id as string, {
+        version: release.version as string,
+        original_filename: release.original_filename as string,
+      });
+    }
+  }
+
+  return records.map((record) => {
+    const release = latestByProduct.get(record.productId);
+    return {
+      ...record,
+      hasPublishedRelease: Boolean(release),
+      releaseVersion: release?.version ?? null,
+      releaseFileName: release?.original_filename ?? null,
+    };
+  });
 }
 
 // ── Admin queries ─────────────────────────────────────────────────────────────
@@ -142,7 +186,6 @@ export interface AdminProductInput {
   riskLevel?: BotProductDto["riskLevel"] | null;
   screenshotUrls?: string[];
   videoUrl?: string | null;
-  downloadUrl?: string | null;
   version?: string | null;
   createdBy?: string;
 }
@@ -168,14 +211,14 @@ export async function adminCreateProduct(
       risk_level: input.riskLevel ?? null,
       screenshot_urls: input.screenshotUrls ?? [],
       video_url: input.videoUrl ?? null,
-      download_url: input.downloadUrl ?? null,
+      download_url: null,
       version: input.version ?? null,
       created_by: input.createdBy ?? null,
     })
     .select("*")
     .single();
   if (error) throw new Error(error.message);
-  return rowToProduct(data as Record<string, unknown>);
+  return rowToProduct(data as Record<string, unknown>, true);
 }
 
 export type AdminProductPatch = Partial<Omit<AdminProductInput, "createdBy">>;
@@ -200,7 +243,6 @@ export async function adminUpdateProduct(
   if (patch.riskLevel !== undefined) update.risk_level = patch.riskLevel;
   if (patch.screenshotUrls !== undefined) update.screenshot_urls = patch.screenshotUrls;
   if (patch.videoUrl !== undefined) update.video_url = patch.videoUrl;
-  if (patch.downloadUrl !== undefined) update.download_url = patch.downloadUrl;
   if (patch.version !== undefined) update.version = patch.version;
 
   const { data, error } = await supabase
@@ -210,7 +252,7 @@ export async function adminUpdateProduct(
     .select("*")
     .single();
   if (error) throw new Error(error.message);
-  return rowToProduct(data as Record<string, unknown>);
+  return rowToProduct(data as Record<string, unknown>, true);
 }
 
 export async function adminListAllProducts(): Promise<BotProductDto[]> {
@@ -220,7 +262,7 @@ export async function adminListAllProducts(): Promise<BotProductDto[]> {
     .select("*")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => rowToProduct(r as Record<string, unknown>));
+  return (data ?? []).map((r) => rowToProduct(r as Record<string, unknown>, true));
 }
 
 export interface AdminAccessRow {
@@ -242,21 +284,39 @@ export async function adminListAccessRequests(): Promise<AdminAccessRow[]> {
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("bot_access_records")
-    .select("*, bot_products(name, slug), profiles(full_name, email)")
+    .select("*, bot_products(name, slug)")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => {
-    const row = r as Record<string, unknown>;
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  const userIds = [...new Set(rows.map((row) => row.user_id as string).filter(Boolean))];
+  const profileById = new Map<string, { full_name: string | null; email: string | null }>();
+
+  if (userIds.length > 0) {
+    const { data: profiles, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("id", userIds);
+    if (profilesError) throw new Error(profilesError.message);
+    for (const profile of profiles ?? []) {
+      profileById.set(profile.id as string, {
+        full_name: (profile.full_name as string | null) ?? null,
+        email: (profile.email as string | null) ?? null,
+      });
+    }
+  }
+
+  return rows.map((row) => {
     const product = row.bot_products as Record<string, unknown> | null;
-    const profile = row.profiles as Record<string, unknown> | null;
+    const profile = profileById.get(row.user_id as string);
     return {
       id: row.id as string,
       productId: row.product_id as string,
       productName: (product?.name as string | null) ?? "",
       productSlug: (product?.slug as string | null) ?? "",
       userId: row.user_id as string,
-      userName: (profile?.full_name as string | null) ?? "",
-      userEmail: (profile?.email as string | null) ?? "",
+      userName: profile?.full_name ?? "",
+      userEmail: profile?.email ?? "",
       status: row.status as BotAccessRecordDto["status"],
       source: row.source as BotAccessRecordDto["source"],
       grantedAt: (row.granted_at as string | null) ?? null,

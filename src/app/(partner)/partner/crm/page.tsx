@@ -93,7 +93,7 @@ export default function PartnerCrmPage() {
             <div className="mt-4">
               <TextAreaField
                 label="New note"
-                placeholder="Add a private note about this trader…"
+                placeholder="Add a private note about this trader..."
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
                 maxLength={2000}
@@ -116,14 +116,14 @@ export default function PartnerCrmPage() {
                 disabled={addNote.isPending || !traderId || noteText.trim().length === 0}
                 onClick={() => addNote.mutate()}
               >
-                {addNote.isPending ? "Saving…" : "Add note"}
+                {addNote.isPending ? "Saving..." : "Add note"}
               </PrimaryButton>
             </div>
           </Panel>
 
           <Panel>
             <h2 className="mb-4 text-lg font-semibold text-foreground">
-              Notes {selectedTrader ? `· ${selectedTrader.name}` : ""}
+              Notes {selectedTrader ? `- ${selectedTrader.name}` : ""}
             </h2>
             {notes.length === 0 ? (
               <p className="text-sm text-muted">No notes yet for this trader.</p>

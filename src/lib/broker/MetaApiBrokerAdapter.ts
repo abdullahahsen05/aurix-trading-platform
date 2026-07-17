@@ -178,6 +178,8 @@ export class MetaApiBrokerAdapter implements BrokerAdapter {
         accountId,
         accountName: "",
         brokerName: info?.brokerName ?? "",
+        serverName: info?.server ?? null,
+        platform: null,
         status: "CONNECTED",
         balance: { amount: balance, currency: info?.currency ?? "USD" },
         equity: { amount: equity, currency: info?.currency ?? "USD" },
@@ -194,6 +196,7 @@ export class MetaApiBrokerAdapter implements BrokerAdapter {
       const positions: any[] = (await connection.getPositions()) ?? [];
       return positions.map((p) => ({
         id: String(p.id),
+        shortTradeId: `LIVE-${String(p.id).slice(-8).toUpperCase()}`,
         accountId,
         symbol: p.symbol ?? "",
         side: p.type === "POSITION_TYPE_BUY" ? "BUY" : "SELL",
@@ -217,6 +220,7 @@ export class MetaApiBrokerAdapter implements BrokerAdapter {
         .filter((d) => d.entryType === "DEAL_ENTRY_OUT")
         .map((d) => ({
           id: String(d.positionId ?? d.id),
+          shortTradeId: `LIVE-${String(d.positionId ?? d.id).slice(-8).toUpperCase()}`,
           accountId,
           symbol: d.symbol ?? "",
           side: d.type === "DEAL_TYPE_BUY" ? "BUY" : "SELL",

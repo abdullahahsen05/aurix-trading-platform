@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { AI_ERROR, AiError, type AiRoute, type AiUsageStatus, type RateLimitState, type TokenUsage } from "@/lib/ai/types";
+import { AI_ERROR, AiError, type AiFeature, type AiRoute, type AiUsageStatus, type RateLimitState, type TokenUsage } from "@/lib/ai/types";
 
 const INITIAL_CREDITS = 50_000;
 
@@ -130,6 +130,7 @@ export async function checkLimit(userId: string, route: AiRoute): Promise<RateLi
 export async function logUsage(params: {
   userId: string;
   route: AiRoute;
+  feature: AiFeature;
   model: string;
   requestType: string;
   status: AiUsageStatus;
@@ -142,6 +143,7 @@ export async function logUsage(params: {
     await supabase.from("ai_usage_logs").insert({
       user_id: params.userId,
       route: params.route,
+      feature: params.feature,
       model: params.model,
       request_type: params.requestType,
       status: params.status,

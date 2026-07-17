@@ -70,7 +70,7 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
 function buildUserText(contextJson: string | null, userText: string): string {
   if (!contextJson) return userText;
   return [
-    "Authoritative Aurix context for this request (use ONLY this data; do not invent values):",
+    "Authoritative WSA Global context for this request (use ONLY this data; do not invent values):",
     "```json",
     contextJson,
     "```",

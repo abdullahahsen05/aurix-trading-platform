@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { PrimaryButton } from "@/components/app/WorkspaceUI";
+import { GhostButton, PrimaryButton } from "@/components/app/WorkspaceUI";
+import { startAuthentication } from "@simplewebauthn/browser";
 import { TextField } from "@/components/app/FormFields";
 import { createClient } from "@/lib/supabase/client";
+import { parseUserRole, type UserRole } from "@/lib/auth/rbac";
+import { roleHome } from "@/lib/auth/routeAccess";
+import { BRAND_INITIAL, BRAND_WORDMARK } from "@/lib/brand";
 
 export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -34,19 +38,51 @@ export default function LoginPage() {
 
     // Fetch profile to determine role
     const { data: { user } } = await supabase.auth.getUser();
-    let role = "TRADER";
+    let role: UserRole | null = null;
     if (user) {
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
         .eq("id", user.id)
         .single();
-      role = profile?.role ?? "TRADER";
+      role = parseUserRole(profile?.role);
+    }
+
+    if (!role) {
+      await supabase.auth.signOut();
+      setIsSubmitting(false);
+      setError("Your account profile is incomplete. Contact support before signing in.");
+      return;
     }
 
     setMessage("Signed in successfully. Redirecting...");
-    const home = role === "ADMIN" ? "/admin" : role === "PARTNER" ? "/partner" : "/dashboard";
-    router.push(home);
+    router.replace(roleHome(role));
+    router.refresh();
+  };
+
+  const handlePasskeySignIn = async () => {
+    setIsSubmitting(true);
+    setMessage("");
+    setError("");
+    try {
+      const optionsResponse = await fetch("/api/auth/passkeys/login/options", { method: "POST" });
+      const optionsJson = await optionsResponse.json();
+      if (!optionsJson.ok) throw new Error(optionsJson.error?.message ?? "Passkey sign-in is unavailable");
+      const response = await startAuthentication({ optionsJSON: optionsJson.data.options });
+      const verifyResponse = await fetch("/api/auth/passkeys/login/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: optionsJson.data.challengeId, response }),
+      });
+      const verifyJson = await verifyResponse.json();
+      if (!verifyJson.ok) throw new Error(verifyJson.error?.message ?? "Passkey sign-in failed");
+      setMessage("Signed in with passkey. Redirecting...");
+      router.replace(verifyJson.data.redirectTo ?? "/dashboard");
+      router.refresh();
+    } catch (passkeyError) {
+      setError(passkeyError instanceof Error ? passkeyError.message : "Passkey sign-in failed");
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -55,9 +91,9 @@ export default function LoginPage() {
         <div className="mb-7">
           <div className="mb-5 flex items-center gap-2">
             <span className="grid h-9 w-9 place-items-center rounded-md bg-accent text-sm font-black text-background">
-              A
+              {BRAND_INITIAL}
             </span>
-            <span className="text-xl font-semibold text-foreground">AURIX</span>
+            <span className="text-xl font-semibold text-foreground">{BRAND_WORDMARK}</span>
           </div>
           <h1 className="text-2xl font-semibold text-foreground">Welcome back</h1>
           <p className="mt-2 text-sm leading-6 text-muted">
@@ -77,9 +113,9 @@ export default function LoginPage() {
           </div>
         ) : null}
 
-        <form className="grid gap-4" onSubmit={handleSubmit}>
-          <TextField label="Email" name="email" type="email" defaultValue="ayan@example.com" />
-          <TextField label="Password" name="password" type="password" defaultValue="password" />
+        <form className="grid gap-4" method="post" onSubmit={handleSubmit}>
+          <TextField label="Email" name="email" type="email" />
+          <TextField label="Password" name="password" type="password" />
           <div className="flex items-center justify-end gap-4">
             <Link href="/forgot-password" className="text-sm font-semibold text-accent">
               Forgot password?
@@ -89,6 +125,21 @@ export default function LoginPage() {
             {isSubmitting ? "Signing in..." : "Sign in"}
           </PrimaryButton>
         </form>
+
+        <div className="my-4 flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-muted"><span className="h-px flex-1 bg-line" />or<span className="h-px flex-1 bg-line" /></div>
+        <GhostButton type="button" disabled={isSubmitting} onClick={handlePasskeySignIn}>
+          Sign in with passkey
+        </GhostButton>
+
+        <div className="mt-4 rounded-2xl border border-line bg-background p-4">
+          <p className="text-sm font-semibold text-foreground">Explore the platform first</p>
+          <p className="mt-1 text-sm text-muted">
+            Open the public demo workspace with sample data only. No broker sync, real trading, or paid access is triggered.
+          </p>
+          <Link href="/demo" className="btn-dark mt-3 inline-flex">
+            View Demo
+          </Link>
+        </div>
 
         <p className="mt-6 text-sm text-muted">
           New trader?{" "}

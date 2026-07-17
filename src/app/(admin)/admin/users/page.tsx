@@ -78,7 +78,7 @@ const ROLE_TONE: Record<UserRole, "lime" | "accent" | "danger" | "muted"> = {
   TRADER: "lime",
 };
 
-type PartnerOption = { userId: string; name: string };
+type PartnerOption = { userId: string; name: string; email: string; partnerStatus: string; referralCode: string };
 
 export default function AdminUsersPage() {
   const queryClient = useQueryClient();
@@ -158,17 +158,43 @@ export default function AdminUsersPage() {
   };
 
   // ── Partner options for assignment dropdown ─────────────────────────────────
-  const { data: partners = [] } = useQuery<PartnerOption[]>({
+  const { data: partners = [], refetch: refetchPartners } = useQuery<PartnerOption[]>({
     queryKey: ["admin-partner-options"],
     queryFn: async () => {
       const res = await fetch("/api/admin/partners");
       const json = await res.json();
       if (!json.ok) return [];
-      return (json.data as Array<{ userId: string; name: string }>).map((p) => ({
+      return (json.data as Array<{ userId: string; name: string; email: string; partnerStatus: string; referralCode: string }>).map((p) => ({
         userId: p.userId,
         name: p.name,
+        email: p.email,
+        partnerStatus: p.partnerStatus,
+        referralCode: p.referralCode,
       }));
     },
+  });
+
+  const pendingPartners = partners.filter((p) => p.partnerStatus === "PENDING_REVIEW");
+
+  // ── Partner application approve / reject ────────────────────────────────────
+  const partnerAppMutation = useMutation({
+    mutationFn: async ({ partnerId, action }: { partnerId: string; action: "approve" | "reject" }) => {
+      const res = await fetch(`/api/admin/partners/${partnerId}/${action}`, { method: "POST" });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? `Failed to ${action} partner`);
+      return json.data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      refetchPartners();
+      setNotice({
+        type: "success",
+        text: variables.action === "approve"
+          ? "Partner approved — their portal is now active."
+          : "Partner application rejected.",
+      });
+    },
+    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
   });
 
   // ── Role change ─────────────────────────────────────────────────────────────
@@ -314,6 +340,56 @@ export default function AdminUsersPage() {
           { label: "Suspended", value: suspendedCount, tone: suspendedCount > 0 ? "danger" : undefined },
         ]}
       />
+
+      {/* Pending partner applications */}
+      {pendingPartners.length > 0 ? (
+        <div className="mt-5 rounded-2xl border border-accent/20 bg-accent/5 p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-accent">
+            Partner applications pending review ({pendingPartners.length})
+          </p>
+          <div className="space-y-2">
+            {pendingPartners.map((p) => (
+              <div
+                key={p.userId}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{p.name}</p>
+                  <p className="truncate text-xs text-muted">{p.email}</p>
+                  {p.referralCode ? (
+                    <p className="mt-0.5 font-mono text-xs text-muted">
+                      Referral code: {p.referralCode}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <StatusPill tone="accent">Pending review</StatusPill>
+                  <PrimaryButton
+                    type="button"
+                    disabled={partnerAppMutation.isPending}
+                    onClick={() => {
+                      setNotice(null);
+                      partnerAppMutation.mutate({ partnerId: p.userId, action: "approve" });
+                    }}
+                  >
+                    Approve
+                  </PrimaryButton>
+                  <GhostButton
+                    type="button"
+                    disabled={partnerAppMutation.isPending}
+                    onClick={() => {
+                      setNotice(null);
+                      partnerAppMutation.mutate({ partnerId: p.userId, action: "reject" });
+                    }}
+                  >
+                    Reject
+                  </GhostButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* Filter chips */}
       <div className="mt-5 rounded-2xl border border-line bg-panel p-4">

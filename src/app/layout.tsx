@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/app/AppShell";
 import { QueryProvider } from "@/providers/QueryProvider";
+import { PLATFORM_DESCRIPTION, PLATFORM_NAME } from "@/lib/brand";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Aurix Trading Platform",
-  description: "Trader dashboard, CRM, risk, and realtime account monitoring platform.",
+  title: PLATFORM_NAME,
+  description: PLATFORM_DESCRIPTION,
 };
 
 export default function RootLayout({

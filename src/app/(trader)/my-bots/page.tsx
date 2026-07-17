@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Copy, X } from "lucide-react";
+import { Copy, Download, X } from "lucide-react";
 import {
   EmptyState,
   GhostButton,
@@ -67,6 +67,15 @@ export default function MyBotsPage() {
       setLicenseForm({ mt5AccountNumber: "", platform: "MT5" });
       setShownKey(data.licenseKeyPlaintext ?? null);
       setNotice({ type: "success", text: "License issued. Copy the key below — it will not be shown again." });
+    },
+    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  });
+
+  const downloadMutation = useMutation({
+    mutationFn: (accessId: string) =>
+      apiFetch<{ downloadUrl: string }>(`/api/my-bots/${accessId}/download`),
+    onSuccess: (data) => {
+      window.location.assign(data.downloadUrl);
     },
     onError: (err: Error) => setNotice({ type: "error", text: err.message }),
   });
@@ -174,14 +183,46 @@ export default function MyBotsPage() {
 
                 {record.status === "ACTIVE" ? (
                   <div className="mt-4 border-t border-line pt-4">
-                    {activeLicense ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                          Bot file
+                        </p>
+                        {record.hasPublishedRelease ? (
+                          <p className="mt-0.5 text-sm text-foreground">
+                            {record.releaseFileName}
+                            {record.releaseVersion ? ` · v${record.releaseVersion}` : ""}
+                          </p>
+                        ) : (
+                          <p className="mt-0.5 text-sm text-muted">
+                            The admin has not published a downloadable file yet.
+                          </p>
+                        )}
+                      </div>
+                      {record.hasPublishedRelease ? (
+                        <GhostButton
+                          type="button"
+                          disabled={downloadMutation.isPending}
+                          onClick={() => {
+                            setNotice(null);
+                            downloadMutation.mutate(record.id);
+                          }}
+                        >
+                          <Download className="mr-1.5 inline-block h-3.5 w-3.5" />
+                          {downloadMutation.isPending ? "Preparing..." : "Download bot"}
+                        </GhostButton>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-4 border-t border-line pt-4">
+                      {activeLicense ? (
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
                             License
                           </p>
                           <p className="mt-0.5 font-mono text-sm text-foreground">
-                            AURIX-····-····-····-···{activeLicense.licenseKeyLast4}
+                            ••••-••••-••••-••••-{activeLicense.licenseKeyLast4}
                           </p>
                           <p className="text-xs text-muted">
                             MT5: {activeLicense.mt5AccountNumber} · {activeLicense.platform}
@@ -208,11 +249,12 @@ export default function MyBotsPage() {
                           Generate license
                         </GhostButton>
                       </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 ) : record.status === "REQUESTED" ? (
                   <p className="mt-3 text-sm text-muted">
-                    Pending admin approval. You will be able to generate a license once approved.
+                    Payment confirmed. Your bot access is being activated automatically.
                   </p>
                 ) : null}
               </Panel>

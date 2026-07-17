@@ -2,18 +2,18 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { mapAccountToDto } from '@/lib/mappers/accountMapper'
 import type { TraderAccountSummary } from '@/lib/domain/types'
-import type { UserRole } from '@/lib/auth/rbac'
+import { isAdmin, type UserRole } from '@/lib/auth/rbac'
 
 export async function listTradingAccounts(userId: string, role: UserRole): Promise<TraderAccountSummary[]> {
-  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
+  const supabase = isAdmin(role) ? createAdminClient() : await createClient()
 
   let query = supabase
     .from('trading_accounts')
-    .select('id, account_name, broker_name, status, currency, updated_at, user_id')
+    .select('id, account_name, broker_name, broker_server, broker_platform, status, currency, updated_at, user_id')
     .order('created_at', { ascending: false })
     .limit(500)
 
-  if (role !== 'ADMIN') {
+  if (!isAdmin(role)) {
     query = query.eq('user_id', userId)
   }
 
@@ -62,14 +62,14 @@ export async function getTradingAccount(
   userId: string,
   role: UserRole
 ): Promise<TraderAccountSummary | null> {
-  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
+  const supabase = isAdmin(role) ? createAdminClient() : await createClient()
 
   let query = supabase
     .from('trading_accounts')
-    .select('id, account_name, broker_name, status, currency, updated_at, user_id')
+    .select('id, account_name, broker_name, broker_server, broker_platform, status, currency, updated_at, user_id')
     .eq('id', accountId)
 
-  if (role !== 'ADMIN') {
+  if (!isAdmin(role)) {
     query = query.eq('user_id', userId)
   }
 
@@ -117,7 +117,7 @@ export async function createTradingAccount(userId: string, data: {
       currency: data.currency ?? 'USD',
       status: 'PENDING',
     })
-    .select('id, account_name, broker_name, status, currency, updated_at, user_id')
+    .select('id, account_name, broker_name, broker_server, broker_platform, status, currency, updated_at, user_id')
     .single()
 
   if (error || !account) throw new Error(`Failed to create account: ${error?.message}`)

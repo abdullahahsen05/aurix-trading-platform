@@ -76,6 +76,9 @@ CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_type
 
 ALTER TABLE public.stripe_webhook_events ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "stripe_webhook_events_admin_only"
+  ON public.stripe_webhook_events;
+
 CREATE POLICY "stripe_webhook_events_admin_only"
   ON public.stripe_webhook_events FOR ALL
   USING (public.is_admin());

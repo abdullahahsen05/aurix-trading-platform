@@ -77,7 +77,7 @@ export default async function AccountDetailPage({
       >
         <PlatformSubscriptionLocked
           access={platformAccess}
-          description="Activate the Aurix platform subscription to unlock account detail views, broker status, and account performance history."
+          description="Activate the WSA Global platform subscription to unlock account detail views, broker status, and account performance history."
         />
       </WorkspacePage>
     );
@@ -103,7 +103,13 @@ export default async function AccountDetailPage({
     >
       <InlineStatusStrip
         items={[
-          { label: "Balance", value: formatMoney(account.balance), helper: account.brokerName },
+          {
+            label: "Balance",
+            value: formatMoney(account.balance),
+            helper:
+              [account.brokerName, account.platform, account.serverName].filter(Boolean).join(" · ") ||
+              "Broker details pending",
+          },
           { label: "Equity", value: formatMoney(account.equity), helper: "Latest snapshot", tone: "lime" },
           {
             label: "Floating PnL",
@@ -124,14 +130,15 @@ export default async function AccountDetailPage({
           <h2 className="text-lg font-semibold text-foreground">Recent trades</h2>
           <div className="mt-4">
             <DataTable
-              headers={["Symbol", "Side", "Status", "Volume", "Profit", "Opened"]}
+              headers={["Trade ID", "Symbol", "Side", "Status", "Profit", "Close price", "Closed"]}
               rows={accountTrades.map((trade) => [
+                <span key="trade-id" className="font-mono text-xs text-muted">{trade.shortTradeId}</span>,
                 <span key="symbol" className="font-semibold text-foreground">{trade.symbol}</span>,
                 trade.side,
                 <StatusPill key="status" tone={trade.status === "OPEN" ? "accent" : "muted"}>{trade.status}</StatusPill>,
-                trade.volume,
                 <span key="profit" className={trade.profit.amount >= 0 ? "font-semibold text-accent-2" : "font-semibold text-danger"}>{formatMoney(trade.profit)}</span>,
-                new Date(trade.openedAt).toLocaleDateString(),
+                trade.closePrice ?? "—",
+                trade.closedAt ? new Date(trade.closedAt).toLocaleString() : "—",
               ])}
             />
           </div>

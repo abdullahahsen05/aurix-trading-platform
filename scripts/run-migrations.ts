@@ -1,33 +1,35 @@
-import { readFileSync, existsSync } from 'fs'
+import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { Client } from 'pg'
 
 const DB_HOST = 'db.brtdyxidblyimqteduph.supabase.co'
 const DB_PORT = 5432
 const DB_USER = 'postgres'
-const DB_PASSWORD = process.env.SUPABASE_DB_PASSWORD
+function loadLocalEnv(): Record<string, string> {
+  const values: Record<string, string> = {}
+  try {
+    const raw = readFileSync(join(process.cwd(), '.env.local'), 'utf-8')
+    for (const line of raw.split(/\r?\n/)) {
+      const value = line.trim()
+      if (!value || value.startsWith('#')) continue
+      const separator = value.indexOf('=')
+      if (separator > 0) values[value.slice(0, separator).trim()] = value.slice(separator + 1).trim()
+    }
+  } catch {
+    // Environment variables remain the fallback.
+  }
+  return values
+}
+
+const localEnv = loadLocalEnv()
+const DB_PASSWORD = process.env.SUPABASE_DB_PASSWORD ?? localEnv.SUPABASE_DB_PASSWORD
 if (!DB_PASSWORD) throw new Error('SUPABASE_DB_PASSWORD env var is required.')
 const DB_NAME = 'postgres'
 
-// All migrations in order. Add new files here as they are created.
-const ALL_MIGRATIONS = [
-  '001_schema.sql',
-  '002_rls.sql',
-  '003_security_hardening.sql',
-  '004_broker_sync.sql',
-  '005_risk_notifications.sql',
-  '006_performance_indexes.sql',
-  '007_ai_assistant.sql',
-  '008_partner_dashboard.sql',
-  '009_copy_trading.sql',
-  '010_broker_integration.sql',
-  '011_performance_indexes.sql',
-  '012_background_jobs.sql',
-  '013_bot_marketplace.sql',
-  '014_academy.sql',
-  '015_evaluations.sql',
-  '016_terminal.sql',
-]
+const migrationsDir = join(process.cwd(), 'supabase', 'migrations')
+const ALL_MIGRATIONS = readdirSync(migrationsDir)
+  .filter((file) => /^\d{3}_.+\.sql$/.test(file))
+  .sort((left, right) => left.localeCompare(right))
 
 async function runMigrations() {
   const client = new Client({

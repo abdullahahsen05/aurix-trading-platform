@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   DataTable,
@@ -16,6 +17,8 @@ import type {
   TraderRiskStatus,
 } from "@/lib/partner/types";
 import type { PartnerActivityDto, PartnerRiskEventDto } from "@/lib/services/partnerService";
+import type { PartnerProfileStatusDto } from "@/lib/partner/profile";
+import { referralLink } from "@/lib/partner/referral";
 
 const RISK_TONE: Record<TraderRiskStatus, "lime" | "accent" | "danger"> = {
   OK: "lime",
@@ -37,25 +40,156 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 export default function PartnerOverviewPage() {
-  const { data: summary, isLoading } = useQuery<PartnerSummaryDto>({
+  const [siteUrl] = useState(() => typeof window === "undefined" ? "" : window.location.origin);
+  const { data: profile, isLoading: profileLoading, isError: profileError } = useQuery<PartnerProfileStatusDto>({
+    queryKey: ["partner", "profile"],
+    queryFn: () => getJson("/api/partner/profile"),
+    retry: false,
+  });
+
+  const isPending = !profileLoading && profile?.status === "PENDING_REVIEW";
+  const isActive = !profileLoading && profile?.status === "ACTIVE";
+
+  const { data: summary, isLoading: summaryLoading } = useQuery<PartnerSummaryDto>({
     queryKey: ["partner", "summary"],
     queryFn: () => getJson("/api/partner/summary"),
+    enabled: isActive,
   });
   const { data: traders = [] } = useQuery<PartnerTraderDto[]>({
     queryKey: ["partner", "traders", "all"],
     queryFn: () => getJson("/api/partner/traders"),
+    enabled: isActive,
   });
   const { data: riskEvents = [] } = useQuery<PartnerRiskEventDto[]>({
     queryKey: ["partner", "risk-events"],
     queryFn: () => getJson("/api/partner/risk-events"),
+    enabled: isActive,
   });
   const { data: activities = [] } = useQuery<PartnerActivityDto[]>({
     queryKey: ["partner", "activities"],
     queryFn: () => getJson("/api/partner/activities"),
+    enabled: isActive,
   });
 
+  const isLoading = profileLoading || (isActive && summaryLoading);
   const hasTraders = traders.length > 0;
 
+  if (profileError) {
+    return (
+      <WorkspacePage
+        eyebrow="Partner"
+        title="Partner setup unavailable"
+        description="Your partner profile could not be loaded. No trader or commission data was requested."
+      >
+        <Panel>
+          <p className="text-sm leading-6 text-muted">
+            Refresh the page to retry. If this continues, ask an administrator to verify your partner profile.
+          </p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  if (!profileLoading && profile && !profile.setupComplete) {
+    return (
+      <WorkspacePage
+        eyebrow="Partner"
+        title="Partner setup incomplete"
+        description="Your account has the partner role, but its partner profile has not been provisioned yet."
+      >
+        <Panel>
+          <p className="text-sm leading-6 text-muted">
+            An administrator needs to complete partner setup before referral, trader, commission, and payout data can load.
+          </p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  // ── Pending approval screen ───────────────────────────────────────────────
+  if (isPending) {
+    return (
+      <WorkspacePage
+        eyebrow="Partner"
+        title="Partner Portal"
+        description="Your partner application is under review."
+      >
+        <div className="mt-5 rounded-3xl border border-line bg-panel p-8 text-center">
+          <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl border border-line bg-background">
+            <span className="text-2xl">⏳</span>
+          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
+            Application submitted
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-foreground">
+            Partner account pending admin review
+          </h2>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted">
+            Your partner application has been received. Once approved, you&apos;ll get access to your
+            referral link, referred trader list, commission ledger, and payout history.
+          </p>
+
+          <div className="mx-auto mt-8 max-w-sm space-y-3 text-left">
+            {[
+              { step: "1", label: "Application submitted", done: true },
+              { step: "2", label: "Admin review in progress", done: false },
+              { step: "3", label: "Referral link activated", done: false },
+              { step: "4", label: "Commission tracking enabled", done: false },
+            ].map(({ step, label, done }) => (
+              <div
+                key={step}
+                className="flex items-center gap-3 rounded-2xl border border-line bg-background px-4 py-3"
+              >
+                <span
+                  className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold ${
+                    done
+                      ? "bg-accent/20 text-accent"
+                      : "bg-line text-muted"
+                  }`}
+                >
+                  {done ? "✓" : step}
+                </span>
+                <p className={`text-sm font-medium ${done ? "text-foreground" : "text-muted"}`}>
+                  {label}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-6 text-xs text-muted">
+            Questions? Contact your account manager or reply to your welcome email.
+          </p>
+        </div>
+      </WorkspacePage>
+    );
+  }
+
+  if (!profileLoading && profile?.status === "SUSPENDED") {
+    return (
+      <WorkspacePage
+        eyebrow="Partner"
+        title="Partner access paused"
+        description="This partner profile is suspended."
+      >
+        <Panel>
+          <p className="text-sm leading-6 text-muted">
+            Contact an administrator to review your partner access. Trader and commission data has not been loaded.
+          </p>
+        </Panel>
+      </WorkspacePage>
+    );
+  }
+
+  // ── Loading skeleton ──────────────────────────────────────────────────────
+  if (profileLoading) {
+    return (
+      <WorkspacePage eyebrow="Partner" title="Partner Overview" description="">
+        <div className="mt-5 h-24 animate-pulse rounded-2xl border border-line bg-panel" />
+      </WorkspacePage>
+    );
+  }
+
+  // ── Active partner dashboard ──────────────────────────────────────────────
   return (
     <WorkspacePage
       eyebrow="Partner"
@@ -64,46 +198,57 @@ export default function PartnerOverviewPage() {
     >
       <InlineStatusStrip
         items={[
-          { label: "Assigned traders", value: isLoading ? "…" : summary?.assignedTraders ?? 0, tone: "accent" },
-          { label: "Connected accounts", value: isLoading ? "…" : summary?.connectedAccounts ?? 0 },
+          { label: "Assigned traders", value: isLoading ? "..." : summary?.assignedTraders ?? 0, tone: "accent" },
+          { label: "Connected accounts", value: isLoading ? "..." : summary?.connectedAccounts ?? 0 },
           {
             label: "Team equity",
-            value: summary ? formatMoney(summary.totalEquity) : "—",
+            value: summary ? formatMoney(summary.totalEquity) : "-",
             tone: "lime",
           },
           {
             label: "Aggregate PnL",
-            value: summary ? formatMoney(summary.aggregateFloatingPnl) : "—",
+            value: summary ? formatMoney(summary.aggregateFloatingPnl) : "-",
             tone: (summary?.aggregateFloatingPnl.amount ?? 0) < 0 ? "danger" : "lime",
           },
           {
             label: "Open risk events",
-            value: isLoading ? "…" : summary?.openRiskEvents ?? 0,
+            value: isLoading ? "..." : summary?.openRiskEvents ?? 0,
             tone: (summary?.openRiskEvents ?? 0) > 0 ? "danger" : undefined,
           },
           {
             label: "Pending commission",
-            value: summary ? formatMoney(summary.pendingCommission) : "—",
+            value: summary ? formatMoney(summary.pendingCommission) : "-",
             tone: "accent",
           },
         ]}
       />
 
-      {summary?.referralCode ? (
+      {(summary?.referralCode ?? profile?.referralCode) ? (
         <div className="mt-5 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-panel px-4 py-3">
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Your referral code</p>
-            <p className="mt-1 font-mono text-sm font-semibold text-foreground">{summary.referralCode}</p>
+            <p className="mt-1 font-mono text-sm font-semibold text-foreground">
+              {summary?.referralCode ?? profile?.referralCode}
+            </p>
             <p className="mt-0.5 text-xs text-muted">
-              Share as: <span className="font-mono">/register?partner={summary.referralCode}</span>
+              Share this link with traders. Valid signups are attributed to your account and eligible purchases create commission records.
+            </p>
+            <p className="mt-1 truncate font-mono text-xs text-foreground">
+              {siteUrl
+                ? referralLink(siteUrl, summary?.referralCode ?? profile?.referralCode ?? "")
+                : `/register?ref=${summary?.referralCode ?? profile?.referralCode}`}
             </p>
           </div>
           <button
             type="button"
-            onClick={() => { navigator.clipboard.writeText(summary.referralCode ?? ""); }}
+            onClick={() => {
+              const code = summary?.referralCode ?? profile?.referralCode ?? "";
+              const link = referralLink(siteUrl || window.location.origin, code);
+              void navigator.clipboard.writeText(link);
+            }}
             className="shrink-0 rounded-xl border border-line bg-background px-3 py-2 text-xs font-semibold text-foreground hover:border-accent/40"
           >
-            Copy
+            Copy link
           </button>
         </div>
       ) : null}

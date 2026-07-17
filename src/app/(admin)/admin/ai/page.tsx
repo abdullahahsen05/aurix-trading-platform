@@ -1,9 +1,9 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, ImagePlus, Loader2, Send, X } from "lucide-react";
 import {
   DataTable,
   EmptyState,
@@ -24,6 +24,7 @@ interface UsageSummary {
     id: string;
     userName: string;
     route: "chat" | "chart-analysis";
+    feature: "ADMIN_ASSISTANT" | "ADMIN_IMAGE_ANALYSIS" | "TRADER_ASSISTANT" | "TRADER_CHART_ASSISTANT";
     model: string;
     status: "SUCCESS" | "FAILED";
     totalTokens: number | null;
@@ -61,6 +62,16 @@ export default function AdminAiPage() {
   const [chartLimitInput, setChartLimitInput] = useState("");
   const [creditInput, setCreditInput] = useState("");
   const [creditMode, setCreditMode] = useState<"add" | "set">("add");
+  const [assistantPrompt, setAssistantPrompt] = useState("");
+  const [assistantResult, setAssistantResult] = useState("");
+  const [assistantError, setAssistantError] = useState("");
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageFocus, setImageFocus] = useState("");
+  const [imageResult, setImageResult] = useState("");
+  const [imageError, setImageError] = useState("");
+  const [imageLoading, setImageLoading] = useState(false);
 
   const { data: usage, isLoading: usageLoading } = useQuery<UsageSummary>({
     queryKey: queryKeys.adminAiUsage,
@@ -159,12 +170,144 @@ export default function AdminAiPage() {
     setCreditInput("");
   }
 
+  async function runAdminAssistant() {
+    const message = assistantPrompt.trim();
+    if (!message || assistantLoading) return;
+    setAssistantLoading(true);
+    setAssistantError("");
+    setAssistantResult("");
+    try {
+      const response = await fetch("/api/ai/admin-assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, pageContext: "admin-ai-controls" }),
+      });
+      const json = await response.json();
+      if (!json.ok) {
+        setAssistantError(json.error?.message ?? "Admin assistant is unavailable.");
+        return;
+      }
+      setAssistantResult(json.data.message);
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminAiUsage });
+    } catch {
+      setAssistantError("Network error while contacting the admin assistant.");
+    } finally {
+      setAssistantLoading(false);
+    }
+  }
+
+  async function runImageAnalysis() {
+    if (!imageFile || imageLoading) return;
+    setImageLoading(true);
+    setImageError("");
+    setImageResult("");
+    try {
+      const form = new FormData();
+      form.append("image", imageFile);
+      if (imageFocus.trim()) form.append("prompt", imageFocus.trim());
+      const response = await fetch("/api/ai/chart-analysis", { method: "POST", body: form });
+      const json = await response.json();
+      if (!json.ok) {
+        setImageError(json.error?.message ?? "Image analysis is unavailable.");
+        return;
+      }
+      setImageResult(json.data.message);
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminAiUsage });
+    } catch {
+      setImageError("Network error while analyzing the image.");
+    } finally {
+      setImageLoading(false);
+    }
+  }
+
   return (
     <WorkspacePage
       eyebrow="Admin"
       title="AI Controls"
-      description="Monitor AI assistant usage and manage per-trader limits and access."
+      description="Use admin-only AI tools, monitor metadata-only usage, and manage per-user limits."
     >
+      <div className="mb-5 grid gap-5 xl:grid-cols-2">
+        <Panel>
+          <h2 className="text-lg font-semibold text-foreground">Admin assistant</h2>
+          <p className="mt-1 text-sm text-muted">
+            Operations and support guidance without automatic access to platform-wide user data.
+          </p>
+          <textarea
+            value={assistantPrompt}
+            onChange={(event) => setAssistantPrompt(event.target.value)}
+            rows={3}
+            maxLength={4000}
+            placeholder="Draft a risk-review checklist for a disconnected trader account."
+            className="mt-4 w-full resize-none rounded-xl border border-line bg-background px-4 py-3 text-sm text-foreground outline-none focus:border-accent"
+          />
+          <PrimaryButton
+            type="button"
+            disabled={assistantLoading || assistantPrompt.trim().length === 0}
+            onClick={() => void runAdminAssistant()}
+            className="mt-3"
+          >
+            {assistantLoading ? <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" /> : <Send className="mr-2 inline-block h-4 w-4" />}
+            {assistantLoading ? "Thinking…" : "Ask WSA Assistant"}
+          </PrimaryButton>
+          {assistantError ? <p className="mt-3 text-sm text-danger">{assistantError}</p> : null}
+          {assistantResult ? (
+            <div className="mt-4 whitespace-pre-wrap rounded-xl border border-line bg-background px-4 py-4 text-sm leading-6 text-foreground/90">
+              {assistantResult}
+            </div>
+          ) : null}
+        </Panel>
+
+        <Panel>
+          <h2 className="text-lg font-semibold text-foreground">Admin image analysis</h2>
+          <p className="mt-1 text-sm text-muted">
+            Generic image upload is available only to Admin and Super Admin. Images are not written to usage logs.
+          </p>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(event) => {
+              setImageFile(event.target.files?.[0] ?? null);
+              setImageError("");
+              setImageResult("");
+            }}
+          />
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <GhostButton type="button" onClick={() => imageInputRef.current?.click()}>
+              <ImagePlus className="mr-2 inline-block h-4 w-4" />
+              {imageFile ? "Change image" : "Choose image"}
+            </GhostButton>
+            <span className="max-w-xs truncate text-xs text-muted">
+              {imageFile ? imageFile.name : "PNG, JPG, or WebP · max 5MB"}
+            </span>
+          </div>
+          <textarea
+            value={imageFocus}
+            onChange={(event) => setImageFocus(event.target.value)}
+            rows={2}
+            maxLength={1000}
+            placeholder="Optional analysis focus"
+            className="mt-3 w-full resize-none rounded-xl border border-line bg-background px-4 py-3 text-sm text-foreground outline-none focus:border-accent"
+          />
+          <PrimaryButton
+            type="button"
+            disabled={!imageFile || imageLoading}
+            onClick={() => void runImageAnalysis()}
+            className="mt-3"
+          >
+            {imageLoading ? <Loader2 className="mr-2 inline-block h-4 w-4 animate-spin" /> : <ImagePlus className="mr-2 inline-block h-4 w-4" />}
+            {imageLoading ? "Analyzing…" : "Analyze image"}
+          </PrimaryButton>
+          {imageError ? <p className="mt-3 text-sm text-danger">{imageError}</p> : null}
+          {imageResult ? (
+            <div className="mt-4 whitespace-pre-wrap rounded-xl border border-line bg-background px-4 py-4 text-sm leading-6 text-foreground/90">
+              {imageResult}
+            </div>
+          ) : null}
+        </Panel>
+      </div>
+
       <InlineStatusStrip
         items={[
           { label: "Requests today", value: usageLoading ? "…" : usage?.today.total ?? 0, tone: "accent" },
@@ -333,7 +476,7 @@ export default function AdminAiPage() {
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-foreground">{r.userName}</p>
                     <p className="truncate text-muted">
-                      {r.route} · {r.model}
+                      {r.feature.replaceAll("_", " ")} · {r.model}
                     </p>
                   </div>
                   <StatusPill tone={r.status === "SUCCESS" ? "lime" : "danger"}>{r.status}</StatusPill>

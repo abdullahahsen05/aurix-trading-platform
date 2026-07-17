@@ -1,5 +1,13 @@
-export type UserRole = 'TRADER' | 'ADMIN' | 'PARTNER'
+export type UserRole = 'TRADER' | 'PARTNER' | 'ADMIN' | 'SUPER_ADMIN'
 export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'PENDING'
+
+const USER_ROLES = new Set<UserRole>(['TRADER', 'PARTNER', 'ADMIN', 'SUPER_ADMIN'])
+
+export function parseUserRole(value: unknown): UserRole | null {
+  return typeof value === 'string' && USER_ROLES.has(value as UserRole)
+    ? (value as UserRole)
+    : null
+}
 
 export interface UserProfile {
   id: string
@@ -13,7 +21,7 @@ export interface UserProfile {
 }
 
 export function isAdmin(role: UserRole): boolean {
-  return role === 'ADMIN'
+  return role === 'ADMIN' || role === 'SUPER_ADMIN'
 }
 
 export function isTrader(role: UserRole): boolean {
@@ -29,11 +37,11 @@ export function isActive(status: UserStatus): boolean {
 }
 
 export function canAccessAdminRoutes(role: UserRole, status: UserStatus): boolean {
-  return role === 'ADMIN' && status === 'ACTIVE'
+  return isAdmin(role) && status === 'ACTIVE'
 }
 
 export function canAccessTraderRoutes(role: UserRole, status: UserStatus): boolean {
-  return (role === 'TRADER' || role === 'ADMIN') && status === 'ACTIVE'
+  return (role === 'TRADER' || isAdmin(role)) && status === 'ACTIVE'
 }
 
 export function canAccessPartnerRoutes(role: UserRole, status: UserStatus): boolean {

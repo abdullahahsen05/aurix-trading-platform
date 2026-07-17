@@ -9,7 +9,7 @@ import type { NotificationDto } from '@/lib/domain/types';
 export interface CreateNotificationParams {
   userId: string;
   accountId?: string;
-  type: 'RISK_EVENT' | 'SYNC_SUCCESS' | 'SYNC_FAILURE' | 'EVAL_PASSED' | 'EVAL_FAILED';
+  type: 'RISK_EVENT' | 'SYNC_SUCCESS' | 'SYNC_FAILURE' | 'EVAL_PASSED' | 'EVAL_FAILED' | 'PARTNER_WITHDRAWAL';
   title: string;
   message: string;
   riskEventId?: string;

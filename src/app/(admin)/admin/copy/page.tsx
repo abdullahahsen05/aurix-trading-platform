@@ -16,6 +16,7 @@ import {
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
 import { SelectField, TextField } from "@/components/app/FormFields";
+import { CopyRulesAdminPanel } from "@/components/copy/CopyRulesAdminPanel";
 import type {
   CopyGlobalSettingsDto,
   CopyLogDto,
@@ -245,6 +246,8 @@ export default function AdminCopyPage() {
           </GhostButton>
         </div>
       </Panel>
+
+      <CopyRulesAdminPanel />
 
       {/* Verification readiness checklist */}
       <Panel className="mt-5">

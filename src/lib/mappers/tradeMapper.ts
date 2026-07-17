@@ -2,6 +2,7 @@ import type { TradeDto } from '@/lib/domain/types'
 
 interface TradeRow {
   id: string
+  short_trade_id: string | null
   trading_account_id: string
   symbol: string
   side: string
@@ -18,6 +19,7 @@ interface TradeRow {
 export function mapTradeToDto(row: TradeRow): TradeDto {
   return {
     id: row.id,
+    shortTradeId: row.short_trade_id ?? `TRD-${row.id.replaceAll('-', '').slice(0, 8).toUpperCase()}`,
     accountId: row.trading_account_id,
     symbol: row.symbol,
     side: row.side as 'BUY' | 'SELL',

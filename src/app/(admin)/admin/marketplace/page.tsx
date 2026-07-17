@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Plus, X } from "lucide-react";
+import { Plus, Upload, X } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DataTable,
@@ -10,6 +10,7 @@ import {
   FilterChipRow,
   GhostButton,
   PageActionGroup,
+  Panel,
   PrimaryButton,
   StatTile,
   StatusPill,
@@ -86,7 +87,19 @@ export default function AdminMarketplacePage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"products" | "access" | "licenses">("products");
   const [createOpen, setCreateOpen] = useState(false);
+  const [uploadProduct, setUploadProduct] = useState<BotProductDto | null>(null);
   const [form, setForm] = useState(BLANK_PRODUCT);
+  const [uploadForm, setUploadForm] = useState<{
+    version: string;
+    platform: "MT4" | "MT5";
+    releaseNotes: string;
+    file: File | null;
+  }>({
+    version: "",
+    platform: "MT5",
+    releaseNotes: "",
+    file: null,
+  });
   const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [accessFilter, setAccessFilter] = useState<"ALL" | "REQUESTED" | "ACTIVE" | "SUSPENDED" | "REVOKED" | "EXPIRED">("ALL");
 
@@ -101,7 +114,12 @@ export default function AdminMarketplacePage() {
     enabled: tab === "products",
   });
 
-  const { data: accessRows = [], isLoading: accessLoading } = useQuery<AdminAccessRow[]>({
+  const {
+    data: accessRows = [],
+    isLoading: accessLoading,
+    isError: accessError,
+    error: accessQueryError,
+  } = useQuery<AdminAccessRow[]>({
     queryKey: ["admin-marketplace-access"],
     queryFn: () => apiFetch("/api/admin/marketplace/access"),
     enabled: tab === "access",
@@ -154,6 +172,30 @@ export default function AdminMarketplacePage() {
     onError: (err: Error) => setNotice({ type: "error", text: err.message }),
   });
 
+  const uploadReleaseMutation = useMutation({
+    mutationFn: async () => {
+      if (!uploadProduct || !uploadForm.file) {
+        throw new Error("Select a bot file to upload.");
+      }
+      const data = new FormData();
+      data.set("version", uploadForm.version.trim());
+      data.set("platform", uploadForm.platform);
+      data.set("releaseNotes", uploadForm.releaseNotes.trim());
+      data.set("file", uploadForm.file);
+      return apiFetch(`/api/admin/marketplace/products/${uploadProduct.id}/releases`, {
+        method: "POST",
+        body: data,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-marketplace-products"] });
+      setNotice({ type: "success", text: "Bot file uploaded and published securely." });
+      setUploadProduct(null);
+      setUploadForm({ version: "", platform: "MT5", releaseNotes: "", file: null });
+    },
+    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  });
+
   const accessActionMutation = useMutation({
     mutationFn: ({ id, action }: { id: string; action: string }) =>
       apiFetch(`/api/admin/marketplace/access/${id}`, {
@@ -199,6 +241,23 @@ export default function AdminMarketplacePage() {
     e.preventDefault();
     setNotice(null);
     createMutation.mutate();
+  }
+
+  function openUpload(product: BotProductDto) {
+    setNotice(null);
+    setUploadProduct(product);
+    setUploadForm({
+      version: product.version ?? "1.0.0",
+      platform: product.platform === "MT4" ? "MT4" : "MT5",
+      releaseNotes: "",
+      file: null,
+    });
+  }
+
+  function handleUpload(e: FormEvent) {
+    e.preventDefault();
+    setNotice(null);
+    uploadReleaseMutation.mutate();
   }
 
   return (
@@ -262,7 +321,11 @@ export default function AdminMarketplacePage() {
                 p.platform,
                 <StatusPill key="s" tone={PRODUCT_STATUS_TONE[p.status] ?? "muted"}>{p.status}</StatusPill>,
                 p.version ?? "—",
-                <div key="a" className="flex gap-2">
+                <div key="a" className="flex flex-wrap gap-2">
+                  <GhostButton type="button" onClick={() => openUpload(p)}>
+                    <Upload className="mr-1.5 inline-block h-3.5 w-3.5" />
+                    Upload bot
+                  </GhostButton>
                   {p.status !== "PUBLISHED" ? (
                     <GhostButton
                       type="button"
@@ -301,6 +364,14 @@ export default function AdminMarketplacePage() {
           />
           {accessLoading ? (
             <div className="h-32 animate-pulse rounded-3xl bg-panel" />
+          ) : accessError ? (
+            <Panel>
+              <p className="text-sm text-danger">
+                {accessQueryError instanceof Error
+                  ? accessQueryError.message
+                  : "Failed to load bot access records."}
+              </p>
+            </Panel>
           ) : filteredAccess.length === 0 ? (
             <EmptyState title="No access records" description="Access requests will appear here." />
           ) : (
@@ -554,6 +625,124 @@ export default function AdminMarketplacePage() {
                 </Dialog.Close>
                 <PrimaryButton type="submit" disabled={createMutation.isPending}>
                   {createMutation.isPending ? "Creating…" : "Create Product"}
+                </PrimaryButton>
+              </div>
+            </form>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Upload bot release dialog */}
+      <Dialog.Root
+        open={Boolean(uploadProduct)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setUploadProduct(null);
+            setUploadForm({ version: "", platform: "MT5", releaseNotes: "", file: null });
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-background p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <Dialog.Title className="text-base font-semibold text-foreground">
+                  Upload Bot File
+                </Dialog.Title>
+                <Dialog.Description className="mt-1 text-sm text-muted">
+                  {uploadProduct?.name}. The latest published upload is delivered to paid traders.
+                </Dialog.Description>
+              </div>
+              <Dialog.Close asChild>
+                <button className="rounded-lg p-1 text-muted hover:text-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            <form onSubmit={handleUpload} className="mt-5 grid gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                    Version
+                  </label>
+                  <input
+                    required
+                    maxLength={30}
+                    value={uploadForm.version}
+                    onChange={(event) =>
+                      setUploadForm((current) => ({ ...current, version: event.target.value }))
+                    }
+                    placeholder="1.0.0"
+                    className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                    Platform
+                  </label>
+                  <select
+                    value={uploadForm.platform}
+                    onChange={(event) =>
+                      setUploadForm((current) => ({
+                        ...current,
+                        platform: event.target.value as "MT4" | "MT5",
+                      }))
+                    }
+                    className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  >
+                    <option value="MT5">MT5</option>
+                    <option value="MT4">MT4</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                  Bot file
+                </label>
+                <input
+                  required
+                  type="file"
+                  accept=".ex4,.ex5,.zip"
+                  onChange={(event) =>
+                    setUploadForm((current) => ({
+                      ...current,
+                      file: event.target.files?.[0] ?? null,
+                    }))
+                  }
+                  className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-accent file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-black"
+                />
+                <p className="mt-1.5 text-xs text-muted">
+                  Compiled .ex4/.ex5 or a .zip package, up to 50 MB. Source files and DLLs are not accepted.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                  Release notes
+                </label>
+                <textarea
+                  maxLength={2000}
+                  rows={3}
+                  value={uploadForm.releaseNotes}
+                  onChange={(event) =>
+                    setUploadForm((current) => ({ ...current, releaseNotes: event.target.value }))
+                  }
+                  className="w-full resize-none rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-line pt-4">
+                <Dialog.Close asChild>
+                  <GhostButton type="button">Cancel</GhostButton>
+                </Dialog.Close>
+                <PrimaryButton
+                  type="submit"
+                  disabled={uploadReleaseMutation.isPending || !uploadForm.file}
+                >
+                  {uploadReleaseMutation.isPending ? "Uploading..." : "Upload and publish"}
                 </PrimaryButton>
               </div>
             </form>

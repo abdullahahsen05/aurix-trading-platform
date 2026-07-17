@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { mapTradeToDto } from '@/lib/mappers/tradeMapper'
 import type { TradeDto, TradeStatus } from '@/lib/domain/types'
-import type { UserRole } from '@/lib/auth/rbac'
+import { isAdmin, type UserRole } from '@/lib/auth/rbac'
 
 export async function listTrades(params: {
   userId: string
@@ -12,11 +12,11 @@ export async function listTrades(params: {
   limit?: number
 }): Promise<TradeDto[]> {
   // Admin bypasses RLS to see all trades; traders see only their own via SSR client.
-  const supabase = params.role === 'ADMIN' ? createAdminClient() : await createClient()
+  const supabase = isAdmin(params.role) ? createAdminClient() : await createClient()
 
   let query = supabase
     .from('trades')
-    .select('id, trading_account_id, symbol, side, status, volume, open_price, close_price, profit, currency, opened_at, closed_at')
+    .select('id, short_trade_id, trading_account_id, symbol, side, status, volume, open_price, close_price, profit, currency, opened_at, closed_at')
     .order('opened_at', { ascending: false })
     .limit(params.limit ?? 200)
 
@@ -28,7 +28,7 @@ export async function listTrades(params: {
   }
 
   // If trader, limit to their own accounts
-  if (params.role !== 'ADMIN') {
+  if (!isAdmin(params.role)) {
     // Get user's account IDs first
     const { data: userAccounts } = await supabase
       .from('trading_accounts')

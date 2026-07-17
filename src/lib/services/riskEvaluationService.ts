@@ -31,6 +31,8 @@ export function buildAccountInput(
     accountId,
     accountName,
     brokerName,
+    serverName: null,
+    platform: null,
     status: status as AccountStatus,
     balance: { amount: Number(snapshot?.balance ?? 0), currency: 'USD' },
     equity: { amount: Number(snapshot?.equity ?? 0), currency: 'USD' },

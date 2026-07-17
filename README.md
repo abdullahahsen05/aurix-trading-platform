@@ -1,4 +1,4 @@
-# AURIX Trading Platform
+# WSA GLOBAL Trading Platform
 
 Full-stack fintech trading platform for trader dashboards, CRM, admin oversight, analytics, risk monitoring, broker adapters, and realtime account updates.
 

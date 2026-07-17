@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { AiFeature } from "@/lib/ai/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI Admin Service (server-only) — usage analytics + per-user limit management.
@@ -20,6 +21,7 @@ export interface AiUsageLogRow {
   userId: string;
   userName: string;
   route: "chat" | "chart-analysis";
+  feature: AiFeature;
   model: string;
   requestType: string;
   status: "SUCCESS" | "FAILED";
@@ -42,6 +44,7 @@ interface RawLog {
   id: string;
   user_id: string;
   route: "chat" | "chart-analysis";
+  feature: AiFeature;
   model: string;
   request_type: string;
   status: "SUCCESS" | "FAILED";
@@ -71,7 +74,7 @@ export async function getAiUsageSummary(): Promise<AiUsageSummary> {
   // Today's rows (bounded) for aggregation.
   const { data: todayRows, error: todayErr } = await supabase
     .from("ai_usage_logs")
-    .select("id, user_id, route, model, request_type, status, total_tokens, created_at")
+    .select("id, user_id, route, feature, model, request_type, status, total_tokens, created_at")
     .gte("created_at", dayStart)
     .order("created_at", { ascending: false })
     .limit(2000);
@@ -80,7 +83,7 @@ export async function getAiUsageSummary(): Promise<AiUsageSummary> {
   // Recent rows across all time for the activity table.
   const { data: recentRows, error: recentErr } = await supabase
     .from("ai_usage_logs")
-    .select("id, user_id, route, model, request_type, status, total_tokens, created_at")
+    .select("id, user_id, route, feature, model, request_type, status, total_tokens, created_at")
     .order("created_at", { ascending: false })
     .limit(50);
   if (recentErr) throw new Error(`Failed to fetch recent AI usage: ${recentErr.message}`);
@@ -120,6 +123,7 @@ export async function getAiUsageSummary(): Promise<AiUsageSummary> {
       userId: r.user_id,
       userName: names.get(r.user_id) ?? r.user_id,
       route: r.route,
+      feature: r.feature,
       model: r.model,
       requestType: r.request_type,
       status: r.status,

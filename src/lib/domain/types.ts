@@ -1,4 +1,4 @@
-export type UserRole = "TRADER" | "ADMIN" | "PARTNER";
+export type UserRole = "TRADER" | "PARTNER" | "ADMIN" | "SUPER_ADMIN";
 export type AccountStatus =
   | "PENDING"
   | "CONNECTED"
@@ -19,6 +19,8 @@ export interface TraderAccountSummary {
   accountId: string;
   accountName: string;
   brokerName: string;
+  serverName: string | null;
+  platform: "MT4" | "MT5" | null;
   status: AccountStatus;
   balance: MoneyValue;
   equity: MoneyValue;
@@ -30,6 +32,7 @@ export interface TraderAccountSummary {
 
 export interface TradeDto {
   id: string;
+  shortTradeId: string;
   accountId: string;
   symbol: string;
   side: TradeSide;
@@ -49,6 +52,11 @@ export interface AnalyticsSummary {
   maxDrawdownPercent: number;
   riskRewardRatio: number;
   consistencyScore: number;
+  profitFactor: number;
+  averageWin: MoneyValue;
+  averageLoss: MoneyValue;
+  winningTradeCount: number;
+  losingTradeCount: number;
   tradeCount: number;
   period: "DAILY" | "WEEKLY" | "MONTHLY" | "ALL_TIME";
 }
@@ -150,6 +158,7 @@ export type BotDifficulty = "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
 export type BotRiskLevel = "LOW" | "MEDIUM" | "HIGH";
 export type BotAccessStatus = "REQUESTED" | "ACTIVE" | "SUSPENDED" | "REVOKED" | "EXPIRED";
 export type BotLicenseStatus = "ACTIVE" | "REVOKED" | "SUSPENDED" | "EXPIRED";
+export type BotReleaseStatus = "DRAFT" | "PUBLISHED" | "RETIRED";
 
 export interface BotProductDto {
   id: string;
@@ -183,6 +192,23 @@ export interface BotAccessRecordDto {
   source: "REQUEST" | "MANUAL" | "FUTURE_PAYMENT";
   grantedAt: string | null;
   expiresAt: string | null;
+  hasPublishedRelease: boolean;
+  releaseVersion: string | null;
+  releaseFileName: string | null;
+  createdAt: string;
+}
+
+export interface BotReleaseDto {
+  id: string;
+  productId: string;
+  version: string;
+  platform: Exclude<BotPlatform, "BOTH">;
+  status: BotReleaseStatus;
+  originalFileName: string;
+  fileSize: number;
+  checksumSha256: string;
+  releaseNotes: string | null;
+  publishedAt: string | null;
   createdAt: string;
 }
 
@@ -293,6 +319,30 @@ export interface CourseProgressDto {
   lastLessonId: string | null;
   lastLessonSlug: string | null;
   lastCourseSlug: string | null;
+}
+
+export type AcademyProgressLabel = "BAD" | "GOOD" | "EXCELLENT";
+
+export interface AcademyProgressSummaryDto {
+  userId: string;
+  traderName: string | null;
+  traderEmail: string | null;
+  courseId: string;
+  courseTitle: string;
+  courseSlug: string;
+  completedLessons: number;
+  totalLessons: number;
+  completionPercent: number;
+  label: AcademyProgressLabel;
+  lastActivityAt: string | null;
+}
+
+export interface MyAcademyProgressDto {
+  completionPercent: number;
+  label: AcademyProgressLabel;
+  completedLessons: number;
+  totalLessons: number;
+  courses: AcademyProgressSummaryDto[];
 }
 
 export interface AcademyWebinarDto {

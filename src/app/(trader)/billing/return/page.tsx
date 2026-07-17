@@ -1,123 +1,147 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
-import { useSearchParams } from "next/navigation";
-import { CheckCircle2 as CheckCircle, Clock } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { CheckCircle2, Clock3, ShieldCheck, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Panel, WorkspacePage } from "@/components/app/WorkspaceUI";
+import type { BillingReturnStatusDto } from "@/lib/services/billingService";
 
-type BillingHistoryRow = {
-  id: string;
-  productName: string;
-  status: string;
-  amount: number;
-  currency: string;
-};
-
-type BillingSummary = {
-  paymentHistory: BillingHistoryRow[];
-};
+async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const json = await response.json();
+  if (!json.ok) throw new Error(json.error?.message ?? "Request failed");
+  return json.data as T;
+}
 
 export default function BillingReturnPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const mockConfirmationStarted = useRef(false);
   const orderId = searchParams.get("orderId");
+  const sessionId = searchParams.get("session_id");
   const isMock = searchParams.get("mock") === "1";
 
   const confirmMockPayment = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/billing/mock-confirm", {
+    mutationFn: () =>
+      getJson<{ message: string }>("/api/billing/mock-confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId }),
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error?.message ?? "Failed to confirm mock payment");
-      return json.data as { message: string };
-    },
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["billing-me"] });
+      void queryClient.invalidateQueries({ queryKey: ["billing-me"] });
+      void queryClient.invalidateQueries({ queryKey: ["billing-return", orderId, sessionId] });
     },
   });
 
   useEffect(() => {
-    if (!isMock || !orderId || confirmMockPayment.isSuccess || confirmMockPayment.isPending) return;
+    if (!isMock || !orderId || mockConfirmationStarted.current) return;
+    mockConfirmationStarted.current = true;
     confirmMockPayment.mutate();
   }, [confirmMockPayment, isMock, orderId]);
 
-  const { data, isLoading } = useQuery<BillingSummary>({
-    queryKey: ["billing-return", orderId],
-    queryFn: async () => {
-      const res = await fetch("/api/billing/me");
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load status");
-      return json.data as BillingSummary;
+  const statusQuery = useQuery<BillingReturnStatusDto>({
+    queryKey: ["billing-return", orderId, sessionId],
+    queryFn: () => {
+      const params = new URLSearchParams({ orderId: orderId ?? "" });
+      if (sessionId) params.set("session_id", sessionId);
+      return getJson(`/api/billing/return-status?${params.toString()}`);
     },
-    refetchInterval: 5_000,
     enabled: Boolean(orderId),
+    refetchInterval: (query) =>
+      query.state.data?.state === "ACTIVE" ||
+      query.state.data?.state === "FAILED" ||
+      query.state.data?.state === "CANCELLED"
+        ? false
+        : 5_000,
   });
 
-  const order = data?.paymentHistory?.find((item) => item.id === orderId);
-  const isPaid = order?.status === "PAID";
-  const isPending = order?.status === "PENDING" || !order;
+  const state = statusQuery.data?.state;
+  const isErrorState = state === "FAILED" || state === "CANCELLED" || statusQuery.isError;
+  const isActive = state === "ACTIVE";
+  const isApproval = state === "PENDING_APPROVAL";
+  const platformActivated =
+    isActive && statusQuery.data?.order.productCode === "PLATFORM_MONTHLY";
+  const Icon = isErrorState ? X : isActive ? CheckCircle2 : isApproval ? ShieldCheck : Clock3;
+  const iconClass = isErrorState ? "text-danger" : isActive ? "text-lime" : "text-accent";
+
+  useEffect(() => {
+    if (!platformActivated) return;
+    void queryClient.invalidateQueries({ queryKey: ["billing-me"] });
+    const timer = window.setTimeout(() => {
+      router.replace("/dashboard");
+      router.refresh();
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [platformActivated, queryClient, router]);
 
   return (
     <WorkspacePage
       eyebrow="Billing"
       title="Payment status"
-      description={isMock ? "Returned from the local mock checkout flow." : "Returned from Stripe Checkout."}
+      description={isMock ? "Returned from the local mock checkout flow." : "Returned securely from Stripe Checkout."}
     >
-      <Panel className="max-w-lg">
-        {isLoading && !order ? (
-          <div className="space-y-3 py-4">
-            <div className="h-5 w-48 animate-pulse rounded-full bg-panel-strong" />
-            <div className="h-4 w-64 animate-pulse rounded-full bg-panel-strong" />
-          </div>
-        ) : isPaid ? (
-          <div className="flex items-start gap-4 py-2">
-            <CheckCircle className="mt-0.5 h-7 w-7 shrink-0 text-lime" />
-            <div>
-              <p className="text-base font-semibold text-foreground">Payment confirmed</p>
-              <p className="mt-1 text-sm text-muted">
-                Your payment for <strong className="text-foreground">{order?.productName}</strong> was received.
-                Access will unlock after admin approval, usually within 1 business day.
-              </p>
+      <Panel className="max-w-2xl overflow-hidden">
+        <div className="border-b border-line bg-[radial-gradient(circle_at_top_right,rgba(196,255,77,0.12),transparent_45%)] px-1 pb-6">
+          {statusQuery.isLoading || (isMock && confirmMockPayment.isPending) ? (
+            <div className="space-y-3 py-4">
+              <div className="h-6 w-56 animate-pulse rounded-full bg-panel-strong" />
+              <div className="h-4 w-80 max-w-full animate-pulse rounded-full bg-panel-strong" />
             </div>
-          </div>
-        ) : (
-          <div className="flex items-start gap-4 py-2">
-            <Clock className="mt-0.5 h-7 w-7 shrink-0 text-accent" />
-            <div>
-              <p className="text-base font-semibold text-foreground">
-                {isPending ? "Payment processing..." : "Payment not confirmed"}
-              </p>
-              <p className="mt-1 text-sm text-muted">
-                {isPending
-                  ? isMock
-                    ? "We are recording the mock payment locally. This page refreshes automatically."
-                    : "We are waiting for Stripe to confirm your payment. This page refreshes automatically."
-                  : `Current status: ${order?.status}. Contact support if you believe this is an error.`}
-              </p>
-              {confirmMockPayment.isError ? (
-                <p className="mt-2 text-xs text-danger">{(confirmMockPayment.error as Error).message}</p>
-              ) : null}
+          ) : (
+            <div className="flex items-start gap-4 py-3">
+              <div className="rounded-2xl border border-line bg-background p-3">
+                <Icon className={`h-7 w-7 ${iconClass}`} />
+              </div>
+              <div>
+                {statusQuery.data?.order.status === "PAID" ? (
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-lime">
+                    Payment confirmed
+                  </p>
+                ) : null}
+                <p className="text-lg font-semibold text-foreground">
+                  {statusQuery.isError ? "Payment status unavailable" : statusQuery.data?.title}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-muted">
+                  {statusQuery.isError
+                    ? statusQuery.error instanceof Error
+                      ? statusQuery.error.message
+                      : "The payment status could not be verified."
+                    : statusQuery.data?.message}
+                </p>
+                {statusQuery.data?.order ? (
+                  <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted">
+                    <span><strong className="text-foreground">Product:</strong> {statusQuery.data.order.productName}</span>
+                    <span><strong className="text-foreground">Order:</strong> {statusQuery.data.order.id.slice(0, 8).toUpperCase()}</span>
+                    <span><strong className="text-foreground">Payment:</strong> {statusQuery.data.order.status}</span>
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        <div className="mt-5 flex gap-3 border-t border-line pt-4">
-          <Link
-            href="/billing"
-            className="rounded-full border border-line bg-background px-4 py-2 text-xs font-semibold text-foreground hover:border-accent/40"
-          >
-            Back to billing
+        {confirmMockPayment.isError ? (
+          <p className="mt-4 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+            {(confirmMockPayment.error as Error).message}
+          </p>
+        ) : null}
+
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link href="/marketplace" className="rounded-full border border-line bg-background px-4 py-2 text-xs font-semibold text-foreground hover:border-accent/40">
+            Marketplace
+          </Link>
+          <Link href="/billing" className="rounded-full border border-line bg-background px-4 py-2 text-xs font-semibold text-foreground hover:border-accent/40">
+            Billing
           </Link>
           <Link
-            href="/dashboard"
+            href={platformActivated ? "/dashboard" : "/my-bots"}
             className="rounded-full bg-accent px-4 py-2 text-xs font-semibold text-background hover:opacity-90"
           >
-            Go to dashboard
+            {platformActivated ? "Open trader portal" : "My Bots"}
           </Link>
         </div>
       </Panel>

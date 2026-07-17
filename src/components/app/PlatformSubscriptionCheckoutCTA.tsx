@@ -4,15 +4,16 @@ import { useState } from "react";
 import { StatusPill, GhostButton, PrimaryButton } from "@/components/app/WorkspaceUI";
 import { BillingCheckoutModal } from "@/components/app/BillingCheckoutModal";
 import type { SubscriptionDto } from "@/lib/services/billingService";
+import { PLATFORM_NAME } from "@/lib/brand";
 
 const PLATFORM_PRODUCT = {
   code: "PLATFORM_MONTHLY",
-  name: "Aurix Platform Subscription",
+  name: `${PLATFORM_NAME} Subscription`,
   amount: 50,
   currency: "USD",
   billingInterval: "MONTHLY",
   description:
-    "Access MT5 account tracking, core trading workspace features, AI tools, and professional platform workflows. Renews monthly from your subscription approval date.",
+    "Access MT5 account tracking, core trading workspace features, AI tools, and professional platform workflows. Activates after verified payment and renews monthly.",
 };
 
 export function PlatformSubscriptionCheckoutCTA({
@@ -30,7 +31,7 @@ export function PlatformSubscriptionCheckoutCTA({
   const ButtonComponent = buttonVariant === "primary" ? PrimaryButton : GhostButton;
 
   if (access.status === "PENDING_APPROVAL") {
-    return <StatusPill tone="accent">Payment received — pending admin approval</StatusPill>;
+    return <StatusPill tone="accent">Payment verified — activating access</StatusPill>;
   }
 
   if (access.status === "PENDING_PAYMENT") {

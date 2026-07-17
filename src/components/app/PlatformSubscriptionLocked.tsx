@@ -9,7 +9,7 @@ import type { SubscriptionDto } from "@/lib/services/billingService";
 export function PlatformSubscriptionLocked({
   access,
   title = "Platform subscription required",
-  description = "Activate the Aurix platform subscription to unlock this trading workspace feature.",
+  description = "Activate the WSA Global platform subscription to unlock this trading workspace feature.",
 }: {
   access: SubscriptionDto;
   title?: string;
@@ -17,7 +17,7 @@ export function PlatformSubscriptionLocked({
 }) {
   const helperText =
     access.status === "PENDING_APPROVAL"
-      ? "Payment received — pending admin approval"
+      ? "Payment verified — platform activation is finishing."
       : access.status === "PENDING_PAYMENT"
         ? "Your payment is pending confirmation."
         : access.status === "EXPIRED"

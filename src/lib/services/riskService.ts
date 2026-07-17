@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { mapRiskRuleToDto, mapRiskEventToDto } from '@/lib/mappers/riskMapper'
 import { writeAuditLog } from '@/lib/services/auditService'
 import type { RiskRuleDto, RiskEventDto } from '@/lib/domain/types'
-import type { UserRole } from '@/lib/auth/rbac'
+import { isAdmin, type UserRole } from '@/lib/auth/rbac'
 
 export async function listRiskRules(
   accountId: string | undefined,
@@ -11,7 +11,7 @@ export async function listRiskRules(
   role: UserRole
 ): Promise<RiskRuleDto[]> {
   // Admin bypasses RLS to see all rules; traders see their own via SSR client.
-  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
+  const supabase = isAdmin(role) ? createAdminClient() : await createClient()
 
   // Platform-level rules (trading_account_id IS NULL) always included for active users
   const { data: platformRules } = await supabase
@@ -21,7 +21,7 @@ export async function listRiskRules(
 
   let accountRules: typeof platformRules = []
 
-  if (role === 'ADMIN') {
+  if (isAdmin(role)) {
     const { data } = await supabase
       .from('risk_rules')
       .select('id, trading_account_id, name, severity, metric, threshold, enabled')
@@ -45,7 +45,7 @@ export async function listRiskEvents(
   role: UserRole
 ): Promise<RiskEventDto[]> {
   // Admin bypasses RLS to see all events; traders see their own via SSR client.
-  const supabase = role === 'ADMIN' ? createAdminClient() : await createClient()
+  const supabase = isAdmin(role) ? createAdminClient() : await createClient()
 
   let query = supabase
     .from('risk_events')
@@ -54,7 +54,7 @@ export async function listRiskEvents(
     .order('created_at', { ascending: false })
     .limit(100)
 
-  if (role !== 'ADMIN') {
+  if (!isAdmin(role)) {
     // Get user's accounts
     const { data: userAccounts } = await supabase
       .from('trading_accounts')

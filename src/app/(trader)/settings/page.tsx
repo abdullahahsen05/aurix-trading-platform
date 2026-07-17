@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { GhostButton, Panel, PrimaryButton, WorkspacePage } from "@/components/app/WorkspaceUI";
+import { Panel, PrimaryButton, WorkspacePage } from "@/components/app/WorkspaceUI";
 import { SelectField, TextField } from "@/components/app/FormFields";
+import { PasskeySecurityPanel } from "@/components/auth/PasskeySecurityPanel";
 
 type SessionUser = {
   id: string;
@@ -61,8 +63,8 @@ export default function SettingsPage() {
   return (
     <WorkspacePage
       eyebrow="Settings"
-      title="Profile and broker configuration"
-      description="Trader profile, security settings, broker server details, and investor-password connection preferences."
+      title="Profile settings"
+      description="Manage your profile and regional preferences."
       action={
         <PrimaryButton type="submit" form="settings-form" disabled={mutation.isPending}>
           {mutation.isPending ? "Saving..." : "Save changes"}
@@ -110,20 +112,23 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-lg font-semibold text-foreground">Broker access</h2>
           </div>
-          <div className="mt-4 rounded-2xl border border-line bg-background px-4 py-3 text-sm font-medium text-muted">
-            Broker API credentials are managed by your platform administrator.
+          <div className="mt-4 rounded-2xl border border-line bg-background px-4 py-4 text-sm leading-6 text-muted">
+            Broker credentials and connection checks are managed per trading account so their
+            status is never confused with profile settings.
           </div>
-          <div className="mt-5 grid gap-4">
-            <TextField label="Broker server" name="brokerServer" placeholder="e.g. FusionMarkets-Live" />
-            <TextField label="MT5 login" name="mt5Login" placeholder="Account login number" />
-            <TextField label="Investor password" name="investorPassword" type="password" placeholder="Read-only password" />
-          </div>
-          <div className="mt-5 flex gap-3">
-            <GhostButton type="button">Test connection</GhostButton>
-            <PrimaryButton type="button">Connect</PrimaryButton>
+          <div className="mt-5">
+            <Link
+              href="/accounts"
+              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-background transition hover:brightness-110"
+            >
+              Manage trading accounts
+            </Link>
           </div>
         </Panel>
       </form>
+      <div className="mt-5">
+        <PasskeySecurityPanel />
+      </div>
     </WorkspacePage>
   );
 }

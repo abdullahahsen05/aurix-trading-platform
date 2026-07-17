@@ -64,6 +64,8 @@ function compactAccount(a: TraderAccountSummary) {
     accountId: a.accountId,
     accountName: a.accountName,
     brokerName: a.brokerName,
+    serverName: a.serverName,
+    platform: a.platform,
     status: a.status,
     currency: a.balance.currency,
     balance: a.balance.amount,

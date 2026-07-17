@@ -52,7 +52,7 @@ export default function ReportsPage() {
       >
         <PlatformSubscriptionLocked
           access={access}
-          description="Activate the Aurix platform subscription to unlock reports, export tools, and scheduled reporting workflows."
+          description="Activate the WSA Global platform subscription to unlock reports, export tools, and scheduled reporting workflows."
         />
       </WorkspacePage>
     );

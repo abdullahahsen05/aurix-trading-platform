@@ -39,9 +39,9 @@ export function BillingCheckoutModal({
   const queryClient = useQueryClient();
 
   const isCopyProduct = product.code.startsWith("COPY_");
+  const autoActivatesAfterPayment = isCopyProduct || product.code === "PLATFORM_MONTHLY";
   const needsAccountSelector = isCopyProduct && !propAccountId && accounts.length > 0;
   const canProceed = !needsAccountSelector || selectedAccountId !== "";
-  const isMockCheckout = process.env.NEXT_PUBLIC_AIRWALLEX_ENABLED === "false";
 
   const checkout = useMutation({
     mutationFn: async () => {
@@ -104,7 +104,9 @@ export function BillingCheckoutModal({
               <span className="text-muted">Billing</span>
               <span className="text-foreground">
                 {product.billingInterval === "MONTHLY"
-                  ? "Monthly - renews from approval date"
+                  ? isCopyProduct
+                    ? "Monthly - renews from verified payment date"
+                    : "Monthly - renews from approval date"
                   : "One-time payment"}
               </span>
             </div>
@@ -130,8 +132,10 @@ export function BillingCheckoutModal({
           <div className="mt-4 flex items-start gap-2 rounded-xl border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-muted">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
             <span>
-              {isMockCheckout ? (
-                <>Mock billing mode is enabled. Completing checkout records a local payment and still requires manual admin approval before access unlocks.</>
+              {autoActivatesAfterPayment ? (
+                <>
+                  Access activates automatically only after the server verifies payment with Stripe. A success redirect alone does not grant access.
+                </>
               ) : (
                 <>
                   Access is activated after payment is confirmed and admin-approved. Stripe test card:{" "}
