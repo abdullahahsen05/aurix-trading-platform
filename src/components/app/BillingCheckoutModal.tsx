@@ -24,6 +24,7 @@ interface BillingCheckoutModalProps {
   tradingAccountId?: string;
   accounts?: Array<{ accountId: string; accountName: string }>;
   botProductId?: string;
+  copyStrategyId?: string;
 }
 
 export function BillingCheckoutModal({
@@ -33,6 +34,7 @@ export function BillingCheckoutModal({
   tradingAccountId: propAccountId,
   accounts = [],
   botProductId,
+  copyStrategyId,
 }: BillingCheckoutModalProps) {
   const [selectedAccountId, setSelectedAccountId] = useState(propAccountId ?? "");
   const [apiError, setApiError] = useState("");
@@ -53,6 +55,7 @@ export function BillingCheckoutModal({
         body.tier = product.code === "COPY_ULTRA_FAST" ? "PREMIUM" : "NORMAL";
       }
       if (botProductId) body.botProductId = botProductId;
+      if (copyStrategyId) body.copyStrategyId = copyStrategyId;
 
       const res = await fetch("/api/billing/checkout", {
         method: "POST",

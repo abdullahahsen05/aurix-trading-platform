@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
       tradingAccountId?: string;
       tier?: string;
       botProductId?: string;
+      copyStrategyId?: string;
     };
 
     if (!body.productCode) return jsonFail("MISSING_FIELD", "productCode is required");
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
     const existing = await checkExistingAccess(user.id, body.productCode, {
       tradingAccountId: body.tradingAccountId,
       botProductId: body.botProductId,
+      copyStrategyId: body.copyStrategyId,
     });
     if (!canCreateCheckoutForState(existing.status, product.billingInterval === "MONTHLY")) {
       return jsonFail("DUPLICATE_PURCHASE", existing.message, 409);
@@ -41,6 +43,7 @@ export async function POST(req: NextRequest) {
       userName: user.name,
       productCode: body.productCode,
       tradingAccountId: body.tradingAccountId,
+      copyStrategyId: body.copyStrategyId,
       tier: body.tier,
       botProductId: body.botProductId,
       returnUrl,

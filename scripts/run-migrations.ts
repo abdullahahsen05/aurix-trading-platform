@@ -27,9 +27,15 @@ if (!DB_PASSWORD) throw new Error('SUPABASE_DB_PASSWORD env var is required.')
 const DB_NAME = 'postgres'
 
 const migrationsDir = join(process.cwd(), 'supabase', 'migrations')
+const requestedMigrations = new Set(process.argv.slice(2))
 const ALL_MIGRATIONS = readdirSync(migrationsDir)
   .filter((file) => /^\d{3}_.+\.sql$/.test(file))
+  .filter((file) => requestedMigrations.size === 0 || requestedMigrations.has(file))
   .sort((left, right) => left.localeCompare(right))
+
+if (requestedMigrations.size > 0 && ALL_MIGRATIONS.length !== requestedMigrations.size) {
+  throw new Error('One or more requested migration files do not exist.')
+}
 
 async function runMigrations() {
   const client = new Client({

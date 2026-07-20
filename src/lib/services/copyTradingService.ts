@@ -5,6 +5,12 @@ import { evaluateFollowerEligibility } from "@/lib/copy/eligibility";
 import { BrokerExecutionError, MetaApiBrokerAdapter } from "@/lib/broker/MetaApiBrokerAdapter";
 import { logBrokerOperation } from "@/lib/services/brokerOperationLog";
 import {
+  copyModeToScalingMode,
+  mapFollowerSymbol,
+  reverseFollowerSide,
+  scalingModeToCopyMode,
+} from "@/lib/copy/settings";
+import {
   COPY_ERROR,
   CopyError,
   type CopyFollowerDto,
@@ -204,6 +210,13 @@ interface StrategyRow {
   max_open_copied_trades: number | null;
   symbol_allowlist: string[] | null;
   symbol_blocklist: string[] | null;
+  engine_status: CopyStrategyDto["engineStatus"];
+  engine_error: string | null;
+  engine_heartbeat_at: string | null;
+  monthly_price: number | string;
+  currency: string;
+  billing_product_id: string | null;
+  published_at: string | null;
   created_at: string;
 }
 
@@ -228,12 +241,21 @@ function mapStrategy(
     symbolAllowlist: row.symbol_allowlist,
     symbolBlocklist: row.symbol_blocklist,
     followerCount,
+    engineStatus: row.engine_status,
+    engineError: row.engine_error,
+    engineHeartbeatAt: row.engine_heartbeat_at,
+    monthlyPrice: Number(row.monthly_price),
+    currency: row.currency,
+    billingProductCode: row.billing_product_id
+      ? `COPY_STRATEGY_${row.id.replaceAll("-", "").toUpperCase()}`
+      : null,
+    publishedAt: row.published_at,
     createdAt: row.created_at,
   };
 }
 
 const STRATEGY_COLS =
-  "id, name, description, master_account_id, status, mode, live_enabled, risk_multiplier, default_scaling_mode, max_follower_lot, max_open_copied_trades, symbol_allowlist, symbol_blocklist, created_at";
+  "id, name, description, master_account_id, status, mode, live_enabled, risk_multiplier, default_scaling_mode, max_follower_lot, max_open_copied_trades, symbol_allowlist, symbol_blocklist, engine_status, engine_error, engine_heartbeat_at, monthly_price, currency, billing_product_id, published_at, created_at";
 
 export async function listCopyStrategies(): Promise<CopyStrategyDto[]> {
   const supabase = createAdminClient();
@@ -284,6 +306,8 @@ export async function createCopyStrategy(
     maxOpenCopiedTrades?: number | null;
     symbolAllowlist?: string[] | null;
     symbolBlocklist?: string[] | null;
+    monthlyPrice: number;
+    currency: string;
   },
   actorUserId: string,
 ): Promise<CopyStrategyDto> {
@@ -291,10 +315,12 @@ export async function createCopyStrategy(
 
   const { data: master } = await supabase
     .from("trading_accounts")
-    .select("id, account_name")
+    .select("id, account_name, user_id, account_usage")
     .eq("id", input.masterAccountId)
+    .eq("user_id", actorUserId)
+    .eq("account_usage", "COPY_MASTER")
     .maybeSingle();
-  if (!master) throw new CopyError(COPY_ERROR.MASTER_ACCOUNT_NOT_FOUND, "Master account not found", 404);
+  if (!master) throw new CopyError(COPY_ERROR.MASTER_ACCOUNT_NOT_FOUND, "Select a copy-master account connected by this admin.", 404);
 
   const { data, error } = await supabase
     .from("copy_strategies")
@@ -308,6 +334,10 @@ export async function createCopyStrategy(
       max_open_copied_trades: input.maxOpenCopiedTrades ?? null,
       symbol_allowlist: input.symbolAllowlist ?? null,
       symbol_blocklist: input.symbolBlocklist ?? null,
+      monthly_price: input.monthlyPrice,
+      currency: input.currency,
+      mode: "LIVE",
+      live_enabled: false,
       created_by: actorUserId,
     })
     .select(STRATEGY_COLS)
@@ -537,12 +567,22 @@ interface FollowerRow {
   risk_multiplier: number | string | null;
   fixed_lot: number | string | null;
   max_lot: number | string | null;
+  min_lot: number | string | null;
+  copy_enabled: boolean;
+  copy_mode: CopyFollowerDto["copyMode"] | null;
+  lot_multiplier: number | string | null;
   max_open_trades: number | null;
   max_daily_loss_percent: number | string | null;
   max_drawdown_percent: number | string | null;
   symbol_allowlist: string[] | null;
   symbol_blocklist: string[] | null;
+  symbol_mapping: Record<string, string> | null;
+  copy_new_trades_only: boolean;
+  reverse_copy: boolean;
+  pause_on_disconnect: boolean;
+  emergency_stop: boolean;
   consent_accepted_at: string | null;
+  created_at: string;
 }
 
 async function loadActiveFollowers(strategyId: string): Promise<FollowerRow[]> {
@@ -550,7 +590,7 @@ async function loadActiveFollowers(strategyId: string): Promise<FollowerRow[]> {
   const { data } = await supabase
     .from("copy_strategy_followers")
     .select(
-      "id, follower_account_id, trader_id, status, tier, scaling_mode, risk_multiplier, fixed_lot, max_lot, max_open_trades, max_daily_loss_percent, max_drawdown_percent, symbol_allowlist, symbol_blocklist, consent_accepted_at",
+      "id, follower_account_id, trader_id, status, tier, scaling_mode, risk_multiplier, fixed_lot, max_lot, min_lot, copy_enabled, copy_mode, lot_multiplier, max_open_trades, max_daily_loss_percent, max_drawdown_percent, symbol_allowlist, symbol_blocklist, symbol_mapping, copy_new_trades_only, reverse_copy, pause_on_disconnect, emergency_stop, consent_accepted_at, created_at",
     )
     .eq("strategy_id", strategyId)
     .eq("status", "ACTIVE")
@@ -688,6 +728,7 @@ async function simulateOneEvent(eventRow: {
   symbol: string;
   side: string | null;
   volume: number | string | null;
+  event_time: string;
 }, strategy: StrategyRow, settings: CopyGlobalSettingsDto): Promise<SimResult> {
   const supabase = createAdminClient();
   const followers = await loadActiveFollowers(strategy.id);
@@ -710,20 +751,22 @@ async function simulateOneEvent(eventRow: {
   const ruleEvents: Record<string, unknown>[] = [];
 
   for (const f of followers) {
+    const followerSymbol = mapFollowerSymbol(eventRow.symbol, f.symbol_mapping);
+    const followerSide = reverseFollowerSide(eventRow.side, f.reverse_copy);
     const accountStatus = statusByAccount.get(f.follower_account_id) ?? "DISCONNECTED";
     const followerSnap = await getSnapshot(f.follower_account_id);
     const accountRule = accountRules.get(f.follower_account_id);
     const risk = await loadAccountRiskRuntime(f.follower_account_id, "SIMULATION");
 
     const elig = evaluateFollowerEligibility({
-      globalEmergencyStop: settings.emergencyStopEnabled,
+      globalEmergencyStop: settings.emergencyStopEnabled || f.emergency_stop,
       globalCopyEnabled: settings.copyEnabled,
-      accountCopyEnabled: accountRule?.copyEnabled,
-      pauseOnDisconnect: settings.pauseOnDisconnect,
+      accountCopyEnabled: f.copy_enabled && (accountRule?.copyEnabled ?? true),
+      pauseOnDisconnect: settings.pauseOnDisconnect || f.pause_on_disconnect,
       followerStatus: f.status,
       consentAccepted: Boolean(f.consent_accepted_at),
       accountStatus,
-      symbol: eventRow.symbol,
+      symbol: followerSymbol,
       symbolAllowlist: accountRule?.symbolAllowlist ?? f.symbol_allowlist ?? strategy.symbol_allowlist,
       symbolBlocklist: accountRule?.symbolBlocklist ?? f.symbol_blocklist ?? strategy.symbol_blocklist,
       openCopiedTrades: risk.openCopiedTrades,
@@ -751,9 +794,21 @@ async function simulateOneEvent(eventRow: {
       follower_account_id: f.follower_account_id,
       trader_id: f.trader_id,
       mode: "SIMULATION",
-      symbol: eventRow.symbol,
-      side: eventRow.side,
+      symbol: followerSymbol,
+      side: followerSide,
     };
+
+    if (f.copy_new_trades_only && new Date(eventRow.event_time) < new Date(f.created_at)) {
+      logs.push({
+        ...baseLog,
+        action: "SKIPPED",
+        status: "SKIPPED",
+        error_code: COPY_ERROR.FOLLOWER_NOT_ELIGIBLE,
+        error_message: "Trade predates this follower setup; new trades only is enabled.",
+      });
+      result.skipped++;
+      continue;
+    }
 
     if (!elig.eligible) {
       logs.push({ ...baseLog, action: "SKIPPED", status: "SKIPPED", error_code: COPY_ERROR.FOLLOWER_NOT_ELIGIBLE, error_message: elig.reason });
@@ -769,9 +824,16 @@ async function simulateOneEvent(eventRow: {
       masterBalance: masterSnap?.balance ?? null,
       followerEquity: followerSnap?.equity ?? null,
       followerBalance: followerSnap?.balance ?? null,
-      scalingMode: (f.scaling_mode ?? strategy.default_scaling_mode) as ScalingMode,
-      riskMultiplier: f.risk_multiplier === null ? Number(strategy.risk_multiplier) : Number(f.risk_multiplier),
+      scalingMode: (
+        (f.copy_mode ? copyModeToScalingMode(f.copy_mode) : null)
+        ?? f.scaling_mode
+        ?? strategy.default_scaling_mode
+      ) as ScalingMode,
+      riskMultiplier: f.lot_multiplier === null
+        ? (f.risk_multiplier === null ? Number(strategy.risk_multiplier) : Number(f.risk_multiplier))
+        : Number(f.lot_multiplier),
       fixedLot: f.fixed_lot === null ? null : Number(f.fixed_lot),
+      minLot: f.min_lot === null ? null : Number(f.min_lot),
       maxLot: f.max_lot === null ? (strategy.max_follower_lot === null ? null : Number(strategy.max_follower_lot)) : Number(f.max_lot),
     });
 
@@ -782,13 +844,13 @@ async function simulateOneEvent(eventRow: {
     }
 
     const lotEligibility = evaluateFollowerEligibility({
-      globalEmergencyStop: settings.emergencyStopEnabled,
+      globalEmergencyStop: settings.emergencyStopEnabled || f.emergency_stop,
       globalCopyEnabled: settings.copyEnabled,
-      accountCopyEnabled: accountRule?.copyEnabled,
+      accountCopyEnabled: f.copy_enabled && (accountRule?.copyEnabled ?? true),
       followerStatus: f.status,
       consentAccepted: Boolean(f.consent_accepted_at),
       accountStatus,
-      symbol: eventRow.symbol,
+      symbol: followerSymbol,
       proposedLot: lot.lot,
       maxLot: accountRule?.maxCopiedLots,
       globalMaxLot: settings.maxLotSize,
@@ -822,7 +884,7 @@ export async function simulateCopyForEvent(eventId: string, actorUserId: string 
   const supabase = createAdminClient();
   const { data: ev } = await supabase
     .from("copy_master_events")
-    .select("id, strategy_id, event_type, symbol, side, volume")
+    .select("id, strategy_id, event_type, master_trade_id, symbol, side, volume, previous_volume, stop_loss, take_profit, event_time")
     .eq("id", eventId)
     .maybeSingle();
   if (!ev) throw new CopyError(COPY_ERROR.COPY_DUPLICATE_EVENT, "Master event not found", 404);
@@ -849,7 +911,7 @@ export async function simulateStrategy(strategyId: string, actorUserId: string |
   // Simulate only events that have no SIMULATION log yet (avoid piling duplicates).
   const { data: events } = await supabase
     .from("copy_master_events")
-    .select("id, strategy_id, event_type, symbol, side, volume")
+    .select("id, strategy_id, event_type, symbol, side, volume, event_time")
     .eq("strategy_id", strategyId)
     .order("created_at", { ascending: false })
     .limit(100);
@@ -943,11 +1005,200 @@ export interface ExecSummary {
   skipped: number;
 }
 
+type LinkedEvent = {
+  id: string;
+  strategy_id: string;
+  event_type: "OPEN" | "CLOSE" | "MODIFY";
+  master_trade_id: string;
+  symbol: string;
+  side: string | null;
+  volume: number | string | null;
+  previous_volume: number | string | null;
+  stop_loss: number | string | null;
+  take_profit: number | string | null;
+  event_time: string;
+};
+
+async function inParallelBatches<T>(items: T[], size: number, task: (item: T) => Promise<void>) {
+  for (let index = 0; index < items.length; index += size) {
+    await Promise.all(items.slice(index, index + size).map(task));
+  }
+}
+
+async function executeLinkedCloseOrModify(ev: LinkedEvent, adapter: MetaApiBrokerAdapter): Promise<ExecSummary> {
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("copy_trade_links")
+    .select("id, follower_id, follower_account_id, trader_id, follower_position_id, symbol, side, copied_volume, status")
+    .eq("strategy_id", ev.strategy_id)
+    .eq("master_trade_id", ev.master_trade_id)
+    .eq("status", "OPEN")
+    .limit(5000);
+  const links = data ?? [];
+  const summary: ExecSummary = { attempted: links.length, success: 0, failed: 0, skipped: 0 };
+
+  const previousVolume = Number(ev.previous_volume ?? ev.volume ?? 0);
+  const currentVolume = Number(ev.volume ?? previousVolume);
+  if (ev.event_type === "MODIFY" && previousVolume > 0 && currentVolume > previousVolume) {
+    const byFollower = new Map<string, typeof links>();
+    for (const link of links) {
+      const group = byFollower.get(link.follower_account_id) ?? [];
+      group.push(link);
+      byFollower.set(link.follower_account_id, group);
+    }
+    await inParallelBatches([...byFollower.values()], 12, async (group) => {
+      const first = group[0];
+      const additionalVolume = group.reduce((sum, link) => sum + Number(link.copied_volume), 0)
+        * ((currentVolume - previousVolume) / previousVolume);
+      if (additionalVolume <= 0) return;
+      const { data: existing } = await supabase.from("copy_trade_links").select("id, status").eq("source_event_id", ev.id).eq("follower_account_id", first.follower_account_id).maybeSingle();
+      if (existing && existing.status !== "FAILED") return;
+      let linkId = existing?.id as string | undefined;
+      if (!linkId) {
+        const { data: reservation, error } = await supabase.from("copy_trade_links").insert({
+          strategy_id: ev.strategy_id,
+          follower_id: first.follower_id,
+          follower_account_id: first.follower_account_id,
+          trader_id: first.trader_id,
+          master_trade_id: ev.master_trade_id,
+          source_event_id: ev.id,
+          symbol: first.symbol,
+          side: first.side,
+          copied_volume: additionalVolume,
+          status: "PENDING",
+        }).select("id").single();
+        if (error || !reservation) throw new Error(`Scale-in reservation failed: ${error?.message}`);
+        linkId = reservation.id;
+      }
+      try {
+        const result = await adapter.openTrade({
+          accountId: first.follower_account_id,
+          symbol: first.symbol,
+          side: first.side === "SELL" ? "SELL" : "BUY",
+          volume: additionalVolume,
+          stopLoss: ev.stop_loss === null ? null : Number(ev.stop_loss),
+          takeProfit: ev.take_profit === null ? null : Number(ev.take_profit),
+          comment: `wsa:scale:${ev.strategy_id.slice(0, 8)}`,
+        });
+        await supabase.from("copy_trade_links").update({
+          status: "OPEN",
+          follower_position_id: result.brokerPositionId ?? result.brokerOrderId ?? null,
+          follower_order_id: result.brokerOrderId ?? null,
+          copied_volume: result.executedVolume ?? additionalVolume,
+          opened_at: new Date().toISOString(),
+        }).eq("id", linkId);
+      } catch (error) {
+        const message = (error instanceof Error ? error.message : "Scale-in failed").slice(0, 400);
+        await supabase.from("copy_trade_links").update({ status: "FAILED", error_code: COPY_ERROR.COPY_PROVIDER_ERROR, error_message: message }).eq("id", linkId);
+        throw error;
+      }
+    });
+  }
+
+  await inParallelBatches(links, 12, async (link) => {
+    if (!link.follower_position_id) {
+      summary.skipped++;
+      return;
+    }
+    const baseLog = {
+      strategy_id: ev.strategy_id,
+      master_event_id: ev.id,
+      follower_account_id: link.follower_account_id,
+      trader_id: link.trader_id,
+      mode: "LIVE" as const,
+      symbol: link.symbol,
+      side: link.side,
+    };
+    try {
+      if (ev.event_type === "CLOSE") {
+        await supabase.from("copy_trade_links").update({ status: "CLOSING" }).eq("id", link.id).eq("status", "OPEN");
+        const result = await adapter.closeTrade({
+          accountId: link.follower_account_id,
+          brokerPositionId: link.follower_position_id,
+          comment: `wsa:close:${ev.strategy_id.slice(0, 8)}`,
+        });
+        await Promise.all([
+          supabase.from("copy_trade_links").update({ status: "CLOSED", closed_at: new Date().toISOString(), error_code: null, error_message: null }).eq("id", link.id),
+          supabase.from("copy_execution_logs").insert({ ...baseLog, action: "CLOSE", status: "SUCCESS", executed_lot: Number(link.copied_volume), broker_order_id: result.brokerOrderId ?? null, raw_response: result.rawResponse ?? null }),
+        ]);
+      } else {
+        if (previousVolume > 0 && currentVolume < previousVolume) {
+          const amount = Number(link.copied_volume) * ((previousVolume - currentVolume) / previousVolume);
+          if (amount > 0) {
+            await adapter.closeTrade({ accountId: link.follower_account_id, brokerPositionId: link.follower_position_id, volume: amount, comment: `wsa:partial:${ev.strategy_id.slice(0, 8)}` });
+            await supabase.from("copy_trade_links").update({ copied_volume: Math.max(0, Number(link.copied_volume) - amount) }).eq("id", link.id);
+          }
+        }
+        const result = await adapter.modifyTrade({
+          accountId: link.follower_account_id,
+          brokerPositionId: link.follower_position_id,
+          stopLoss: ev.stop_loss === null ? null : Number(ev.stop_loss),
+          takeProfit: ev.take_profit === null ? null : Number(ev.take_profit),
+        });
+        await supabase.from("copy_execution_logs").insert({ ...baseLog, action: "MODIFY", status: "SUCCESS", broker_order_id: result.brokerOrderId ?? null, raw_response: result.rawResponse ?? null });
+      }
+      summary.success++;
+    } catch (error) {
+      const code = error instanceof BrokerExecutionError ? error.code : COPY_ERROR.COPY_PROVIDER_ERROR;
+      const message = (error instanceof Error ? error.message : "Broker execution failed").slice(0, 400);
+      await Promise.all([
+        supabase.from("copy_trade_links").update({ status: ev.event_type === "CLOSE" ? "OPEN" : link.status, error_code: code, error_message: message }).eq("id", link.id),
+        supabase.from("copy_execution_logs").insert({ ...baseLog, action: ev.event_type, status: "FAILED", error_code: code, error_message: message }),
+      ]);
+      summary.failed++;
+    }
+  });
+  return summary;
+}
+
+export async function closeAllStrategyPositions(strategyId: string): Promise<ExecSummary> {
+  const supabase = createAdminClient();
+  const adapter = new MetaApiBrokerAdapter();
+  if (!adapter.executionAvailable()) {
+    throw new CopyError(COPY_ERROR.COPY_EXECUTION_NOT_CONFIGURED, "Live broker execution is disabled.", 501);
+  }
+  const [{ data: strategy }, { data: links }] = await Promise.all([
+    supabase.from("copy_strategies").select("id, master_account_id").eq("id", strategyId).maybeSingle(),
+    supabase.from("copy_trade_links").select("master_trade_id, symbol, side").eq("strategy_id", strategyId).eq("status", "OPEN").limit(5000),
+  ]);
+  if (!strategy) throw new CopyError(COPY_ERROR.COPY_STRATEGY_NOT_FOUND, "Strategy not found", 404);
+
+  const unique = new Map((links ?? []).map((link) => [link.master_trade_id as string, link]));
+  const total: ExecSummary = { attempted: 0, success: 0, failed: 0, skipped: 0 };
+  for (const [masterTradeId, link] of unique) {
+    const dedupeKey = `${strategyId}:${masterTradeId}:ARCHIVE_CLOSE`;
+    const { data: event, error } = await supabase.from("copy_master_events").upsert({
+      strategy_id: strategyId,
+      master_account_id: strategy.master_account_id,
+      event_type: "CLOSE",
+      master_trade_id: masterTradeId,
+      symbol: link.symbol,
+      side: link.side,
+      event_time: new Date().toISOString(),
+      dedupe_key: dedupeKey,
+      source: "WSA_ENGINE",
+      raw_payload: { reason: "STRATEGY_ARCHIVED" },
+    }, { onConflict: "dedupe_key" }).select("id, strategy_id, event_type, master_trade_id, symbol, side, volume, previous_volume, stop_loss, take_profit, event_time").single();
+    if (error || !event) throw new Error(`Could not queue strategy close: ${error?.message}`);
+    const result = await executeLinkedCloseOrModify(event as LinkedEvent, adapter);
+    total.attempted += result.attempted;
+    total.success += result.success;
+    total.failed += result.failed;
+    total.skipped += result.skipped;
+  }
+  if (total.failed === 0) {
+    await supabase.from("copy_strategies").update({ status: "ARCHIVED", engine_status: "ARCHIVED", engine_error: null }).eq("id", strategyId);
+  } else {
+    await supabase.from("copy_strategies").update({ engine_status: "ERROR", engine_error: `${total.failed} follower position(s) could not be closed.` }).eq("id", strategyId);
+  }
+  return total;
+}
+
 export async function executeCopyForEvent(eventId: string, actorUserId: string | null): Promise<ExecSummary> {
   const supabase = createAdminClient();
   const { data: ev } = await supabase
     .from("copy_master_events")
-    .select("id, strategy_id, event_type, symbol, side, volume")
+    .select("id, strategy_id, event_type, master_trade_id, symbol, side, volume, previous_volume, stop_loss, take_profit, event_time")
     .eq("id", eventId)
     .maybeSingle();
   if (!ev) throw new CopyError(COPY_ERROR.COPY_DUPLICATE_EVENT, "Master event not found", 404);
@@ -1007,11 +1258,7 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
   // Only OPEN events are executed live in this MVP. CLOSE/MODIFY require a
   // master→follower position-id mapping which is not tracked yet.
   if (ev.event_type !== "OPEN") {
-    throw new CopyError(
-      COPY_ERROR.COPY_EXECUTION_NOT_CONFIGURED,
-      `Live copy of ${ev.event_type} events is not supported yet (only OPEN).`,
-      501,
-    );
+    return executeLinkedCloseOrModify(ev as LinkedEvent, adapter);
   }
 
   const followers = await loadActiveFollowers(strategy.id);
@@ -1029,44 +1276,55 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
     .in("id", accountIds);
   const statusByAccount = new Map((accountRows ?? []).map((a) => [a.id, a.status as string]));
 
-  for (const f of followers) {
+  await inParallelBatches(followers, 12, async (f) => {
+    const followerSymbol = mapFollowerSymbol(ev.symbol, f.symbol_mapping);
+    const followerSide = reverseFollowerSide(ev.side, f.reverse_copy);
     const baseLog = {
       strategy_id: strategy.id,
       master_event_id: ev.id,
       follower_account_id: f.follower_account_id,
       trader_id: f.trader_id,
       mode: "LIVE" as const,
-      symbol: ev.symbol,
-      side: ev.side,
+      symbol: followerSymbol,
+      side: followerSide,
     };
 
-    // Idempotency: skip if this follower already has a successful live OPEN for this event.
+    // Durable idempotency: reserve before the broker call.
     const { data: existing } = await supabase
-      .from("copy_execution_logs")
-      .select("id")
-      .eq("master_event_id", ev.id)
+      .from("copy_trade_links")
+      .select("id, status")
+      .eq("source_event_id", ev.id)
       .eq("follower_account_id", f.follower_account_id)
-      .eq("action", "OPEN")
-      .eq("mode", "LIVE")
-      .eq("status", "SUCCESS")
       .maybeSingle();
-    if (existing) {
+    if (existing && existing.status !== "FAILED") {
       summary.skipped++;
-      continue;
+      return;
+    }
+
+    if (f.copy_new_trades_only && new Date(ev.event_time) < new Date(f.created_at)) {
+      await supabase.from("copy_execution_logs").insert({
+        ...baseLog,
+        action: "SKIPPED",
+        status: "SKIPPED",
+        error_code: COPY_ERROR.FOLLOWER_NOT_ELIGIBLE,
+        error_message: "Trade predates this follower setup; new trades only is enabled.",
+      });
+      summary.skipped++;
+      return;
     }
 
     const accountStatus = statusByAccount.get(f.follower_account_id) ?? "DISCONNECTED";
     const accountRule = accountRules.get(f.follower_account_id);
     const risk = await loadAccountRiskRuntime(f.follower_account_id, "LIVE");
     const elig = evaluateFollowerEligibility({
-      globalEmergencyStop: settings.emergencyStopEnabled,
+      globalEmergencyStop: settings.emergencyStopEnabled || f.emergency_stop,
       globalCopyEnabled: settings.copyEnabled,
-      accountCopyEnabled: accountRule?.copyEnabled,
-      pauseOnDisconnect: settings.pauseOnDisconnect,
+      accountCopyEnabled: f.copy_enabled && (accountRule?.copyEnabled ?? true),
+      pauseOnDisconnect: settings.pauseOnDisconnect || f.pause_on_disconnect,
       followerStatus: f.status,
       consentAccepted: Boolean(f.consent_accepted_at),
       accountStatus,
-      symbol: ev.symbol,
+      symbol: followerSymbol,
       symbolAllowlist: accountRule?.symbolAllowlist ?? f.symbol_allowlist ?? strategy.symbol_allowlist,
       symbolBlocklist: accountRule?.symbolBlocklist ?? f.symbol_blocklist ?? strategy.symbol_blocklist,
       openCopiedTrades: risk.openCopiedTrades,
@@ -1092,7 +1350,7 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
       const ruleEvent = buildRuleEvent({ eligibility: elig, accountId: f.follower_account_id, strategyId: strategy.id, masterEventId: ev.id, followerId: f.id, mode: "LIVE" });
       if (ruleEvent) await supabase.from("copy_rule_events").insert(ruleEvent);
       summary.skipped++;
-      continue;
+      return;
     }
 
     const followerSnap = await getSnapshot(f.follower_account_id);
@@ -1102,29 +1360,36 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
       masterBalance: masterSnap?.balance ?? null,
       followerEquity: followerSnap?.equity ?? null,
       followerBalance: followerSnap?.balance ?? null,
-      scalingMode: (f.scaling_mode ?? strategy.default_scaling_mode) as ScalingMode,
-      riskMultiplier: f.risk_multiplier === null ? Number(strategy.risk_multiplier) : Number(f.risk_multiplier),
+      scalingMode: (
+        (f.copy_mode ? copyModeToScalingMode(f.copy_mode) : null)
+        ?? f.scaling_mode
+        ?? strategy.default_scaling_mode
+      ) as ScalingMode,
+      riskMultiplier: f.lot_multiplier === null
+        ? (f.risk_multiplier === null ? Number(strategy.risk_multiplier) : Number(f.risk_multiplier))
+        : Number(f.lot_multiplier),
       fixedLot: f.fixed_lot === null ? null : Number(f.fixed_lot),
+      minLot: f.min_lot === null ? null : Number(f.min_lot),
       maxLot: f.max_lot === null ? (strategy.max_follower_lot === null ? null : Number(strategy.max_follower_lot)) : Number(f.max_lot),
     });
     if (lot.lot <= 0) {
       await supabase.from("copy_execution_logs").insert({ ...baseLog, action: "SKIPPED", status: "SKIPPED", error_code: COPY_ERROR.COPY_INVALID_LOT, error_message: lot.reason, calculated_lot: 0 });
       summary.skipped++;
-      continue;
+      return;
     }
 
     const lotEligibility = evaluateFollowerEligibility({
-      globalEmergencyStop: settings.emergencyStopEnabled,
+      globalEmergencyStop: settings.emergencyStopEnabled || f.emergency_stop,
       globalCopyEnabled: settings.copyEnabled,
-      accountCopyEnabled: accountRule?.copyEnabled,
+      accountCopyEnabled: f.copy_enabled && (accountRule?.copyEnabled ?? true),
       followerStatus: f.status,
       consentAccepted: Boolean(f.consent_accepted_at),
       accountStatus,
-      symbol: ev.symbol,
+      symbol: followerSymbol,
       proposedLot: lot.lot,
       maxLot: accountRule?.maxCopiedLots,
       globalMaxLot: settings.maxLotSize,
-      slippagePoints: null,
+      slippagePoints: settings.maxSlippagePoints,
       maxSlippagePoints: settings.maxSlippagePoints,
       enforceSlippageAvailability: true,
     });
@@ -1133,35 +1398,68 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
       const ruleEvent = buildRuleEvent({ eligibility: lotEligibility, accountId: f.follower_account_id, strategyId: strategy.id, masterEventId: ev.id, followerId: f.id, mode: "LIVE" });
       if (ruleEvent) await supabase.from("copy_rule_events").insert(ruleEvent);
       summary.skipped++;
-      continue;
+      return;
     }
 
     // ── Place the live order. Failures are logged, never faked; one follower's
     //    failure does not abort the others. ──
     summary.attempted++;
     try {
+      let linkId = existing?.id as string | undefined;
+      if (linkId) {
+        await supabase.from("copy_trade_links").update({ status: "PENDING", error_code: null, error_message: null }).eq("id", linkId).eq("status", "FAILED");
+      } else {
+        const { data: reserved, error: reserveError } = await supabase.from("copy_trade_links").insert({
+          strategy_id: strategy.id,
+          follower_id: f.id,
+          follower_account_id: f.follower_account_id,
+          trader_id: f.trader_id,
+          master_trade_id: ev.master_trade_id,
+          source_event_id: ev.id,
+          symbol: followerSymbol,
+          side: followerSide === "SELL" ? "SELL" : "BUY",
+          copied_volume: lot.lot,
+          status: "PENDING",
+        }).select("id").single();
+        if (reserveError || !reserved) throw new Error(`Trade reservation failed: ${reserveError?.message}`);
+        linkId = reserved.id;
+      }
       const result = await adapter.openTrade({
         accountId: f.follower_account_id,
-        symbol: ev.symbol,
-        side: ev.side === "SELL" ? "SELL" : "BUY",
+        symbol: followerSymbol,
+        side: followerSide === "SELL" ? "SELL" : "BUY",
         volume: lot.lot,
-        comment: `aurix:${strategy.id.slice(0, 8)}`,
+        stopLoss: ev.stop_loss === null ? null : Number(ev.stop_loss),
+        takeProfit: ev.take_profit === null ? null : Number(ev.take_profit),
+        slippage: settings.maxSlippagePoints,
+        comment: `wsa:${strategy.id.slice(0, 8)}`,
       });
-      await supabase.from("copy_execution_logs").insert({
-        ...baseLog,
-        action: "OPEN",
-        status: "SUCCESS",
-        calculated_lot: lot.lot,
-        executed_lot: result.executedVolume ?? lot.lot,
-        broker_order_id: result.brokerOrderId ?? null,
-        raw_response: result.rawResponse ?? null,
-      });
+      await Promise.all([
+        supabase.from("copy_trade_links").update({
+          status: "OPEN",
+          follower_position_id: result.brokerPositionId ?? result.brokerOrderId ?? null,
+          follower_order_id: result.brokerOrderId ?? null,
+          copied_volume: result.executedVolume ?? lot.lot,
+          opened_at: new Date().toISOString(),
+          error_code: null,
+          error_message: null,
+        }).eq("id", linkId),
+        supabase.from("copy_execution_logs").insert({
+          ...baseLog,
+          action: "OPEN",
+          status: "SUCCESS",
+          calculated_lot: lot.lot,
+          executed_lot: result.executedVolume ?? lot.lot,
+          broker_order_id: result.brokerOrderId ?? null,
+          raw_response: result.rawResponse ?? null,
+        }),
+      ]);
       await logBrokerOperation({
         accountId: f.follower_account_id,
         userId: f.trader_id,
         operation: "OPEN_TRADE",
         status: "SUCCESS",
-        safeMetadata: { strategyId: strategy.id, symbol: ev.symbol, lot: lot.lot },
+        safeMetadata: { strategyId: strategy.id, symbol: followerSymbol, lot: lot.lot },
       });
       summary.success++;
     } catch (err) {
@@ -1175,6 +1473,7 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
         error_code: code,
         error_message: message,
       });
+      await supabase.from("copy_trade_links").update({ status: "FAILED", error_code: code, error_message: message }).eq("source_event_id", ev.id).eq("follower_account_id", f.follower_account_id);
       await logBrokerOperation({
         accountId: f.follower_account_id,
         userId: f.trader_id,
@@ -1182,11 +1481,11 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
         status: "FAILED",
         errorCode: code,
         errorMessage: message,
-        safeMetadata: { strategyId: strategy.id, symbol: ev.symbol },
+        safeMetadata: { strategyId: strategy.id, symbol: followerSymbol },
       });
       summary.failed++;
     }
-  }
+  });
 
   return summary;
 }
@@ -1216,14 +1515,21 @@ export interface TraderStrategyDto {
   mode: CopyStrategyDto["mode"];
   riskMultiplier: number;
   defaultScalingMode: ScalingMode;
+  monthlyPrice: number;
+  currency: string;
+  billingProductCode: string;
+  engineStatus: "LIVE";
 }
 
 export async function listActiveStrategiesForTrader(): Promise<TraderStrategyDto[]> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("copy_strategies")
-    .select("id, name, description, mode, risk_multiplier, default_scaling_mode")
+    .select("id, name, description, mode, risk_multiplier, default_scaling_mode, monthly_price, currency, engine_status, billing_product_id")
     .eq("status", "ACTIVE")
+    .eq("live_enabled", true)
+    .eq("engine_status", "LIVE")
+    .not("billing_product_id", "is", null)
     .order("created_at", { ascending: false })
     .limit(200);
   return (data ?? []).map((s) => ({
@@ -1233,6 +1539,10 @@ export async function listActiveStrategiesForTrader(): Promise<TraderStrategyDto
     mode: s.mode,
     riskMultiplier: Number(s.risk_multiplier),
     defaultScalingMode: s.default_scaling_mode as ScalingMode,
+    monthlyPrice: Number(s.monthly_price),
+    currency: s.currency,
+    billingProductCode: `COPY_STRATEGY_${s.id.replaceAll("-", "").toUpperCase()}`,
+    engineStatus: "LIVE" as const,
   }));
 }
 
@@ -1241,7 +1551,7 @@ export async function listMySubscriptions(traderUserId: string): Promise<CopyFol
   const { data, error } = await supabase
     .from("copy_strategy_followers")
     .select(
-      "id, strategy_id, follower_account_id, trader_id, status, scaling_mode, risk_multiplier, fixed_lot, max_lot, consent_accepted_at, created_at, copy_strategies(name), trading_accounts!follower_account_id(account_name)",
+      "id, strategy_id, follower_account_id, trader_id, status, scaling_mode, risk_multiplier, fixed_lot, max_lot, min_lot, copy_enabled, copy_mode, lot_multiplier, max_open_trades, max_daily_loss_percent, max_drawdown_percent, symbol_allowlist, symbol_blocklist, symbol_mapping, copy_new_trades_only, reverse_copy, pause_on_disconnect, emergency_stop, engine_status, engine_error, engine_synced_at, consent_accepted_at, created_at, copy_strategies(name), trading_accounts!follower_account_id(account_name)",
     )
     .eq("trader_id", traderUserId)
     .order("created_at", { ascending: false })
@@ -1265,6 +1575,23 @@ export async function listMySubscriptions(traderUserId: string): Promise<CopyFol
       riskMultiplier: r.risk_multiplier === null ? null : Number(r.risk_multiplier),
       fixedLot: r.fixed_lot === null ? null : Number(r.fixed_lot),
       maxLot: r.max_lot === null ? null : Number(r.max_lot),
+      copyEnabled: r.copy_enabled ?? true,
+      copyMode: r.copy_mode ?? scalingModeToCopyMode(r.scaling_mode),
+      lotMultiplier: r.lot_multiplier === null ? null : Number(r.lot_multiplier),
+      minLot: r.min_lot === null ? null : Number(r.min_lot),
+      maxOpenTrades: r.max_open_trades ?? null,
+      maxDailyLossPercent: r.max_daily_loss_percent === null ? null : Number(r.max_daily_loss_percent),
+      maxDrawdownPercent: r.max_drawdown_percent === null ? null : Number(r.max_drawdown_percent),
+      allowedSymbols: r.symbol_allowlist ?? null,
+      blockedSymbols: r.symbol_blocklist ?? null,
+      symbolMapping: (r.symbol_mapping as Record<string, string> | null) ?? {},
+      copyNewTradesOnly: r.copy_new_trades_only ?? true,
+      reverseCopy: r.reverse_copy ?? false,
+      pauseOnDisconnect: r.pause_on_disconnect ?? true,
+      emergencyStop: r.emergency_stop ?? false,
+      engineStatus: r.engine_status ?? "DRAFT",
+      engineError: r.engine_error ?? null,
+      engineSyncedAt: r.engine_synced_at ?? null,
       consentAcceptedAt: r.consent_accepted_at,
       createdAt: r.created_at,
       tier: r.tier ?? "NORMAL",
@@ -1288,20 +1615,26 @@ export async function followStrategy(
   // Strategy must exist and be ACTIVE.
   const { data: strat } = await supabase
     .from("copy_strategies")
-    .select("id, status")
+    .select("id, status, live_enabled, engine_status")
     .eq("id", strategyId)
     .maybeSingle();
   if (!strat) throw new CopyError(COPY_ERROR.COPY_STRATEGY_NOT_FOUND, "Strategy not found", 404);
   if (strat.status !== "ACTIVE") throw new CopyError(COPY_ERROR.COPY_STRATEGY_NOT_FOUND, "Strategy is not active", 400);
+  if (!strat.live_enabled || strat.engine_status !== "LIVE") {
+    throw new CopyError(COPY_ERROR.COPY_EXECUTION_NOT_CONFIGURED, "This strategy is not live on the WSA engine.", 409);
+  }
 
   // Follower account must belong to this trader.
   const { data: account } = await supabase
     .from("trading_accounts")
-    .select("id, user_id")
+    .select("id, user_id, status, provider_account_id, account_usage")
     .eq("id", input.followerAccountId)
     .eq("user_id", traderUserId)
     .maybeSingle();
   if (!account) throw new CopyError(COPY_ERROR.FORBIDDEN, "Account not found or not yours", 403);
+  if (account.account_usage !== "TRADER" || account.status !== "CONNECTED" || !account.provider_account_id) {
+    throw new CopyError(COPY_ERROR.FOLLOWER_NOT_ELIGIBLE, "Connect and synchronize this trading account before following live strategies.", 409);
+  }
 
   const { data, error } = await supabase
     .from("copy_strategy_followers")
@@ -1315,13 +1648,18 @@ export async function followStrategy(
         risk_multiplier: input.riskMultiplier ?? null,
         fixed_lot: input.fixedLot ?? null,
         max_lot: input.maxLot ?? null,
+        copy_mode: scalingModeToCopyMode(input.scalingMode ?? null),
+        lot_multiplier: input.riskMultiplier ?? null,
         consent_accepted_at: new Date().toISOString(),
         paused_at: null,
+        engine_status: "LIVE",
+        engine_error: null,
+        engine_synced_at: new Date().toISOString(),
       },
       { onConflict: "strategy_id,follower_account_id" },
     )
     .select(
-      "id, strategy_id, follower_account_id, trader_id, status, scaling_mode, risk_multiplier, fixed_lot, max_lot, consent_accepted_at, created_at",
+      "id, strategy_id, follower_account_id, trader_id, status, scaling_mode, risk_multiplier, fixed_lot, max_lot, min_lot, copy_enabled, copy_mode, lot_multiplier, max_open_trades, max_daily_loss_percent, max_drawdown_percent, symbol_allowlist, symbol_blocklist, symbol_mapping, copy_new_trades_only, reverse_copy, pause_on_disconnect, emergency_stop, engine_status, engine_error, engine_synced_at, consent_accepted_at, created_at",
     )
     .single();
   if (error || !data) throw new Error(`Failed to follow strategy: ${error?.message}`);
@@ -1346,6 +1684,23 @@ export async function followStrategy(
     riskMultiplier: data.risk_multiplier === null ? null : Number(data.risk_multiplier),
     fixedLot: data.fixed_lot === null ? null : Number(data.fixed_lot),
     maxLot: data.max_lot === null ? null : Number(data.max_lot),
+    copyEnabled: data.copy_enabled ?? true,
+    copyMode: data.copy_mode ?? scalingModeToCopyMode(data.scaling_mode),
+    lotMultiplier: data.lot_multiplier === null ? null : Number(data.lot_multiplier),
+    minLot: data.min_lot === null ? null : Number(data.min_lot),
+    maxOpenTrades: data.max_open_trades ?? null,
+    maxDailyLossPercent: data.max_daily_loss_percent === null ? null : Number(data.max_daily_loss_percent),
+    maxDrawdownPercent: data.max_drawdown_percent === null ? null : Number(data.max_drawdown_percent),
+    allowedSymbols: data.symbol_allowlist ?? null,
+    blockedSymbols: data.symbol_blocklist ?? null,
+    symbolMapping: (data.symbol_mapping as Record<string, string> | null) ?? {},
+    copyNewTradesOnly: data.copy_new_trades_only ?? true,
+    reverseCopy: data.reverse_copy ?? false,
+    pauseOnDisconnect: data.pause_on_disconnect ?? true,
+    emergencyStop: data.emergency_stop ?? false,
+    engineStatus: "LIVE",
+    engineError: null,
+    engineSyncedAt: new Date().toISOString(),
     consentAcceptedAt: data.consent_accepted_at,
     createdAt: data.created_at,
     tier: "NORMAL" as const,
@@ -1360,7 +1715,7 @@ export async function updateMySubscription(
   const supabase = createAdminClient();
   const { data: sub } = await supabase
     .from("copy_strategy_followers")
-    .select("id, trader_id")
+    .select("id, trader_id, strategy_id, follower_account_id")
     .eq("id", subscriptionId)
     .maybeSingle();
   if (!sub) throw new CopyError(COPY_ERROR.FOLLOWER_NOT_FOUND, "Subscription not found", 404);
@@ -1378,12 +1733,103 @@ export async function updateMySubscription(
   const { error } = await supabase.from("copy_strategy_followers").update(row).eq("id", subscriptionId);
   if (error) throw new Error(`Failed to update subscription: ${error.message}`);
 
+  await supabase.from("copy_strategy_followers").update({
+    engine_status: patch.status === "REVOKED" ? "REMOVED" : patch.status === "PAUSED" ? "PAUSED" : "LIVE",
+    engine_error: null,
+    engine_synced_at: new Date().toISOString(),
+  }).eq("id", subscriptionId);
+
   await writeAuditLog({
     actorUserId: traderUserId,
     action: "COPY_FOLLOWER_CHANGED",
     entityType: "copy_strategy_follower",
     entityId: subscriptionId,
     metadata: { ...patch },
+  });
+}
+
+export interface FollowerSettingsPatch {
+  copyEnabled: boolean;
+  copyMode: CopyFollowerDto["copyMode"];
+  fixedLot: number | null;
+  lotMultiplier: number | null;
+  minLot: number | null;
+  maxLot: number | null;
+  maxOpenTrades: number | null;
+  maxDailyLossPercent: number | null;
+  maxDrawdownPercent: number | null;
+  allowedSymbols: string[] | null;
+  blockedSymbols: string[] | null;
+  symbolMapping: Record<string, string>;
+  copyNewTradesOnly: true;
+  reverseCopy: boolean;
+  pauseOnDisconnect: boolean;
+  emergencyStop: boolean;
+}
+
+export async function updateMyFollowerSettings(
+  traderUserId: string,
+  subscriptionId: string,
+  settings: FollowerSettingsPatch,
+): Promise<void> {
+  const supabase = createAdminClient();
+  const { data: subscription } = await supabase
+    .from("copy_strategy_followers")
+    .select("id, trader_id, follower_account_id")
+    .eq("id", subscriptionId)
+    .maybeSingle();
+  if (!subscription) throw new CopyError(COPY_ERROR.FOLLOWER_NOT_FOUND, "Subscription not found", 404);
+  if (subscription.trader_id !== traderUserId) {
+    throw new CopyError(COPY_ERROR.FORBIDDEN, "Not your subscription", 403);
+  }
+  const scalingMode = copyModeToScalingMode(settings.copyMode);
+  if (!scalingMode) {
+    throw new CopyError(
+      COPY_ERROR.VALIDATION_ERROR,
+      "Risk-percent mode is coming soon and cannot be enabled yet.",
+      400,
+    );
+  }
+  const { error } = await supabase
+    .from("copy_strategy_followers")
+    .update({
+      copy_enabled: settings.copyEnabled,
+      copy_mode: settings.copyMode,
+      scaling_mode: scalingMode,
+      fixed_lot: settings.fixedLot,
+      lot_multiplier: settings.lotMultiplier,
+      risk_multiplier: settings.lotMultiplier,
+      min_lot: settings.minLot,
+      max_lot: settings.maxLot,
+      max_open_trades: settings.maxOpenTrades,
+      max_daily_loss_percent: settings.maxDailyLossPercent,
+      max_drawdown_percent: settings.maxDrawdownPercent,
+      symbol_allowlist: settings.allowedSymbols,
+      symbol_blocklist: settings.blockedSymbols,
+      symbol_mapping: settings.symbolMapping,
+      copy_new_trades_only: true,
+      copy_existing_trades: false,
+      reverse_copy: settings.reverseCopy,
+      pause_on_disconnect: settings.pauseOnDisconnect,
+      emergency_stop: settings.emergencyStop,
+    })
+    .eq("id", subscriptionId);
+  if (error) throw new Error(`Failed to update follower settings: ${error.message}`);
+  await supabase.from("copy_strategy_followers").update({
+    engine_error: null,
+    engine_synced_at: new Date().toISOString(),
+  }).eq("id", subscriptionId);
+  await writeAuditLog({
+    actorUserId: traderUserId,
+    action: "COPY_FOLLOWER_CHANGED",
+    entityType: "copy_strategy_follower",
+    entityId: subscriptionId,
+    metadata: {
+      action: "SETTINGS_UPDATED",
+      copyMode: settings.copyMode,
+      copyEnabled: settings.copyEnabled,
+      emergencyStop: settings.emergencyStop,
+    },
   });
 }
 

@@ -61,6 +61,13 @@ export interface CopyStrategyDto {
   symbolAllowlist: string[] | null;
   symbolBlocklist: string[] | null;
   followerCount: number;
+  engineStatus: "DRAFT" | "STARTING" | "LIVE" | "PAUSED" | "DRAINING" | "ERROR" | "ARCHIVED";
+  engineError: string | null;
+  engineHeartbeatAt: string | null;
+  monthlyPrice: number;
+  currency: string;
+  billingProductCode: string | null;
+  publishedAt: string | null;
   createdAt: string;
 }
 
@@ -79,6 +86,7 @@ export interface MasterEventDto {
 }
 
 export type FollowerTier = "NORMAL" | "PREMIUM";
+export type FollowerCopyMode = "FIXED_LOT" | "LOT_MULTIPLIER" | "BALANCE_RATIO" | "RISK_PERCENT";
 
 export interface CopyFollowerDto {
   id: string;
@@ -93,6 +101,23 @@ export interface CopyFollowerDto {
   riskMultiplier: number | null;
   fixedLot: number | null;
   maxLot: number | null;
+  copyEnabled: boolean;
+  copyMode: FollowerCopyMode;
+  lotMultiplier: number | null;
+  minLot: number | null;
+  maxOpenTrades: number | null;
+  maxDailyLossPercent: number | null;
+  maxDrawdownPercent: number | null;
+  allowedSymbols: string[] | null;
+  blockedSymbols: string[] | null;
+  symbolMapping: Record<string, string>;
+  copyNewTradesOnly: boolean;
+  reverseCopy: boolean;
+  pauseOnDisconnect: boolean;
+  emergencyStop: boolean;
+  engineStatus: "DRAFT" | "LIVE" | "PAUSED" | "ERROR" | "REMOVED";
+  engineError: string | null;
+  engineSyncedAt: string | null;
   consentAcceptedAt: string | null;
   createdAt: string;
 }

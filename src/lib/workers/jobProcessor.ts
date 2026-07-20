@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { claimNextJobs, enqueueJob, finalizeJob } from "@/lib/services/backgroundJobService";
 import { syncTradingAccount } from "@/lib/services/brokerSyncService";
 import {
+  closeAllStrategyPositions,
   executeCopyForEvent,
   monitorMasterAccount,
   retryCopyExecution,
@@ -98,6 +99,12 @@ async function dispatch(job: BackgroundJob): Promise<JobResult> {
       const masterEventId = requireId(job, "masterEventId");
       const r = await executeCopyForEvent(masterEventId, actor);
       return { status: "SUCCESS", result: { ...r } };
+    }
+
+    case "CLOSE_COPY_STRATEGY": {
+      const strategyId = requireId(job, "strategyId");
+      const r = await closeAllStrategyPositions(strategyId);
+      return { status: r.failed > 0 ? "FAILED" : "SUCCESS", result: { ...r }, errorCode: r.failed > 0 ? "COPY_CLOSE_PARTIAL_FAILURE" : undefined, errorMessage: r.failed > 0 ? `${r.failed} position(s) could not be closed.` : undefined, retry: r.failed > 0 };
     }
 
     case "RETRY_COPY_LOG": {
@@ -203,4 +210,3 @@ export async function runWorkerOnce(params: {
   }
   return summary;
 }
-
