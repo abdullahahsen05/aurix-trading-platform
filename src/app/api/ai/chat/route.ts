@@ -5,7 +5,7 @@ import { AI_ERROR, AiError } from "@/lib/ai/types";
 import { checkLimit, logUsage } from "@/lib/ai/rateLimit";
 import { buildTraderAiContext } from "@/lib/ai/contextBuilder";
 import { buildChatSystemPrompt } from "@/lib/ai/systemPrompt";
-import { chatModel, generateText } from "@/lib/ai/geminiClient";
+import { generateText } from "@/lib/ai/providerClient";
 
 // POST /api/ai/chat — branded Aurix AI text chat (Gemini Flash-tier model).
 export async function POST(request: Request) {
@@ -36,15 +36,15 @@ export async function POST(request: Request) {
     });
 
     // 4. Provider call.
-    const model = chatModel();
+    let model = "configured-provider";
     let result;
     try {
       result = await generateText({
-        model,
         systemPrompt: buildChatSystemPrompt(),
         userMessage: parsed.data.message,
         contextJson: JSON.stringify(context),
       });
+      model = result.model;
     } catch (providerErr) {
       // Log as FAILED (does not consume the daily allowance).
       await logUsage({

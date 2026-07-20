@@ -24,6 +24,7 @@ export async function connectBrokerAccount(params: {
   accountId: string;
   actorUserId: string;
   credentials: BrokerCredentialPayload;
+  brokerProviderId?: string;
   connectNow?: boolean;
 }): Promise<BrokerConnectionResult> {
   await storeBrokerCredentials(params.accountId, params.credentials);
@@ -34,6 +35,9 @@ export async function connectBrokerAccount(params: {
     broker_server: params.credentials.server,
     broker_platform: platform,
   };
+  if (params.brokerProviderId) {
+    metadata.broker_provider_id = params.brokerProviderId;
+  }
   if (params.credentials.brokerName?.trim()) {
     metadata.broker_name = params.credentials.brokerName.trim();
   }

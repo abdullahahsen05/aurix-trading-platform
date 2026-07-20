@@ -9,17 +9,65 @@ export const accountIdSchema = z.object({
   accountId: z.string().min(1),
 });
 
-export const brokerConnectionSchema = z.object({
-  platform: z
-    .enum(["MT5", "MT4", "mt5", "mt4"])
-    .transform((value) => value.toUpperCase() as "MT4" | "MT5")
-    .default("MT5"),
-  login: z.string().min(1, "Login is required").max(50).trim(),
-  password: z.string().min(1, "Password is required").max(200),
-  server: z.string().min(1, "Server is required").max(100).trim(),
-  brokerName: z.string().max(100).trim().optional(),
-  connectNow: z.boolean().default(true),
+export const brokerConnectionSchema = z
+  .object({
+    platform: z
+      .enum(["MT5", "MT4", "mt5", "mt4"])
+      .transform((value) => value.toUpperCase() as "MT4" | "MT5")
+      .default("MT5"),
+    login: z.string().min(1, "Login is required").max(50).trim(),
+    password: z.string().min(1, "Password is required").max(200),
+    server: z.string().min(1, "Server is required").max(100).trim(),
+    brokerProviderId: z.string().uuid("Broker provider is invalid").optional(),
+    brokerName: z.string().trim().min(2, "Broker name is required").max(100).optional(),
+    useCustomBrokerServer: z.boolean().default(false),
+    connectNow: z.boolean().default(true),
+  })
+  .superRefine((value, context) => {
+    if (!value.useCustomBrokerServer && !value.brokerProviderId) {
+      context.addIssue({
+        code: "custom",
+        path: ["brokerProviderId"],
+        message: "Broker provider is required",
+      });
+    }
+    if (value.useCustomBrokerServer && !value.brokerName) {
+      context.addIssue({
+        code: "custom",
+        path: ["brokerName"],
+        message: "Broker name is required for manual entry",
+      });
+    }
+  });
+
+export const brokerProviderCreateSchema = z.object({
+  displayName: z.string().trim().min(2).max(100),
+  platformsSupported: z.array(z.enum(["MT4", "MT5"])).min(1).max(2),
 });
+
+export const brokerProviderUpdateSchema = z
+  .object({
+    displayName: z.string().trim().min(2).max(100).optional(),
+    platformsSupported: z.array(z.enum(["MT4", "MT5"])).min(1).max(2).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
+    message: "No changes provided",
+  });
+
+export const brokerServerCreateSchema = z.object({
+  platform: z.enum(["MT4", "MT5"]),
+  serverName: z.string().trim().min(2).max(100),
+});
+
+export const brokerServerUpdateSchema = z
+  .object({
+    serverName: z.string().trim().min(2).max(100).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
+    message: "No changes provided",
+  });
 
 export const analyticsSummaryQuerySchema = z.object({
   accountId: z.string().min(1).default("ALL"),
@@ -147,6 +195,16 @@ export const commissionCreateSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+export const partnerRebateCreateSchema = z.object({
+  traderId: z.string().uuid().nullable().optional(),
+  paymentOrderId: z.string().uuid().nullable().optional(),
+  sourceType: z.string().trim().min(2).max(80).default("ADJUSTMENT"),
+  amount: z.number().positive().max(1_000_000),
+  currency: z.string().trim().length(3).transform((value) => value.toUpperCase()).default("USD"),
+  status: z.enum(["PENDING", "APPROVED"]).default("PENDING"),
+  description: z.string().trim().max(500).nullable().optional(),
+});
+
 export const referralClaimSchema = z.object({
   code: z.string().trim().min(2).max(40),
 });
@@ -175,6 +233,8 @@ export const copyStrategyCreateSchema = z.object({
   maxOpenCopiedTrades: z.number().int().min(0).max(10000).optional().nullable(),
   symbolAllowlist: upperStringArray.optional().nullable(),
   symbolBlocklist: upperStringArray.optional().nullable(),
+  monthlyPrice: z.number().positive().max(100000),
+  currency: z.string().trim().length(3).transform((value) => value.toUpperCase()).default("USD"),
 });
 
 export const copyStrategyUpdateSchema = z
@@ -242,6 +302,77 @@ export const copySubscriptionUpdateSchema = z
     scalingMode: scalingModeEnum.optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: "No changes provided" });
+
+const copyModeEnum = z.enum(["FIXED_LOT", "LOT_MULTIPLIER", "BALANCE_RATIO", "RISK_PERCENT"]);
+const optionalCopyNumber = z.number().positive().max(10000).nullable();
+const symbolMappingSchema = z
+  .record(
+    z.string().trim().min(2).max(32).transform((value) => value.toUpperCase()),
+    z.string().trim().min(2).max(32).transform((value) => value.toUpperCase()),
+  )
+  .refine((mapping) => Object.keys(mapping).length <= 100, { message: "Too many symbol mappings" });
+
+export const copyFollowerSettingsSchema = z
+  .object({
+    copyEnabled: z.boolean(),
+    copyMode: copyModeEnum,
+    fixedLot: optionalCopyNumber,
+    lotMultiplier: z.number().positive().max(100).nullable(),
+    minLot: optionalCopyNumber,
+    maxLot: optionalCopyNumber,
+    maxOpenTrades: z.number().int().positive().max(10000).nullable(),
+    maxDailyLossPercent: z.number().positive().max(100).nullable(),
+    maxDrawdownPercent: z.number().positive().max(100).nullable(),
+    allowedSymbols: copySymbolListSchema,
+    blockedSymbols: copySymbolListSchema,
+    symbolMapping: symbolMappingSchema,
+    copyNewTradesOnly: z.literal(true),
+    reverseCopy: z.boolean(),
+    pauseOnDisconnect: z.boolean(),
+    emergencyStop: z.boolean(),
+  })
+  .superRefine((value, context) => {
+    if (value.copyMode === "RISK_PERCENT") {
+      context.addIssue({
+        code: "custom",
+        path: ["copyMode"],
+        message: "Risk-percent mode is coming soon and cannot be enabled yet.",
+      });
+    }
+    if (value.copyMode === "FIXED_LOT" && value.fixedLot === null) {
+      context.addIssue({ code: "custom", path: ["fixedLot"], message: "Fixed lot is required." });
+    }
+    if (value.copyMode === "LOT_MULTIPLIER" && value.lotMultiplier === null) {
+      context.addIssue({ code: "custom", path: ["lotMultiplier"], message: "Lot multiplier is required." });
+    }
+    if (value.minLot !== null && value.maxLot !== null && value.maxLot < value.minLot) {
+      context.addIssue({ code: "custom", path: ["maxLot"], message: "Max lot cannot be below min lot." });
+    }
+    const allowed = new Set(value.allowedSymbols ?? []);
+    const conflict = (value.blockedSymbols ?? []).find((symbol) => allowed.has(symbol));
+    if (conflict) {
+      context.addIssue({
+        code: "custom",
+        path: ["blockedSymbols"],
+        message: `${conflict} cannot be both allowed and blocked.`,
+      });
+    }
+  });
+
+export const selfCopyCreateSchema = z.object({
+  sourceAccountId: z.string().uuid(),
+  followerAccountId: z.string().uuid(),
+  copySettings: copyFollowerSettingsSchema,
+});
+
+export const selfCopyUpdateSchema = z
+  .object({
+    status: z.enum(["SIMULATION", "PAUSED", "ARCHIVED"]).optional(),
+    copySettings: copyFollowerSettingsSchema.optional(),
+  })
+  .refine((value) => value.status !== undefined || value.copySettings !== undefined, {
+    message: "No changes provided",
+  });
 
 export const contactRequestSchema = z.object({
   name: z.string().trim().min(2).max(120),

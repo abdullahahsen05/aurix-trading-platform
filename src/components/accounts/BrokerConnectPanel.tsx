@@ -14,6 +14,7 @@ interface CredentialStatus {
   syncError: string | null;
   status: string | null;
   brokerName: string | null;
+  brokerProviderId: string | null;
   serverName: string | null;
   platform: "MT4" | "MT5" | null;
 }
@@ -51,6 +52,19 @@ interface ConnectionStatusResult {
   message: string;
 }
 
+interface BrokerProvider {
+  id: string;
+  displayName: string;
+  platformsSupported: Array<"MT4" | "MT5">;
+}
+
+interface BrokerServer {
+  id: string;
+  serverName: string;
+  platform: "MT4" | "MT5";
+  source: "MANUAL" | "METAAPI";
+}
+
 function isDeploymentPendingMessage(message: string | null | undefined): boolean {
   if (!message) return false;
   const value = message.toLowerCase();
@@ -71,10 +85,10 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState({
     platform: "MT5",
+    brokerProviderId: "",
     login: "",
     password: "",
     server: "",
-    brokerName: "",
   });
   const [notice, setNotice] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
@@ -82,6 +96,21 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
   const { data: credStatus, isLoading } = useQuery<CredentialStatus>({
     queryKey: ["broker-cred-status", accountId],
     queryFn: () => apiFetch(`/api/trading-accounts/${accountId}/broker-credentials`),
+    refetchOnWindowFocus: false,
+  });
+
+  const providersQuery = useQuery<{ providers: BrokerProvider[]; sourceLabel: string }>({
+    queryKey: ["broker-providers", form.platform],
+    queryFn: () => apiFetch(`/api/brokers?platform=${form.platform}`),
+    enabled: formOpen,
+    refetchOnWindowFocus: false,
+  });
+
+  const serversQuery = useQuery<{ servers: BrokerServer[]; sourceLabel: string }>({
+    queryKey: ["broker-servers", form.brokerProviderId, form.platform],
+    queryFn: () =>
+      apiFetch(`/api/brokers/${form.brokerProviderId}/servers?platform=${form.platform}`),
+    enabled: formOpen && Boolean(form.brokerProviderId),
     refetchOnWindowFocus: false,
   });
 
@@ -119,14 +148,14 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
           login: form.login.trim(),
           password: form.password,
           server: form.server.trim(),
-          brokerName: form.brokerName.trim() || undefined,
+          brokerProviderId: form.brokerProviderId,
         }),
       }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["broker-cred-status", accountId] });
       queryClient.invalidateQueries({ queryKey: ["trading-accounts"] });
       setFormOpen(false);
-      setForm({ platform: "MT5", login: "", password: "", server: "", brokerName: "" });
+      setForm({ platform: "MT5", brokerProviderId: "", login: "", password: "", server: "" });
       if (data.connected) {
         setNotice({
           type: "success",
@@ -193,6 +222,8 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
     storeMutation.isPending ||
     verifyMutation.isPending ||
     syncMutation.isPending ||
+    providersQuery.isFetching ||
+    serversQuery.isFetching ||
     connectionStatusQuery.isFetching;
 
   function handleSubmit(e: FormEvent) {
@@ -377,7 +408,12 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
               </label>
               <select
                 value={form.platform}
-                onChange={(e) => setForm((f) => ({ ...f, platform: e.target.value }))}
+                onChange={(e) => setForm((f) => ({
+                  ...f,
+                  platform: e.target.value,
+                  brokerProviderId: "",
+                  server: "",
+                }))}
                 className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
               >
                 <option value="MT5">MT5</option>
@@ -386,18 +422,30 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-                Broker name (optional)
+                Broker provider <span className="text-danger">*</span>
               </label>
-              <input
-                type="text"
-                value={form.brokerName}
-                onChange={(e) => setForm((f) => ({ ...f, brokerName: e.target.value }))}
-                placeholder="e.g. ICMarkets, Pepperstone"
-                maxLength={100}
+              <select
+                required
+                value={form.brokerProviderId}
+                onChange={(e) => setForm((f) => ({
+                  ...f,
+                  brokerProviderId: e.target.value,
+                  server: "",
+                }))}
                 className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
-              />
+              >
+                <option value="">Select configured broker</option>
+                {(providersQuery.data?.providers ?? []).map((provider) => (
+                  <option key={provider.id} value={provider.id}>{provider.displayName}</option>
+                ))}
+              </select>
             </div>
           </div>
+          {providersQuery.isSuccess && providersQuery.data.providers.length === 0 ? (
+            <div className="rounded-xl border border-line bg-background px-4 py-3 text-sm text-muted">
+              No broker providers are configured for {form.platform}. Contact support or an administrator.
+            </div>
+          ) : null}
           <div>
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
               Login <span className="text-danger">*</span>
@@ -422,27 +470,50 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
                 required
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="Investor or main password"
+                placeholder="Main or investor password"
                 maxLength={200}
                 autoComplete="new-password"
                 className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-                Server <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                  Server <span className="text-danger">*</span>
+                </label>
+                <button
+                  type="button"
+                  disabled={!form.brokerProviderId || serversQuery.isFetching}
+                  onClick={() => void serversQuery.refetch()}
+                  className="text-xs font-semibold text-accent disabled:opacity-40"
+                >
+                  {serversQuery.isFetching ? "Refreshing…" : "Refresh configured list"}
+                </button>
+              </div>
+              <select
                 required
+                disabled={!form.brokerProviderId || serversQuery.isFetching}
                 value={form.server}
                 onChange={(e) => setForm((f) => ({ ...f, server: e.target.value }))}
-                placeholder="e.g. ICMarketsSC-Demo02"
-                maxLength={100}
-                className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50"
-              />
+                className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50 disabled:opacity-50"
+              >
+                <option value="">
+                  {!form.brokerProviderId ? "Select a broker first" : "Select configured server"}
+                </option>
+                {(serversQuery.data?.servers ?? []).map((server) => (
+                  <option key={server.id} value={server.serverName}>{server.serverName}</option>
+                ))}
+              </select>
             </div>
           </div>
+          {form.brokerProviderId && serversQuery.isSuccess && serversQuery.data.servers.length === 0 ? (
+            <div className="rounded-xl border border-line bg-background px-4 py-3 text-sm text-muted">
+              No servers are configured for this broker and platform. Contact support or an administrator.
+            </div>
+          ) : null}
+          <p className="text-xs text-muted">
+            Broker and server options come from the WSA Global admin-configured catalog. They are not presented as live MetaApi discovery.
+          </p>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
             <p className="text-xs text-muted">
               Saving new credentials replaces existing ones for this account.
@@ -454,7 +525,10 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
               >
                 Cancel
               </GhostButton>
-              <PrimaryButton type="submit" disabled={busy}>
+              <PrimaryButton
+                type="submit"
+                disabled={busy || !form.brokerProviderId || !form.server}
+              >
                 {storeMutation.isPending ? "Connecting…" : "Connect and sync"}
               </PrimaryButton>
             </div>

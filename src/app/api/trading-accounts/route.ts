@@ -13,7 +13,10 @@ const createAccountSchema = z.object({
 export async function GET() {
   try {
     const user = await requireAuth();
-    return jsonOk(await listTradingAccounts(user.id, user.role));
+    return jsonOk(
+      await listTradingAccounts(user.id, user.role),
+      { headers: { "Cache-Control": "private, no-store, max-age=0" } },
+    );
   } catch (err) {
     if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);
     throw err;

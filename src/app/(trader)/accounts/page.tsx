@@ -24,6 +24,20 @@ import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/ho
 
 // Dialog step state machine
 type ConnectStep = "setup" | "credentials";
+type BrokerPlatform = "MT4" | "MT5";
+
+type BrokerProviderOption = {
+  id: string;
+  displayName: string;
+  platformsSupported: BrokerPlatform[];
+};
+
+type BrokerServerOption = {
+  id: string;
+  serverName: string;
+};
+
+const CUSTOM_BROKER_OPTION = "__custom__";
 
 export default function AccountsPage() {
   const { data: summary, isLoading: accessLoading } = useTraderAccessSummary();
@@ -72,6 +86,11 @@ function AccountsContent() {
   // Holds the accountId created in step 1, used in step 2
   const [pendingAccountId, setPendingAccountId] = useState<string | null>(null);
   const [pendingBrokerName, setPendingBrokerName] = useState("");
+  const [pendingBrokerProviderId, setPendingBrokerProviderId] = useState<string | null>(null);
+  const [selectedBrokerOption, setSelectedBrokerOption] = useState("");
+  const [manualBrokerName, setManualBrokerName] = useState("");
+  const [selectedPlatform, setSelectedPlatform] = useState<BrokerPlatform>("MT5");
+  const [selectedServerOption, setSelectedServerOption] = useState("");
   const queryClient = useQueryClient();
 
   const { data: tradingAccounts = [], isLoading, isError } = useQuery<TraderAccountSummary[]>({
@@ -80,6 +99,30 @@ function AccountsContent() {
       const res = await fetch("/api/trading-accounts");
       const json = await res.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
+      return json.data;
+    },
+  });
+
+  const brokerProvidersQuery = useQuery<{ providers: BrokerProviderOption[] }>({
+    queryKey: ["broker-providers", "account-connect", selectedPlatform],
+    enabled: connectOpen,
+    queryFn: async () => {
+      const res = await fetch(`/api/brokers?platform=${selectedPlatform}`);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load broker providers");
+      return json.data;
+    },
+  });
+
+  const brokerServersQuery = useQuery<{ servers: BrokerServerOption[] }>({
+    queryKey: ["broker-servers", pendingBrokerProviderId, selectedPlatform],
+    enabled: step === "credentials" && Boolean(pendingBrokerProviderId),
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/brokers/${pendingBrokerProviderId}/servers?platform=${selectedPlatform}`,
+      );
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load broker servers");
       return json.data;
     },
   });
@@ -97,6 +140,11 @@ function AccountsContent() {
     setStep("setup");
     setPendingAccountId(null);
     setPendingBrokerName("");
+    setPendingBrokerProviderId(null);
+    setSelectedBrokerOption("");
+    setManualBrokerName("");
+    setSelectedPlatform("MT5");
+    setSelectedServerOption("");
     setIsSubmitting(false);
     setErrorMessage("");
   };
@@ -110,10 +158,16 @@ function AccountsContent() {
     const form = event.currentTarget;
     const formData = new FormData(form);
     const accountName = (formData.get("accountLabel") as string)?.trim();
-    const brokerName = formData.get("broker") as string;
+    const brokerProviderId = formData.get("brokerProviderId") as string;
+    const provider = brokerProvidersQuery.data?.providers.find(
+      (item) => item.id === brokerProviderId,
+    );
+    const brokerName = brokerProviderId === CUSTOM_BROKER_OPTION
+      ? manualBrokerName.trim()
+      : provider?.displayName ?? "";
 
-    if (!accountName) {
-      setErrorMessage("Account label is required.");
+    if (!accountName || !brokerName) {
+      setErrorMessage("Account label and broker are required.");
       setIsSubmitting(false);
       return;
     }
@@ -128,6 +182,8 @@ function AccountsContent() {
       if (json.ok) {
         setPendingAccountId(json.data.accountId);
         setPendingBrokerName(brokerName);
+        setPendingBrokerProviderId(provider?.id ?? null);
+        setSelectedServerOption("");
         setStep("credentials");
         setErrorMessage("");
       } else {
@@ -151,8 +207,11 @@ function AccountsContent() {
     const formData = new FormData(form);
     const login = (formData.get("login") as string)?.trim();
     const password = formData.get("password") as string;
-    const server = (formData.get("server") as string)?.trim();
-    const platform = formData.get("platform") as string;
+    const serverSelection = (formData.get("serverSelection") as string)?.trim();
+    const customServer = (formData.get("customServer") as string)?.trim();
+    const usesCustomServer = !pendingBrokerProviderId || serverSelection === CUSTOM_BROKER_OPTION;
+    const server = usesCustomServer ? customServer : serverSelection;
+    const platform = selectedPlatform;
 
     if (!login || !password || !server || !platform) {
       setErrorMessage("MT5 login, trading password, server, and platform are all required.");
@@ -171,7 +230,9 @@ function AccountsContent() {
             password,
             server,
             platform,
+            brokerProviderId: pendingBrokerProviderId ?? undefined,
             brokerName: pendingBrokerName || undefined,
+            useCustomBrokerServer: usesCustomServer,
             connectNow: true,
           }),
         }
@@ -286,7 +347,8 @@ function AccountsContent() {
                       Connect broker account
                     </Dialog.Title>
                     <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-                      Name your account and select your broker. Credentials are entered in the next
+                      Name your account and select an admin-configured broker, or enter your own.
+                      Credentials are entered in the next
                       step and stored with AES-256-GCM encryption.
                     </Dialog.Description>
 
@@ -298,11 +360,37 @@ function AccountsContent() {
 
                     <form className="mt-6 grid gap-4" onSubmit={handleSetup}>
                       <div className="grid gap-4 md:grid-cols-2">
-                        <SelectField label="Broker" name="broker" defaultValue="MetaTrader 5">
-                          <option>MetaTrader 5</option>
-                          <option>MetaTrader 5 Demo</option>
-                          <option>cTrader</option>
-                          <option>Other</option>
+                        <SelectField
+                          label="Platform"
+                          name="platform"
+                          value={selectedPlatform}
+                          onChange={(event) => {
+                            setSelectedPlatform(event.target.value as BrokerPlatform);
+                            setSelectedBrokerOption("");
+                            setManualBrokerName("");
+                          }}
+                        >
+                          <option value="MT5">MT5 (MetaTrader 5)</option>
+                          <option value="MT4">MT4 (MetaTrader 4)</option>
+                        </SelectField>
+                        <SelectField
+                          label="Broker"
+                          name="brokerProviderId"
+                          value={selectedBrokerOption}
+                          onChange={(event) => setSelectedBrokerOption(event.target.value)}
+                          required
+                        >
+                          <option value="">
+                            {brokerProvidersQuery.isLoading
+                              ? "Loading configured brokers…"
+                              : "Select a configured broker"}
+                          </option>
+                          {(brokerProvidersQuery.data?.providers ?? []).map((provider) => (
+                            <option key={provider.id} value={provider.id}>
+                              {provider.displayName}
+                            </option>
+                          ))}
+                          <option value={CUSTOM_BROKER_OPTION}>Enter broker manually</option>
                         </SelectField>
                         <TextField
                           label="Account label"
@@ -310,6 +398,15 @@ function AccountsContent() {
                           placeholder="e.g. Evaluation Phase 1"
                           required
                         />
+                        {selectedBrokerOption === CUSTOM_BROKER_OPTION ? (
+                          <TextField
+                            label="Broker name"
+                            value={manualBrokerName}
+                            onChange={(event) => setManualBrokerName(event.target.value)}
+                            placeholder="Enter your broker company"
+                            required
+                          />
+                        ) : null}
                       </div>
                       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
                         <p className="text-sm text-muted">
@@ -353,14 +450,6 @@ function AccountsContent() {
 
                     <form className="mt-4 grid gap-4" onSubmit={handleCredentials}>
                       <div className="grid gap-4 md:grid-cols-2">
-                        <SelectField
-                          label="Platform"
-                          name="platform"
-                          defaultValue="mt5"
-                        >
-                          <option value="mt5">MT5 (MetaTrader 5)</option>
-                          <option value="mt4">MT4 (MetaTrader 4)</option>
-                        </SelectField>
                         <TextField
                           label="MT5 login / account number"
                           name="login"
@@ -376,14 +465,43 @@ function AccountsContent() {
                           required
                           autoComplete="new-password"
                         />
-                        <TextField
-                          label="Broker server"
-                          name="server"
-                          placeholder="e.g. ICMarkets-Demo02"
-                          required
-                          autoComplete="off"
-                        />
+                        {pendingBrokerProviderId ? (
+                          <SelectField
+                            label="Broker server"
+                            name="serverSelection"
+                            value={selectedServerOption}
+                            onChange={(event) => setSelectedServerOption(event.target.value)}
+                            required
+                          >
+                            <option value="">
+                              {brokerServersQuery.isLoading
+                                ? "Loading configured servers…"
+                                : "Select a configured server"}
+                            </option>
+                            {(brokerServersQuery.data?.servers ?? []).map((server) => (
+                              <option key={server.id} value={server.serverName}>
+                                {server.serverName}
+                              </option>
+                            ))}
+                            <option value={CUSTOM_BROKER_OPTION}>Enter server manually</option>
+                          </SelectField>
+                        ) : null}
+                        {!pendingBrokerProviderId || selectedServerOption === CUSTOM_BROKER_OPTION ? (
+                          <TextField
+                            label="Custom broker server"
+                            name="customServer"
+                            placeholder="e.g. ICMarkets-Demo02"
+                            required
+                            autoComplete="off"
+                          />
+                        ) : null}
                       </div>
+
+                      {pendingBrokerProviderId && brokerServersQuery.isSuccess && brokerServersQuery.data.servers.length === 0 ? (
+                        <p className="text-xs text-muted">
+                          No admin-configured servers match this platform. Choose “Enter server manually.”
+                        </p>
+                      ) : null}
 
                       <div className="rounded-2xl border border-line bg-background px-4 py-3 text-sm text-muted">
                         <span className="font-semibold text-accent-2">🔒 Secure</span> — Your

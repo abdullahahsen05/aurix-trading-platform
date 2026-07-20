@@ -10,6 +10,7 @@ import { brokerConnectionSchema } from "@/lib/validation/schemas";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const storeSchema = brokerConnectionSchema;
+const brokerProviderId = "00000000-0000-4000-8000-000000000001";
 
 describe("broker credential store — input validation", () => {
   test("accepts valid MT5 payload", () => {
@@ -18,7 +19,7 @@ describe("broker credential store — input validation", () => {
       login: "12345678",
       password: "Tr@ding123",
       server: "ICMarketsSC-Demo02",
-      brokerName: "ICMarkets",
+      brokerProviderId,
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -32,6 +33,7 @@ describe("broker credential store — input validation", () => {
       login: "99887766",
       password: "pass",
       server: "Broker-Demo",
+      brokerProviderId,
     });
     expect(result.success).toBe(true);
   });
@@ -42,6 +44,7 @@ describe("broker credential store — input validation", () => {
       login: "99887766",
       password: "pass",
       server: "Broker-Demo",
+      brokerProviderId,
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -53,6 +56,7 @@ describe("broker credential store — input validation", () => {
       login: "12345678",
       password: "pass",
       server: "Broker-Demo",
+      brokerProviderId,
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -64,6 +68,7 @@ describe("broker credential store — input validation", () => {
       login: "",
       password: "pass",
       server: "Broker-Demo",
+      brokerProviderId,
     });
     expect(result.success).toBe(false);
   });
@@ -73,6 +78,7 @@ describe("broker credential store — input validation", () => {
       login: "12345",
       password: "",
       server: "Broker-Demo",
+      brokerProviderId,
     });
     expect(result.success).toBe(false);
   });
@@ -82,6 +88,7 @@ describe("broker credential store — input validation", () => {
       login: "12345",
       password: "pass",
       server: "",
+      brokerProviderId,
     });
     expect(result.success).toBe(false);
   });
@@ -92,6 +99,7 @@ describe("broker credential store — input validation", () => {
       login: "12345",
       password: "pass",
       server: "Broker-Demo",
+      brokerProviderId,
     });
     expect(result.success).toBe(false);
   });
@@ -101,6 +109,7 @@ describe("broker credential store — input validation", () => {
       login: "  12345  ",
       password: "pass",
       server: "  Broker-Demo  ",
+      brokerProviderId,
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -113,6 +122,7 @@ describe("broker credential store — input validation", () => {
       login: "12345",
       password: " pass with spaces ",
       server: "Broker-Demo",
+      brokerProviderId,
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -124,6 +134,7 @@ describe("broker credential store — input validation", () => {
       login: "a".repeat(51),
       password: "pass",
       server: "Broker-Demo",
+      brokerProviderId,
     });
     expect(result.success).toBe(false);
   });
@@ -133,19 +144,18 @@ describe("broker credential store — input validation", () => {
       login: "12345",
       password: "pass",
       server: "s".repeat(101),
+      brokerProviderId,
     });
     expect(result.success).toBe(false);
   });
 
-  test("brokerName is optional", () => {
+  test("broker provider is required", () => {
     const result = storeSchema.safeParse({
       login: "12345",
       password: "pass",
       server: "Broker-Demo",
     });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.brokerName).toBeUndefined();
+    expect(result.success).toBe(false);
   });
 
   test("password is never returned in output", () => {
@@ -153,6 +163,7 @@ describe("broker credential store — input validation", () => {
       login: "12345678",
       password: "SuperSecret!",
       server: "Broker-Demo",
+      brokerProviderId,
     });
     expect(result.success).toBe(true);
     if (!result.success) return;
