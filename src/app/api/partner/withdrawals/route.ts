@@ -5,16 +5,18 @@ import {
   createPartnerWithdrawal,
   getPartnerWithdrawalBalance,
   listPartnerWithdrawals,
+  getPartnerFinancialLedger,
 } from "@/lib/services/partnerWithdrawalService";
 
 export async function GET() {
   try {
     const partner = await requirePartner();
-    const [balance, withdrawals] = await Promise.all([
+    const [balance, withdrawals, ledger] = await Promise.all([
       getPartnerWithdrawalBalance(partner.id),
       listPartnerWithdrawals(partner.id),
+      getPartnerFinancialLedger(partner.id),
     ]);
-    return jsonOk({ balance, withdrawals });
+    return jsonOk({ balance, withdrawals, ledger });
   } catch (error) {
     if (error instanceof AuthError) return jsonFail(error.code, error.message, error.statusCode);
     return jsonFail("WITHDRAWAL_ERROR", "Failed to load withdrawal data", 500);

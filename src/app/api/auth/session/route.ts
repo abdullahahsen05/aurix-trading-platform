@@ -8,11 +8,14 @@ export async function GET() {
     return jsonFail('UNAUTHORIZED', 'Not authenticated', 401)
   }
 
-  return jsonOk({
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    status: user.status,
-  })
+  return jsonOk(
+    {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      status: user.status,
+    },
+    { headers: { 'Cache-Control': 'private, no-store, max-age=0' } },
+  )
 }

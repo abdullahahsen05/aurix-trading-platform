@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { LogOut, X } from "lucide-react";
 import { navItems } from "@/components/app/navigation";
@@ -20,12 +21,15 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const items = navItems.filter((item) => item.role === role);
 
   const handleLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/login");
+    queryClient.clear();
+    router.replace("/login");
+    router.refresh();
   };
 
   const renderNav = (closeDrawer?: () => void) => (

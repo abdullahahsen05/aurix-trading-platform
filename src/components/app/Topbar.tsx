@@ -44,13 +44,14 @@ export function Topbar({
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const { data: tradingAccounts = [] } = useQuery<TraderAccountSummary[]>({
-    queryKey: ["trading-accounts"],
+    queryKey: ["trading-accounts", role],
     queryFn: async () => {
       const res = await fetch("/api/trading-accounts");
       const json = await res.json();
       if (!json.ok) return [];
       return json.data;
     },
+    enabled: role === "TRADER",
   });
 
   const { data: notifData } = useQuery<{ notifications: NotificationDto[]; unreadCount: number }>({
@@ -240,11 +241,21 @@ export function Topbar({
           <span className="hidden rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent sm:inline-flex items-center">
             {role === "ADMIN" ? "Admin" : role === "PARTNER" ? "Partner" : "Trader"}
           </span>
-          {role !== "PARTNER" ? (
-            <select className="h-10 rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong px-4 text-sm font-semibold text-foreground outline-none">
-              {tradingAccounts.map((account) => (
-                <option key={account.accountId}>{account.accountName}</option>
-              ))}
+          {role === "TRADER" ? (
+            <select
+              aria-label="Select one of your trading accounts"
+              className="h-10 max-w-[260px] rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong px-4 text-sm font-semibold text-foreground outline-none"
+              disabled={tradingAccounts.length === 0}
+            >
+              {tradingAccounts.length === 0 ? (
+                <option>No connected accounts</option>
+              ) : (
+                tradingAccounts.map((account) => (
+                  <option key={account.accountId} value={account.accountId}>
+                    {account.accountName}
+                  </option>
+                ))
+              )}
             </select>
           ) : null}
         </div>

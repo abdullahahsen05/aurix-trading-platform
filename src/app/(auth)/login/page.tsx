@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { GhostButton, PrimaryButton } from "@/components/app/WorkspaceUI";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { TextField } from "@/components/app/FormFields";
@@ -16,6 +17,7 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -56,6 +58,7 @@ export default function LoginPage() {
     }
 
     setMessage("Signed in successfully. Redirecting...");
+    queryClient.clear();
     router.replace(roleHome(role));
     router.refresh();
   };
@@ -77,6 +80,7 @@ export default function LoginPage() {
       const verifyJson = await verifyResponse.json();
       if (!verifyJson.ok) throw new Error(verifyJson.error?.message ?? "Passkey sign-in failed");
       setMessage("Signed in with passkey. Redirecting...");
+      queryClient.clear();
       router.replace(verifyJson.data.redirectTo ?? "/dashboard");
       router.refresh();
     } catch (passkeyError) {

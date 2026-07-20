@@ -316,8 +316,8 @@ function AnalyticsContent() {
         <DrawdownMeter value={analyticsSummary?.maxDrawdownPercent ?? 0} />
       </div>
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-[0.64fr_0.36fr]">
-        <Panel className="h-full">
+      <div className="mt-5 grid items-stretch gap-4 xl:grid-cols-2">
+        <Panel className="h-full min-w-0 w-full">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-foreground">Performance metrics</h2>
@@ -339,7 +339,7 @@ function AnalyticsContent() {
           </div>
         </Panel>
 
-        <Panel className="flex h-full flex-col">
+        <Panel className="flex h-full min-w-0 w-full flex-col">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-semibold text-foreground">KPI dashboard</h2>

@@ -28,6 +28,8 @@ import {
 } from "@/lib/domain/metrics";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
 
+type SessionUser = { id: string; name: string; email: string };
+
 const adminTabs: Array<{ key: AdminOverviewView; label: string }> = [
   { key: "OVERVIEW", label: "Overview" },
   { key: "ACCOUNTS", label: "Accounts" },
@@ -38,6 +40,16 @@ const adminTabs: Array<{ key: AdminOverviewView; label: string }> = [
 export default function AdminOverviewPage() {
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [overlayView, setOverlayView] = useState<AdminOverviewView>("OVERVIEW");
+
+  const { data: sessionUser } = useQuery<SessionUser>({
+    queryKey: ["session"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/session");
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Failed to load profile");
+      return json.data;
+    },
+  });
 
   const { data: adminSummary } = useQuery<AdminSummaryDto>({
     queryKey: ["admin-summary"],
@@ -179,7 +191,7 @@ export default function AdminOverviewPage() {
   return (
     <WorkspacePage
       eyebrow="Admin"
-      title="Platform overview"
+      title={`Welcome, ${sessionUser?.name?.trim() || "Admin"}`}
       description="A single calm operations dashboard for traders, accounts, risk, subscriptions, and audits."
     >
       <Panel>
@@ -255,8 +267,8 @@ export default function AdminOverviewPage() {
         </Panel>
       </div>
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-[0.58fr_0.42fr]">
-        <Panel>
+      <div className="mt-5 grid items-start gap-4 xl:grid-cols-2">
+        <Panel className="min-w-0 w-full">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-foreground">Trader watchlist</h2>
             <StatusPill tone="muted">Live review</StatusPill>
@@ -284,7 +296,7 @@ export default function AdminOverviewPage() {
           </div>
         </Panel>
 
-        <Panel>
+        <Panel className="min-w-0 w-full">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-semibold text-foreground">Risk queue</h2>
             <StatusPill tone={riskEvents.length > 0 ? "danger" : "lime"}>{riskEvents.length > 0 ? `${riskEvents.length} open` : "Clear"}</StatusPill>

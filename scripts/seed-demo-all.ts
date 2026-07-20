@@ -157,7 +157,7 @@ async function run() {
   // 1. Core users.
   const adminId = await findUserIdByEmail("admin@aurix.local");
   if (!adminId) throw new Error("admin@aurix.local not found — run scripts/reset-users.ts first.");
-  await supabase.from("profiles").update({ role: "ADMIN" }).eq("id", adminId);
+  await supabase.from("profiles").update({ role: "SUPER_ADMIN" }).eq("id", adminId);
 
   const partnerId = await findUserIdByEmail("partner@aurix.local");
   if (!partnerId) throw new Error("partner@aurix.local not found — run scripts/seed-partner-demo.ts first.");

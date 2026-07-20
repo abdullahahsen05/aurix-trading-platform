@@ -281,7 +281,7 @@ export default function AdminMarketplacePage() {
       {/* Notice */}
       {notice ? (
         <div
-          className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
+          className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-medium ${
             notice.type === "success"
               ? "border-accent/20 bg-accent/10 text-accent"
               : "border-danger/20 bg-danger/10 text-danger"
@@ -291,24 +291,28 @@ export default function AdminMarketplacePage() {
         </div>
       ) : null}
 
-      {/* Tabs */}
-      <FilterChipRow
-        chips={[
-          { label: "Products", active: tab === "products", onClick: () => setTab("products") },
-          { label: "Access Requests", active: tab === "access", onClick: () => setTab("access") },
-          { label: "Licenses", active: tab === "licenses", onClick: () => setTab("licenses") },
-        ]}
-      />
-
-      {/* Products tab */}
-      {tab === "products" ? (
-        <>
+      {/* Tabs and primary action */}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <FilterChipRow
+          chips={[
+            { label: "Products", active: tab === "products", onClick: () => setTab("products") },
+            { label: "Access Requests", active: tab === "access", onClick: () => setTab("access") },
+            { label: "Licenses", active: tab === "licenses", onClick: () => setTab("licenses") },
+          ]}
+        />
+        {tab === "products" ? (
           <PageActionGroup>
             <PrimaryButton type="button" onClick={() => setCreateOpen(true)}>
               <Plus className="mr-1.5 inline-block h-3.5 w-3.5" />
               New Product
             </PrimaryButton>
           </PageActionGroup>
+        ) : null}
+      </div>
+
+      {/* Products tab */}
+      {tab === "products" ? (
+        <div className="mt-4">
           {productsLoading ? (
             <div className="h-32 animate-pulse rounded-3xl bg-panel" />
           ) : products.length === 0 ? (
@@ -347,12 +351,12 @@ export default function AdminMarketplacePage() {
               ])}
             />
           )}
-        </>
+        </div>
       ) : null}
 
       {/* Access tab */}
       {tab === "access" ? (
-        <>
+        <div className="mt-4 grid gap-4">
           <FilterChipRow
             chips={[
               { label: "All", active: accessFilter === "ALL", onClick: () => setAccessFilter("ALL") },
@@ -427,12 +431,12 @@ export default function AdminMarketplacePage() {
               ])}
             />
           )}
-        </>
+        </div>
       ) : null}
 
       {/* Licenses tab */}
       {tab === "licenses" ? (
-        <>
+        <div className="mt-4">
           {licensesLoading ? (
             <div className="h-32 animate-pulse rounded-3xl bg-panel" />
           ) : licenses.length === 0 ? (
@@ -471,7 +475,7 @@ export default function AdminMarketplacePage() {
               ])}
             />
           )}
-        </>
+        </div>
       ) : null}
 
       {/* Create product dialog */}

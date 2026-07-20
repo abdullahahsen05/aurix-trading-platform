@@ -91,11 +91,11 @@ async function run() {
   console.log(`  trader id: ${traderId}`)
 
   console.log('\n[3/3] Promoting admin (DB trigger defaults everyone to TRADER)...')
-  const { error: roleErr } = await supabase.from('profiles').update({ role: 'ADMIN' }).eq('id', adminId)
+  const { error: roleErr } = await supabase.from('profiles').update({ role: 'SUPER_ADMIN' }).eq('id', adminId)
   if (roleErr) throw roleErr
   // Admins should not carry a trader_profile row.
   await supabase.from('trader_profiles').delete().eq('user_id', adminId)
-  console.log('  admin promoted to ADMIN')
+  console.log('  admin promoted to SUPER_ADMIN')
 
   console.log('\nDone. Credentials:')
   console.log(`  Admin:  ${ADMIN.email} / ${ADMIN.password}`)

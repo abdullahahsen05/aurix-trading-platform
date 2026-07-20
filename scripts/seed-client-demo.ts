@@ -109,7 +109,7 @@ async function run() {
 
   // ── 2. Roles & profiles ─────────────────────────────────────────────────────
   console.log("\n[2/20] Setting roles & partner profile...");
-  await supabase.from("profiles").update({ role: "ADMIN" }).eq("id", adminId);
+  await supabase.from("profiles").update({ role: "SUPER_ADMIN" }).eq("id", adminId);
   await supabase.from("trader_profiles").delete().eq("user_id", adminId);
 
   await supabase.from("profiles").update({ role: "PARTNER" }).eq("id", partnerId);
