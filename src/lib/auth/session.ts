@@ -70,6 +70,17 @@ export async function requireAdmin(): Promise<SessionUser> {
 }
 
 /**
+ * Require SUPER_ADMIN for operations that mutate encrypted platform secrets.
+ */
+export async function requireSuperAdmin(): Promise<SessionUser> {
+  const user = await requireAuth()
+  if (user.role !== 'SUPER_ADMIN') {
+    throw new AuthError('FORBIDDEN', 'Super Admin access required', 403)
+  }
+  return user
+}
+
+/**
  * Require TRADER role (or admin, since admins can preview trader data).
  */
 export async function requireTrader(): Promise<SessionUser> {

@@ -70,6 +70,7 @@ export interface CopyEntitlementDto extends BillingAccessSummaryDto {
   id: string;
   tier: string;
   tradingAccountId: string | null;
+  strategyId?: string | null;
 }
 
 export interface MentorshipAccessDto extends BillingAccessSummaryDto {
@@ -182,6 +183,7 @@ type CopyEntitlementAccessRow = {
   tier: string;
   status: string;
   tradingAccountId: string | null;
+  strategyId?: string | null;
   currentPeriodEnd: string | null;
   approvedAt: string | null;
   createdAt: string;
@@ -194,6 +196,7 @@ type PaymentOrderAccessRow = {
   productCode?: string;
   productName?: string;
   tradingAccountId?: string | null;
+  copyStrategyId?: string | null;
   botProductId?: string | null;
   tier?: string | null;
   approvedAt?: string | null;
@@ -218,6 +221,7 @@ type PaidOrderProvisionRow = {
   trading_account_id: string | null;
   tier: string | null;
   bot_product_id: string | null;
+  copy_strategy_id: string | null;
   metadata?: Record<string, unknown> | null;
 };
 
@@ -400,15 +404,17 @@ export function derivePlatformSubscriptionAccess(params: {
 
 export function deriveCopyEntitlementAccess(params: {
   tradingAccountId: string;
+  strategyId?: string | null;
   entitlements: CopyEntitlementAccessRow[];
   orders: PaymentOrderAccessRow[];
   nowIso: string;
 }): CopyEntitlementDto {
+  const strategyId = params.strategyId ?? null;
   const entitlements = params.entitlements
-    .filter((entry) => entry.tradingAccountId === params.tradingAccountId)
+    .filter((entry) => entry.tradingAccountId === params.tradingAccountId && (entry.strategyId ?? null) === strategyId)
     .sort(compareDescByCreatedAt);
   const orders = params.orders
-    .filter((order) => order.tradingAccountId === params.tradingAccountId)
+    .filter((order) => order.tradingAccountId === params.tradingAccountId && (order.copyStrategyId ?? null) === strategyId)
     .sort(compareDescByCreatedAt);
 
   const active = entitlements.find((entry) => entry.status === "ACTIVE" && isFuture(entry.currentPeriodEnd, params.nowIso));
@@ -417,6 +423,7 @@ export function deriveCopyEntitlementAccess(params: {
       id: active.id,
       tier: active.tier,
       tradingAccountId: active.tradingAccountId,
+      strategyId: active.strategyId,
       status: "ACTIVE",
       currentPeriodEnd: active.currentPeriodEnd,
       approvedAt: active.approvedAt,
@@ -431,6 +438,7 @@ export function deriveCopyEntitlementAccess(params: {
       id: pendingApprovalEntry.id,
       tier: pendingApprovalEntry.tier,
       tradingAccountId: pendingApprovalEntry.tradingAccountId,
+      strategyId: pendingApprovalEntry.strategyId,
       status: "PENDING_APPROVAL",
       currentPeriodEnd: pendingApprovalEntry.currentPeriodEnd,
       approvedAt: pendingApprovalEntry.approvedAt,
@@ -445,6 +453,7 @@ export function deriveCopyEntitlementAccess(params: {
       id: "",
       tier: paidOrder.tier ?? "NORMAL",
       tradingAccountId: params.tradingAccountId,
+      strategyId,
       status: "PENDING_PAYMENT",
       currentPeriodEnd: null,
       approvedAt: paidOrder.approvedAt ?? null,
@@ -459,6 +468,7 @@ export function deriveCopyEntitlementAccess(params: {
       id: "",
       tier: pendingOrder.tier ?? "NORMAL",
       tradingAccountId: params.tradingAccountId,
+      strategyId,
       status: "PENDING_PAYMENT",
       currentPeriodEnd: null,
       approvedAt: null,
@@ -475,6 +485,7 @@ export function deriveCopyEntitlementAccess(params: {
       id: expired.id,
       tier: expired.tier,
       tradingAccountId: expired.tradingAccountId,
+      strategyId: expired.strategyId,
       status: "EXPIRED",
       currentPeriodEnd: expired.currentPeriodEnd,
       approvedAt: expired.approvedAt,
@@ -489,6 +500,7 @@ export function deriveCopyEntitlementAccess(params: {
     id: "",
     tier: terminal?.tier ?? "NORMAL",
     tradingAccountId: params.tradingAccountId,
+    strategyId,
     status: terminalState,
     currentPeriodEnd: null,
     approvedAt: terminal?.approvedAt ?? null,
@@ -632,13 +644,17 @@ export async function getPlatformSubscriptionAccess(userId: string): Promise<Sub
 export async function getCopyEntitlementAccess(
   userId: string,
   tradingAccountId: string,
+  strategyId?: string,
 ): Promise<CopyEntitlementDto> {
   const summary = await getTraderAccessSummary(userId);
   return (
-    summary.copyEntitlements.find((entry) => entry.tradingAccountId === tradingAccountId) ?? {
+    summary.copyEntitlements.find((entry) =>
+      entry.tradingAccountId === tradingAccountId && (!strategyId || entry.strategyId === strategyId),
+    ) ?? {
       id: "",
       tier: "NORMAL",
       tradingAccountId,
+      strategyId: strategyId ?? null,
       status: "NONE",
       currentPeriodEnd: null,
       approvedAt: null,
@@ -674,7 +690,7 @@ export async function getMentorshipAccess(userId: string): Promise<MentorshipAcc
 export async function checkExistingAccess(
   userId: string,
   productCode: string,
-  options?: { tradingAccountId?: string; botProductId?: string },
+  options?: { tradingAccountId?: string; botProductId?: string; copyStrategyId?: string },
 ): Promise<ExistingAccessResult> {
   const product = await getProductByCode(productCode);
   if (!product) return { status: "NONE", message: "" };
@@ -688,7 +704,7 @@ export async function checkExistingAccess(
     if (!options?.tradingAccountId) {
       return { status: "NONE", message: "Trading account is required" };
     }
-    const access = await getCopyEntitlementAccess(userId, options.tradingAccountId);
+    const access = await getCopyEntitlementAccess(userId, options.tradingAccountId, options.copyStrategyId);
     return { status: access.status, message: access.message };
   }
 
@@ -758,6 +774,8 @@ export interface CreateCheckoutParams {
   productCode: string;
   /** Required for COPY_ACCOUNT products */
   tradingAccountId?: string;
+  /** Required for a published, per-strategy WSA live-copy subscription. */
+  copyStrategyId?: string;
   /** NORMAL or PREMIUM for copy products */
   tier?: string;
   /** Required for BOT products — the bot_products.id */
@@ -850,6 +868,7 @@ async function ensurePaidOrderProvisioned(
       const { error: insertError } = await supabase.from("copy_account_entitlements").insert({
         user_id: order.user_id,
         trading_account_id: order.trading_account_id,
+        strategy_id: order.copy_strategy_id,
         payment_order_id: order.id,
         tier: order.tier ?? (product.code === "COPY_ULTRA_FAST" ? "PREMIUM" : "NORMAL"),
         status: decision.status,
@@ -929,7 +948,7 @@ async function markOrderPaid(orderId: string): Promise<void> {
 
   const { data: order, error: orderErr } = await supabase
     .from("payment_orders")
-    .select("id, user_id, product_id, status, amount, currency, trading_account_id, tier, bot_product_id, metadata")
+    .select("id, user_id, product_id, status, amount, currency, trading_account_id, tier, bot_product_id, copy_strategy_id, metadata")
     .eq("id", orderId)
     .single();
 
@@ -964,6 +983,9 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
   if (product.type === "COPY_ACCOUNT" && !params.tradingAccountId) {
     throw new Error("Trading account is required for copy trading access");
   }
+  if (product.code.startsWith("COPY_STRATEGY_") && !params.copyStrategyId) {
+    throw new Error("Copy strategy is required for this subscription");
+  }
   if (product.type === "BOT" && !params.botProductId) {
     throw new Error("Bot product is required for this purchase");
   }
@@ -971,7 +993,7 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
   const supabase = createAdminClient();
 
   if (product.type === "COPY_ACCOUNT") {
-    const [{ data: account }, platformAccess] = await Promise.all([
+    const [{ data: account }, platformAccess, strategyResult] = await Promise.all([
       supabase
         .from("trading_accounts")
         .select("id, user_id")
@@ -979,10 +1001,23 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
         .eq("user_id", params.userId)
         .maybeSingle(),
       getPlatformSubscriptionAccess(params.userId),
+      params.copyStrategyId
+        ? supabase
+            .from("copy_strategies")
+            .select("id, billing_product_id, status, live_enabled, engine_status")
+            .eq("id", params.copyStrategyId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
     if (!account) throw new Error("Trading account not found or access denied");
     if (platformAccess.status !== "ACTIVE") {
       throw new Error("An active platform subscription is required before purchasing copy access");
+    }
+    if (params.copyStrategyId) {
+      const strategy = strategyResult.data;
+      if (!strategy || strategy.billing_product_id !== product.id || strategy.status !== "ACTIVE" || !strategy.live_enabled || strategy.engine_status !== "LIVE") {
+        throw new Error("This copy strategy is not available for live subscriptions");
+      }
     }
     params.tier = product.code === "COPY_ULTRA_FAST" ? "PREMIUM" : "NORMAL";
   }
@@ -1001,6 +1036,7 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
       trading_account_id: params.tradingAccountId ?? null,
       tier: params.tier ?? null,
       bot_product_id: params.botProductId ?? null,
+      copy_strategy_id: params.copyStrategyId ?? null,
       metadata: { checkoutMode: runtimeMode },
     })
     .select("id")
@@ -1025,7 +1061,6 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
 
   // STRIPE MODE: create a hosted Checkout Session.
   const stripe = getStripe();
-  const priceId = getStripePriceId(params.productCode);
   const stripeCustomerId = await ensureStripeCustomer(params.userId, params.userEmail, params.userName);
   const checkoutMode = getStripeCheckoutMode(product.billingInterval);
   const origin = new URL(params.returnUrl).origin;
@@ -1033,7 +1068,17 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
   const session = await stripe.checkout.sessions.create({
     mode: checkoutMode,
     customer: stripeCustomerId,
-    line_items: [{ price: priceId, quantity: 1 }],
+    line_items: params.copyStrategyId
+      ? [{
+          price_data: {
+            currency: product.currency.toLowerCase(),
+            unit_amount: Math.round(product.amount * 100),
+            recurring: { interval: "month" },
+            product_data: { name: product.name },
+          },
+          quantity: 1,
+        }]
+      : [{ price: getStripePriceId(params.productCode), quantity: 1 }],
     success_url: `${params.returnUrl}?orderId=${order.id}&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/billing?checkout=cancelled`,
     client_reference_id: order.id,
@@ -1042,6 +1087,7 @@ export async function createCheckoutSession(params: CreateCheckoutParams): Promi
       userId: params.userId,
       productCode: params.productCode,
       ...(params.tradingAccountId ? { tradingAccountId: params.tradingAccountId } : {}),
+      ...(params.copyStrategyId ? { copyStrategyId: params.copyStrategyId } : {}),
       ...(params.botProductId ? { botProductId: params.botProductId } : {}),
     },
   });
@@ -1140,6 +1186,12 @@ export async function handleStripeInvoicePaid(invoice: {
 export async function handleStripeSubscriptionDeleted(stripeSubscriptionId: string): Promise<void> {
   const supabase = createAdminClient();
   const now = new Date().toISOString();
+  const { data: liveCopyEntitlements } = await supabase
+    .from("copy_account_entitlements")
+    .select("strategy_id, trading_account_id")
+    .eq("stripe_subscription_id", stripeSubscriptionId)
+    .in("status", ["ACTIVE", "PENDING_APPROVAL"])
+    .not("strategy_id", "is", null);
 
   await Promise.all([
     supabase
@@ -1154,6 +1206,15 @@ export async function handleStripeSubscriptionDeleted(stripeSubscriptionId: stri
       .eq("stripe_subscription_id", stripeSubscriptionId)
       .in("status", ["ACTIVE", "PENDING_APPROVAL"]),
   ]);
+
+  for (const entitlement of liveCopyEntitlements ?? []) {
+    if (!entitlement.strategy_id || !entitlement.trading_account_id) continue;
+    await supabase
+      .from("copy_strategy_followers")
+      .update({ status: "REVOKED", engine_status: "REMOVED", engine_error: null })
+      .eq("strategy_id", entitlement.strategy_id)
+      .eq("follower_account_id", entitlement.trading_account_id);
+  }
 }
 
 /** Called on customer.subscription.updated — syncs cancel_at_period_end flag. */
@@ -1478,14 +1539,14 @@ export async function getTraderAccessSummary(userId: string): Promise<UserBillin
 
     supabase
       .from("copy_account_entitlements")
-      .select("id, tier, status, trading_account_id, current_period_end, approved_at, created_at")
+      .select("id, tier, status, trading_account_id, strategy_id, current_period_end, approved_at, created_at")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(20),
 
     supabase
       .from("payment_orders")
-      .select("id, status, amount, currency, paid_at, created_at, provider_checkout_url, trading_account_id, bot_product_id, tier, metadata, billing_products(code, name, type, billing_interval)")
+      .select("id, status, amount, currency, paid_at, created_at, provider_checkout_url, trading_account_id, copy_strategy_id, bot_product_id, tier, metadata, billing_products(code, name, type, billing_interval)")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(50),
@@ -1511,6 +1572,7 @@ export async function getTraderAccessSummary(userId: string): Promise<UserBillin
     tier: string;
     status: string;
     trading_account_id: string | null;
+    strategy_id: string | null;
     current_period_end: string | null;
     approved_at: string | null;
     created_at: string;
@@ -1525,6 +1587,7 @@ export async function getTraderAccessSummary(userId: string): Promise<UserBillin
     created_at: string;
     provider_checkout_url: string | null;
     trading_account_id: string | null;
+    copy_strategy_id: string | null;
     bot_product_id: string | null;
     tier: string | null;
     metadata: { approvedAt?: string | null } | null;
@@ -1552,6 +1615,7 @@ export async function getTraderAccessSummary(userId: string): Promise<UserBillin
     productCode: o.billing_products?.code,
     productName: o.billing_products?.name,
     tradingAccountId: o.trading_account_id,
+    copyStrategyId: o.copy_strategy_id,
     botProductId: o.bot_product_id,
     tier: o.tier,
     approvedAt: o.metadata?.approvedAt ?? null,
@@ -1574,36 +1638,43 @@ export async function getTraderAccessSummary(userId: string): Promise<UserBillin
     nowIso: new Date().toISOString(),
   });
 
-  const copyAccountIds = Array.from(
+  const copyScopes = Array.from(
     new Set(
       [
-        ...allEnts.map((e) => e.trading_account_id).filter((value): value is string => Boolean(value)),
+        ...allEnts
+          .filter((entry) => entry.trading_account_id)
+          .map((entry) => `${entry.trading_account_id}:${entry.strategy_id ?? "legacy"}`),
         ...normalizedOrders
-          .filter((o) => o.productCode === "COPY_NORMAL" || o.productCode === "COPY_ULTRA_FAST")
-          .map((o) => o.tradingAccountId)
-          .filter((value): value is string => Boolean(value)),
+          .filter((order) => order.productCode?.startsWith("COPY_") && order.tradingAccountId)
+          .map((order) => `${order.tradingAccountId}:${order.copyStrategyId ?? "legacy"}`),
       ],
     ),
   );
 
-  const copyEntitlements = copyAccountIds.map((tradingAccountId) =>
-    deriveCopyEntitlementAccess({
+  const copyEntitlements = copyScopes.map((scope) => {
+    const separator = scope.indexOf(":");
+    const tradingAccountId = scope.slice(0, separator);
+    const encodedStrategyId = scope.slice(separator + 1);
+    const strategyId = encodedStrategyId === "legacy" ? null : encodedStrategyId;
+    return deriveCopyEntitlementAccess({
       tradingAccountId,
+      strategyId,
       entitlements: allEnts.map((e) => ({
         id: e.id,
         tier: e.tier,
         status: e.status,
         tradingAccountId: e.trading_account_id,
+        strategyId: e.strategy_id,
         currentPeriodEnd: e.current_period_end,
         approvedAt: e.approved_at,
         createdAt: e.created_at,
       })),
       orders: normalizedOrders.filter(
-        (o) => (o.productCode === "COPY_NORMAL" || o.productCode === "COPY_ULTRA_FAST") && o.tradingAccountId === tradingAccountId,
+        (o) => o.productCode?.startsWith("COPY_") && o.tradingAccountId === tradingAccountId && (o.copyStrategyId ?? null) === strategyId,
       ),
       nowIso: new Date().toISOString(),
-    }),
-  );
+    });
+  });
 
   const botIds = Array.from(
     new Set(
@@ -1922,6 +1993,12 @@ export async function approvePaymentAccess(
 export async function expireStaleEntitlements(): Promise<void> {
   const supabase = createAdminClient();
   const now = new Date().toISOString();
+  const { data: expiredCopySubscriptions } = await supabase
+    .from("copy_account_entitlements")
+    .select("strategy_id, trading_account_id")
+    .eq("status", "ACTIVE")
+    .lt("current_period_end", now)
+    .not("strategy_id", "is", null);
 
   await Promise.all([
     supabase
@@ -1936,6 +2013,15 @@ export async function expireStaleEntitlements(): Promise<void> {
       .eq("status", "ACTIVE")
       .lt("current_period_end", now),
   ]);
+
+  for (const entitlement of expiredCopySubscriptions ?? []) {
+    if (!entitlement.strategy_id || !entitlement.trading_account_id) continue;
+    await supabase
+      .from("copy_strategy_followers")
+      .update({ status: "REVOKED", engine_status: "REMOVED", engine_error: null })
+      .eq("strategy_id", entitlement.strategy_id)
+      .eq("follower_account_id", entitlement.trading_account_id);
+  }
 }
 
 /** Returns whether a user has an active platform subscription. */
@@ -1954,17 +2040,29 @@ export async function hasActivePlatformSubscription(userId: string): Promise<boo
 export async function getActiveCopyEntitlements(
   userId: string,
   tradingAccountId?: string,
+  strategyId?: string,
 ): Promise<CopyEntitlementDto[]> {
   const supabase = createAdminClient();
   let q = supabase
     .from("copy_account_entitlements")
-    .select("id, tier, status, trading_account_id, current_period_end, approved_at")
+    .select("id, tier, status, trading_account_id, strategy_id, current_period_end, approved_at")
     .eq("user_id", userId)
     .eq("status", "ACTIVE")
     .gt("current_period_end", new Date().toISOString());
 
   if (tradingAccountId) q = q.eq("trading_account_id", tradingAccountId);
+  if (strategyId) q = q.eq("strategy_id", strategyId);
 
   const { data } = await q;
-  return (data ?? []) as unknown as CopyEntitlementDto[];
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    tier: row.tier,
+    tradingAccountId: row.trading_account_id,
+    strategyId: row.strategy_id,
+    status: row.status as BillingAccessState,
+    currentPeriodEnd: row.current_period_end,
+    approvedAt: row.approved_at,
+    orderId: null,
+    message: "Active live strategy subscription.",
+  }));
 }

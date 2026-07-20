@@ -89,7 +89,7 @@ async function seed() {
   console.log('\n[3/10] Fixing admin role...')
   const { error: adminRoleErr } = await supabase
     .from('profiles')
-    .update({ role: 'ADMIN' })
+    .update({ role: 'SUPER_ADMIN' })
     .eq('id', adminId)
   if (adminRoleErr) throw adminRoleErr
 
@@ -100,7 +100,7 @@ async function seed() {
     .eq('user_id', adminId)
   if (delTpErr) throw delTpErr
 
-  console.log('  Admin role set to ADMIN, trader_profile removed')
+  console.log('  Admin role set to SUPER_ADMIN, trader_profile removed')
 
   // Update trader segments
   const { error: ayanSegErr } = await supabase

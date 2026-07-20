@@ -1,664 +1,108 @@
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Repeat, ShieldCheck as Lock, X } from "lucide-react";
+import { AlertTriangle, Repeat, ShieldCheck } from "lucide-react";
 import { BillingCheckoutModal } from "@/components/app/BillingCheckoutModal";
 import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
-import { SelectField } from "@/components/app/FormFields";
-import {
-  DataTable,
-  EmptyState,
-  FilterChipRow,
-  GhostButton,
-  Panel,
-  PrimaryButton,
-  StatusPill,
-  WorkspacePage,
-} from "@/components/app/WorkspaceUI";
+import { GhostButton, Panel, PrimaryButton, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
 import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
-import type { CopyFollowerDto, CopyLogDto } from "@/lib/copy/types";
+import type { CopyFollowerDto } from "@/lib/copy/types";
 import type { TraderAccountSummary } from "@/lib/domain/types";
 import type { TraderStrategyDto } from "@/lib/services/copyTradingService";
 import type { CopyEntitlementDto, UserBillingSummaryDto } from "@/lib/services/billingService";
+import { formatMoney } from "@/lib/utils/format";
 
-type StrategyDto = TraderStrategyDto;
-type CopyTier = "NORMAL" | "PREMIUM";
-
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error?.message ?? "Request failed");
-  return json.data;
-}
-
-const STATUS_TONE: Record<string, "lime" | "accent" | "danger" | "muted"> = {
-  ACTIVE: "lime",
-  PAUSED: "accent",
-  PENDING: "accent",
-  PENDING_PAYMENT: "muted",
-  PENDING_APPROVAL: "accent",
-  REVOKED: "muted",
-  DISABLED: "muted",
-  EXPIRED: "danger",
-  CANCELLED: "muted",
-  REFUNDED: "muted",
-  SUCCESS: "lime",
-  SKIPPED: "muted",
-  FAILED: "danger",
-};
-
-const COPY_CHECKOUT_ALLOWED_STATUSES = new Set([
-  "NONE",
-  "EXPIRED",
-  "CANCELLED",
-  "FAILED",
-  "REFUNDED",
-]);
-
-function getCopyTierLabel(tier: string) {
-  return tier === "PREMIUM" ? "Ultra Fast" : "Normal";
-}
-
-function createEmptyCopyAccess(tradingAccountId: string): CopyEntitlementDto {
-  return {
-    id: "",
-    tier: "NORMAL",
-    tradingAccountId,
-    status: "NONE",
-    currentPeriodEnd: null,
-    approvedAt: null,
-    orderId: null,
-    message: "",
-  };
-}
-
-function describeCopyAccess(access: CopyEntitlementDto) {
-  switch (access.status) {
-    case "ACTIVE":
-      return "Ready for copy trading on this account.";
-    case "PENDING_APPROVAL":
-      return "Payment received - pending admin approval.";
-    case "PENDING_PAYMENT":
-      return "Payment pending. Complete checkout to continue.";
-    case "EXPIRED":
-      return "Subscription expired - renew to continue.";
-    case "FAILED":
-      return "Previous payment failed - you can try again.";
-    case "CANCELLED":
-      return "Previous checkout was cancelled.";
-    case "REFUNDED":
-      return "Previous payment was refunded.";
-    default:
-      return "Choose a copy tier for this account.";
-  }
-}
-
-function getCopyCheckoutProduct(tier: CopyTier) {
-  return tier === "PREMIUM"
-    ? {
-        code: "COPY_ULTRA_FAST",
-        name: "Copy Trading - Ultra Fast",
-        amount: 15,
-        currency: "USD",
-        billingInterval: "MONTHLY",
-        description: "Lowest latency copy execution. Renews monthly from approval date.",
-      }
-    : {
-        code: "COPY_NORMAL",
-        name: "Copy Trading - Normal",
-        amount: 10,
-        currency: "USD",
-        billingInterval: "MONTHLY",
-        description: "Standard copy speed for most strategies. Renews monthly from approval date.",
-      };
+async function api<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const payload = await response.json();
+  if (!payload.ok) throw new Error(payload.error?.message ?? "Request failed.");
+  return payload.data;
 }
 
 export default function CopyTradingPage() {
-  const { data: accessSummary, isLoading: accessLoading } = useTraderAccessSummary();
-  const platformAccess = accessSummary?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
-
-  if (accessLoading && !accessSummary) {
-    return (
-      <WorkspacePage eyebrow="Copy Trading" title="Copy Trading" description="Loading your platform access status.">
-        <Panel>
-          <p className="text-sm text-muted">Loading...</p>
-        </Panel>
-      </WorkspacePage>
-    );
+  const { data: access, isLoading } = useTraderAccessSummary();
+  const platform = access?.platformSubscription ?? EMPTY_PLATFORM_SUBSCRIPTION_ACCESS;
+  if (isLoading && !access) return <WorkspacePage eyebrow="Copy Trading" title="Live Strategies" description="Loading access..."><Panel><p className="text-sm text-muted">Loading...</p></Panel></WorkspacePage>;
+  if (platform.status !== "ACTIVE") {
+    return <WorkspacePage eyebrow="Copy Trading" title="Live Strategies" description="Activate the platform before subscribing to live strategies."><PlatformSubscriptionLocked access={platform} description="An active WSA Global platform subscription is required before buying a live strategy subscription." /></WorkspacePage>;
   }
-
-  if (platformAccess.status !== "ACTIVE") {
-    return (
-      <WorkspacePage
-        eyebrow="Copy Trading"
-        title="Copy Trading"
-        description="Activate your platform subscription before enabling account-level copy trading access."
-      >
-        <PlatformSubscriptionLocked
-          access={platformAccess}
-          description="Copy trading requires an active WSA Global platform subscription first. After activation, you can choose a Normal or Ultra Fast copy tier for each trading account."
-        />
-      </WorkspacePage>
-    );
-  }
-
-  return <CopyTradingContent initialBillingSummary={accessSummary} />;
+  return <LiveCopyContent initialBilling={access} />;
 }
 
-function CopyTradingContent({
-  initialBillingSummary,
-}: {
-  initialBillingSummary?: UserBillingSummaryDto;
-}) {
+function LiveCopyContent({ initialBilling }: { initialBilling?: UserBillingSummaryDto }) {
   const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [copyTierModal, setCopyTierModal] = useState<{ tier: CopyTier; accountId: string } | null>(null);
-  const [followStrategy, setFollowStrategy] = useState<StrategyDto | null>(null);
-  const [followAccountId, setFollowAccountId] = useState("");
+  const [accountByStrategy, setAccountByStrategy] = useState<Record<string, string>>({});
+  const [checkout, setCheckout] = useState<{ strategy: TraderStrategyDto; accountId: string } | null>(null);
+  const [follow, setFollow] = useState<{ strategy: TraderStrategyDto; accountId: string } | null>(null);
   const [consent, setConsent] = useState(false);
-  const [revokeSubId, setRevokeSubId] = useState<string | null>(null);
-  const [logStatusFilter, setLogStatusFilter] = useState<"ALL" | "SUCCESS" | "SKIPPED" | "FAILED">("ALL");
+  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
-  const { data: billingSummary } = useQuery<UserBillingSummaryDto>({
-    queryKey: ["billing-me"],
-    queryFn: () => getJson("/api/billing/me"),
-    staleTime: 60_000,
-    initialData: initialBillingSummary,
-  });
-  const { data: strategies = [], isLoading } = useQuery<StrategyDto[]>({
-    queryKey: ["copy-strategies"],
-    queryFn: () => getJson("/api/copy/strategies"),
-  });
-  const { data: subscriptions = [] } = useQuery<CopyFollowerDto[]>({
-    queryKey: ["copy-my-subscriptions"],
-    queryFn: () => getJson("/api/copy/my-subscriptions"),
-  });
-  const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({
-    queryKey: ["trading-accounts"],
-    queryFn: () => getJson("/api/trading-accounts"),
-  });
-  const { data: logs = [] } = useQuery<CopyLogDto[]>({
-    queryKey: ["copy-my-logs"],
-    queryFn: () => getJson("/api/copy/logs"),
-  });
+  const { data: billing = initialBilling } = useQuery<UserBillingSummaryDto>({ queryKey: ["billing-me"], queryFn: () => api("/api/billing/me"), initialData: initialBilling });
+  const { data: strategies = [] } = useQuery<TraderStrategyDto[]>({ queryKey: ["copy-strategies"], queryFn: () => api("/api/copy/strategies") });
+  const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({ queryKey: ["trading-accounts"], queryFn: () => api("/api/trading-accounts") });
+  const { data: subscriptions = [] } = useQuery<CopyFollowerDto[]>({ queryKey: ["copy-my-subscriptions"], queryFn: () => api("/api/copy/my-subscriptions") });
+  const connectedAccounts = accounts.filter((account) => account.status === "CONNECTED");
 
-  const copyEntitlements = billingSummary?.copyEntitlements ?? [];
-  const copyAccessByAccount = new Map(
-    copyEntitlements
-      .filter((entry) => entry.tradingAccountId)
-      .map((entry) => [entry.tradingAccountId as string, entry] as const),
-  );
-  const accountAccessCards = accounts.map((account) => ({
-    account,
-    access: copyAccessByAccount.get(account.accountId) ?? createEmptyCopyAccess(account.accountId),
-  }));
-  const activeCopyAccounts = accountAccessCards.filter(({ access }) => access.status === "ACTIVE");
-  const activeCopyAccountOptions = activeCopyAccounts.map(({ account }) => account);
-  const hasActiveCopyAccess = activeCopyAccounts.length > 0;
-  const hasPendingCopyAccess = accountAccessCards.some(
-    ({ access }) => access.status === "PENDING_APPROVAL" || access.status === "PENDING_PAYMENT",
-  );
+  const entitlementMap = useMemo(() => new Map(
+    (billing?.copyEntitlements ?? [])
+      .filter((entry): entry is CopyEntitlementDto & { strategyId: string; tradingAccountId: string } => Boolean(entry.strategyId && entry.tradingAccountId))
+      .map((entry) => [`${entry.strategyId}:${entry.tradingAccountId}`, entry]),
+  ), [billing?.copyEntitlements]);
 
-  function invalidate() {
+  const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["billing-me"] });
     queryClient.invalidateQueries({ queryKey: ["copy-my-subscriptions"] });
-    queryClient.invalidateQueries({ queryKey: ["copy-my-logs"] });
-  }
+  };
 
-  function openFollowDialog(strategy: StrategyDto) {
-    if (!hasActiveCopyAccess) return;
-    setFollowStrategy(strategy);
-    setFollowAccountId((current) =>
-      activeCopyAccountOptions.some((account) => account.accountId === current)
-        ? current
-        : activeCopyAccountOptions[0]?.accountId ?? "",
-    );
-    setConsent(false);
-    setNotice(null);
-  }
-
-  const follow = useMutation({
-    mutationFn: async () => {
-      if (!followStrategy) throw new Error("No strategy selected");
-      const res = await fetch(`/api/copy/strategies/${followStrategy.id}/follow`, {
+  const followMutation = useMutation({
+    mutationFn: () => {
+      if (!follow || !consent) throw new Error("Accept the live trading risk consent first.");
+      return api(`/api/copy/strategies/${follow.strategy.id}/follow`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ followerAccountId: followAccountId, consentAccepted: consent }),
+        body: JSON.stringify({ followerAccountId: follow.accountId, consentAccepted: true }),
       });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error?.message ?? "Failed to follow");
-      return json.data;
     },
-    onSuccess: () => {
-      invalidate();
-      setNotice({ type: "success", text: "You are now following this strategy." });
-      setFollowStrategy(null);
-      setFollowAccountId("");
-      setConsent(false);
-    },
-    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+    onSuccess: () => { refresh(); setFollow(null); setConsent(false); setNotice({ tone: "ok", text: "WSA live copying is active. New master trades, changes, and closes will be synchronized automatically." }); },
+    onError: (error: Error) => setNotice({ tone: "error", text: error.message }),
   });
 
-  const updateSub = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: "ACTIVE" | "PAUSED" | "REVOKED" }) => {
-      const res = await fetch(`/api/copy/subscriptions/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error?.message ?? "Failed to update");
-      return json.data;
-    },
-    onSuccess: () => {
-      invalidate();
-      setNotice({ type: "success", text: "Subscription updated." });
-    },
-    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+  const updateMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "ACTIVE" | "PAUSED" | "REVOKED" }) => api(`/api/copy/subscriptions/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+    }),
+    onSuccess: () => { refresh(); setNotice({ tone: "ok", text: "Live copy subscription updated in the WSA engine." }); },
+    onError: (error: Error) => setNotice({ tone: "error", text: error.message }),
   });
 
-  return (
-    <>
-      <WorkspacePage
-        eyebrow="Copy Trading"
-        title="Copy Trading"
-        description="Follow a master strategy on one of your connected accounts. You control pause and stop at any time."
-      >
-        <div className="mb-5 flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>
-            Trading involves substantial risk of loss. Copy trading is <strong>not a guarantee of profit</strong>.
-            Copied trades are scaled to your account but can still lose money. You can pause or stop following at any time.
-          </p>
-        </div>
+  return <>
+    <WorkspacePage eyebrow="Copy Trading" title="Live Strategies" description="Subscribe monthly per strategy and per follower account. The WSA engine synchronizes the copied trades.">
+      <div className="mb-5 flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>Live copy trading can place and close real orders on the selected connected account. Losses can exceed expectations; review your lot and risk settings before following.</p></div>
+      {notice ? <div className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${notice.tone === "ok" ? "border-lime/30 bg-lime/10 text-lime" : "border-danger/30 bg-danger/10 text-danger"}`}>{notice.text}</div> : null}
 
-        <Panel className="mb-5">
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
-                <Lock className="h-4 w-4 text-accent" />
-                Per-account copy access
-              </div>
-              <p className="text-xs text-muted">
-                Copy trading is billed per connected account after your platform subscription is active.
-                Normal is $10/month per account and Ultra Fast is $15/month per account.
-              </p>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {strategies.map((strategy) => {
+          const accountId = accountByStrategy[strategy.id] ?? connectedAccounts[0]?.accountId ?? "";
+          const access = entitlementMap.get(`${strategy.id}:${accountId}`);
+          const activeFollower = subscriptions.find((subscription) => subscription.strategyId === strategy.id && subscription.followerAccountId === accountId && subscription.status !== "REVOKED");
+          return <Panel key={strategy.id} className="flex h-full flex-col">
+            <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Repeat className="h-4 w-4 text-lime" /><h2 className="text-lg font-semibold text-foreground">{strategy.name}</h2></div><p className="mt-2 text-sm leading-6 text-muted">{strategy.description || "Live WSA strategy."}</p></div><StatusPill tone="lime">LIVE</StatusPill></div>
+            <div className="mt-5 grid grid-cols-2 gap-3 rounded-2xl border border-line bg-background p-4"><div><p className="text-xs uppercase tracking-widest text-muted">Subscription</p><p className="mt-1 font-semibold text-foreground">{formatMoney({ amount: strategy.monthlyPrice, currency: strategy.currency })} / month</p></div><div><p className="text-xs uppercase tracking-widest text-muted">Scaling</p><p className="mt-1 font-semibold text-foreground">{strategy.defaultScalingMode.replaceAll("_", " ")}</p></div></div>
+            <label className="mt-4 space-y-2 text-sm font-semibold text-foreground">Follower account<select className="h-12 w-full rounded-xl border border-line bg-background px-3 text-sm" value={accountId} onChange={(event) => setAccountByStrategy((current) => ({ ...current, [strategy.id]: event.target.value }))}><option value="">Select connected account...</option>{connectedAccounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.accountName} · {account.brokerName}</option>)}</select></label>
+            <div className="mt-auto flex flex-wrap gap-2 pt-5">
+              {!accountId ? <p className="text-sm text-accent">Connect a trading account before subscribing.</p> : activeFollower ? <><StatusPill tone={activeFollower.engineStatus === "LIVE" ? "lime" : activeFollower.engineStatus === "ERROR" ? "danger" : "accent"}>{activeFollower.engineStatus}</StatusPill>{activeFollower.status === "ACTIVE" ? <GhostButton type="button" onClick={() => updateMutation.mutate({ id: activeFollower.id, status: "PAUSED" })}>Pause new trades</GhostButton> : <PrimaryButton type="button" onClick={() => updateMutation.mutate({ id: activeFollower.id, status: "ACTIVE" })}>Resume</PrimaryButton>}<GhostButton type="button" onClick={() => window.confirm("Stop following and gracefully close copied positions when the master closes them?") && updateMutation.mutate({ id: activeFollower.id, status: "REVOKED" })}>Stop & close gracefully</GhostButton></> : access?.status === "ACTIVE" ? <PrimaryButton type="button" onClick={() => { setFollow({ strategy, accountId }); setConsent(false); }}>Start live copying</PrimaryButton> : <PrimaryButton type="button" onClick={() => setCheckout({ strategy, accountId })}>Subscribe monthly</PrimaryButton>}
             </div>
-            {hasActiveCopyAccess ? (
-              <div className="flex flex-wrap gap-2">
-                {activeCopyAccounts.map(({ account, access }) => (
-                  <span
-                    key={account.accountId}
-                    className="rounded-full border border-lime/30 bg-lime/10 px-3 py-1 text-xs font-semibold text-lime"
-                  >
-                    {account.accountName}: {getCopyTierLabel(access.tier)}
-                    {access.currentPeriodEnd
-                      ? ` · renews ${new Date(access.currentPeriodEnd).toLocaleDateString()}`
-                      : ""}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          </Panel>;
+        })}
+      </div>
+      {!strategies.length ? <Panel><p className="text-sm text-muted">No live strategies are published yet.</p></Panel> : null}
 
-          {hasPendingCopyAccess && !hasActiveCopyAccess ? (
-            <div className="mb-4 flex items-start gap-3 rounded-2xl border border-accent/30 bg-accent/10 px-4 py-3 text-sm text-accent">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>
-                Payment received - at least one copy-trading account is pending approval.
-                Following strategies will unlock on that account after admin review.
-              </p>
-            </div>
-          ) : null}
+      {subscriptions.length ? <Panel className="mt-5"><h2 className="text-lg font-semibold text-foreground">My live copy connections</h2><div className="mt-4 space-y-3">{subscriptions.map((subscription) => <div key={subscription.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-background p-4"><div><p className="font-semibold text-foreground">{subscription.strategyName}</p><p className="mt-1 text-xs text-muted">{subscription.followerAccountName} · synced {subscription.engineSyncedAt ? new Date(subscription.engineSyncedAt).toLocaleString() : "pending"}</p>{subscription.engineError ? <p className="mt-1 text-xs text-danger">{subscription.engineError}</p> : null}</div><div className="flex gap-2"><StatusPill tone={subscription.status === "ACTIVE" ? "lime" : "accent"}>{subscription.status}</StatusPill><StatusPill tone={subscription.engineStatus === "LIVE" ? "lime" : subscription.engineStatus === "ERROR" ? "danger" : "accent"}>{subscription.engineStatus}</StatusPill></div></div>)}</div></Panel> : null}
+    </WorkspacePage>
 
-          {accounts.length === 0 ? (
-            <p className="text-sm text-muted">
-              Connect a trading account first, then choose a copy tier for the specific account you want to use.
-            </p>
-          ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {accountAccessCards.map(({ account, access }) => {
-                const canPurchase = COPY_CHECKOUT_ALLOWED_STATUSES.has(access.status);
+    {checkout ? <BillingCheckoutModal open onClose={() => setCheckout(null)} product={{ code: checkout.strategy.billingProductCode, name: checkout.strategy.name, amount: checkout.strategy.monthlyPrice, currency: checkout.strategy.currency, billingInterval: "MONTHLY", description: `Monthly live copy access for ${checkout.strategy.name} on the selected account.` }} tradingAccountId={checkout.accountId} copyStrategyId={checkout.strategy.id} /> : null}
 
-                return (
-                  <div key={account.accountId} className="rounded-2xl border border-line bg-background p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{account.accountName}</p>
-                        <p className="mt-0.5 text-xs text-muted">
-                          {account.brokerName} · {account.status}
-                        </p>
-                      </div>
-                      <StatusPill tone={STATUS_TONE[access.status] ?? "muted"}>
-                        {access.status.replace(/_/g, " ")}
-                      </StatusPill>
-                    </div>
-
-                    <p className="mt-3 text-xs text-muted">{describeCopyAccess(access)}</p>
-
-                    {access.status !== "NONE" ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <StatusPill tone={access.tier === "PREMIUM" ? "accent" : "muted"}>
-                          {getCopyTierLabel(access.tier)}
-                        </StatusPill>
-                        {access.currentPeriodEnd ? (
-                          <span className="rounded-full border border-line px-3 py-1 text-xs text-muted">
-                            {access.status === "ACTIVE" ? "Renews" : "Ends"}{" "}
-                            {new Date(access.currentPeriodEnd).toLocaleDateString()}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    {canPurchase ? (
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => setCopyTierModal({ tier: "NORMAL", accountId: account.accountId })}
-                          className="rounded-2xl border border-line bg-panel p-4 text-left hover:border-accent/50"
-                        >
-                          <p className="text-sm font-semibold text-foreground">Normal</p>
-                          <p className="mt-0.5 text-xs text-muted">Standard copy speed</p>
-                          <p className="mt-2 text-sm font-semibold text-accent">$10 / month</p>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setCopyTierModal({ tier: "PREMIUM", accountId: account.accountId })}
-                          className="rounded-2xl border border-line bg-panel p-4 text-left hover:border-accent/50"
-                        >
-                          <p className="text-sm font-semibold text-foreground">Ultra Fast</p>
-                          <p className="mt-0.5 text-xs text-muted">Lowest latency execution</p>
-                          <p className="mt-2 text-sm font-semibold text-accent">$15 / month</p>
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Panel>
-
-        {notice ? (
-          <div
-            className={`mb-5 rounded-2xl border px-4 py-3 text-sm font-medium ${
-              notice.type === "success"
-                ? "border-accent/20 bg-accent/10 text-accent"
-                : "border-danger/20 bg-danger/10 text-danger"
-            }`}
-          >
-            {notice.text}
-          </div>
-        ) : null}
-
-        <div className="grid gap-5 xl:grid-cols-2">
-          <Panel>
-            <div className="mb-4">
-              <h2 className="text-lg font-semibold text-foreground">Available strategies</h2>
-              {!hasActiveCopyAccess ? (
-                <p className="mt-1 text-xs text-muted">
-                  Activate copy access on at least one account to start following strategies.
-                </p>
-              ) : null}
-            </div>
-            {isLoading ? (
-              <p className="text-sm text-muted">Loading...</p>
-            ) : strategies.length === 0 ? (
-              <EmptyState title="No strategies available" description="There are no active copy strategies to follow yet." />
-            ) : (
-              <div className="space-y-3">
-                {strategies.map((strategy) => (
-                  <div key={strategy.id} className="rounded-xl border border-line bg-background px-4 py-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-foreground">{strategy.name}</p>
-                      <span
-                        title={
-                          strategy.mode === "LIVE"
-                            ? "Live mode: trades may execute on your account"
-                            : "Simulation mode: trades are tracked but not executed"
-                        }
-                      >
-                        <StatusPill tone={strategy.mode === "LIVE" ? "danger" : "muted"}>
-                          {strategy.mode}
-                        </StatusPill>
-                      </span>
-                    </div>
-                    {strategy.description ? <p className="mt-1 text-xs text-muted">{strategy.description}</p> : null}
-                    {strategy.mode === "LIVE" ? (
-                      <p className="mt-1 text-xs text-danger">
-                        Live mode - copied trades may execute on your connected account.
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-xs text-muted">Simulation mode - no real trades are placed.</p>
-                    )}
-                    <div className="mt-3">
-                      <GhostButton
-                        type="button"
-                        disabled={!hasActiveCopyAccess}
-                        onClick={() => openFollowDialog(strategy)}
-                      >
-                        <Repeat className="mr-2 inline-block h-4 w-4" /> Follow
-                      </GhostButton>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-
-          <Panel className="min-w-0">
-            <h2 className="mb-4 text-lg font-semibold text-foreground">My following</h2>
-            {subscriptions.length === 0 ? (
-              <p className="text-sm text-muted">You are not following any strategy yet.</p>
-            ) : (
-              <div className="space-y-3">
-                {subscriptions.map((sub) => (
-                  <div key={sub.id} className="rounded-xl border border-line bg-background px-4 py-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">{sub.strategyName ?? "Strategy"}</p>
-                        <p className="truncate text-xs text-muted">{sub.followerAccountName ?? sub.followerAccountId}</p>
-                      </div>
-                      <StatusPill tone={STATUS_TONE[sub.status] ?? "muted"}>{sub.status}</StatusPill>
-                    </div>
-                    <div className="mt-2 flex items-center gap-2">
-                      <StatusPill tone={sub.tier === "PREMIUM" ? "accent" : "muted"}>{sub.tier}</StatusPill>
-                    </div>
-                    {sub.status !== "REVOKED" ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {sub.status === "ACTIVE" ? (
-                          <GhostButton
-                            type="button"
-                            disabled={updateSub.isPending}
-                            onClick={() => updateSub.mutate({ id: sub.id, status: "PAUSED" })}
-                          >
-                            Pause
-                          </GhostButton>
-                        ) : (
-                          <GhostButton
-                            type="button"
-                            disabled={updateSub.isPending}
-                            onClick={() => updateSub.mutate({ id: sub.id, status: "ACTIVE" })}
-                          >
-                            Resume
-                          </GhostButton>
-                        )}
-                        <GhostButton
-                          type="button"
-                          disabled={updateSub.isPending}
-                          onClick={() => setRevokeSubId(sub.id)}
-                        >
-                          Stop following
-                        </GhostButton>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-        </div>
-
-        <Panel className="mt-5 min-w-0">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-foreground">My copy logs</h2>
-            {logs.length > 0 ? (
-              <FilterChipRow
-                chips={(["ALL", "SUCCESS", "SKIPPED", "FAILED"] as const).map((status) => ({
-                  label: status === "ALL" ? `All (${logs.length})` : status,
-                  active: logStatusFilter === status,
-                  onClick: () => setLogStatusFilter(status),
-                }))}
-              />
-            ) : null}
-          </div>
-          {logs.length === 0 ? (
-            <p className="text-sm text-muted">No copy activity yet. Logs appear after simulation or live copy runs.</p>
-          ) : (() => {
-            const filtered = logStatusFilter === "ALL" ? logs : logs.filter((log) => log.status === logStatusFilter);
-            const shown = filtered.slice(0, 50);
-            return (
-              <>
-                {filtered.length !== logs.length || filtered.length > 50 ? (
-                  <p className="mb-3 text-xs text-muted">
-                    Showing {shown.length} of {filtered.length}
-                    {logStatusFilter !== "ALL" ? ` ${logStatusFilter}` : ""} logs
-                  </p>
-                ) : null}
-                <DataTable
-                  headers={["Date", "Symbol", "Action", "Mode", "Lot", "Status"]}
-                  rows={shown.map((log) => [
-                    <span key="d">{new Date(log.createdAt).toLocaleString()}</span>,
-                    <span key="s">{log.symbol ?? "-"}</span>,
-                    <span key="a">{log.action}</span>,
-                    <span key="m">{log.mode}</span>,
-                    <span key="l">{log.calculatedLot ?? "-"}</span>,
-                    <StatusPill key="st" tone={STATUS_TONE[log.status] ?? "muted"}>
-                      {log.status}
-                    </StatusPill>,
-                  ])}
-                />
-              </>
-            );
-          })()}
-        </Panel>
-
-        <Dialog.Root open={Boolean(revokeSubId)} onOpenChange={(open) => !open && setRevokeSubId(null)}>
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-danger/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
-              <Dialog.Title className="flex items-center gap-2 text-xl font-semibold text-foreground">
-                <AlertTriangle className="h-5 w-5 text-danger" />
-                Stop following?
-              </Dialog.Title>
-              <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-                This will revoke your subscription. Open positions copied to your account are{" "}
-                <strong className="text-foreground">not</strong> automatically closed - you are responsible for managing them.
-              </Dialog.Description>
-              <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
-                <Dialog.Close asChild>
-                  <GhostButton type="button">Keep following</GhostButton>
-                </Dialog.Close>
-                <GhostButton
-                  type="button"
-                  disabled={updateSub.isPending}
-                  onClick={() => {
-                    if (revokeSubId) {
-                      updateSub.mutate({ id: revokeSubId, status: "REVOKED" });
-                      setRevokeSubId(null);
-                    }
-                  }}
-                >
-                  {updateSub.isPending ? "Stopping..." : "Yes, stop following"}
-                </GhostButton>
-              </div>
-              <Dialog.Close asChild>
-                <button
-                  type="button"
-                  aria-label="Close"
-                  className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </Dialog.Close>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
-
-        <Dialog.Root open={Boolean(followStrategy)} onOpenChange={(open) => !open && setFollowStrategy(null)}>
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
-              <Dialog.Title className="text-xl font-semibold text-foreground">Follow {followStrategy?.name}</Dialog.Title>
-              <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-                Choose which approved account copies this strategy, then accept the risk disclaimer.
-              </Dialog.Description>
-              <div className="mt-5 grid gap-4">
-                <SelectField
-                  label="Your account"
-                  value={followAccountId}
-                  onChange={(e) => setFollowAccountId(e.target.value)}
-                >
-                  <option value="">Select an account...</option>
-                  {activeCopyAccountOptions.map((account) => (
-                    <option key={account.accountId} value={account.accountId}>
-                      {account.accountName} - {account.status}
-                    </option>
-                  ))}
-                </SelectField>
-                <label className="flex items-start gap-3 rounded-xl border border-line bg-background px-4 py-3 text-sm text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={consent}
-                    onChange={(e) => setConsent(e.target.checked)}
-                    className="mt-1"
-                  />
-                  <span>
-                    I understand trading involves risk of loss, copy trading does not guarantee profit, and I can pause or
-                    stop at any time.
-                  </span>
-                </label>
-              </div>
-              <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
-                <Dialog.Close asChild>
-                  <GhostButton type="button">Cancel</GhostButton>
-                </Dialog.Close>
-                <PrimaryButton
-                  type="button"
-                  disabled={!followAccountId || !consent || follow.isPending}
-                  onClick={() => follow.mutate()}
-                >
-                  {follow.isPending ? "Following..." : "Confirm & follow"}
-                </PrimaryButton>
-              </div>
-              <Dialog.Close asChild>
-                <button
-                  type="button"
-                  aria-label="Close"
-                  className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </Dialog.Close>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
-      </WorkspacePage>
-
-      {copyTierModal ? (
-        <BillingCheckoutModal
-          open={Boolean(copyTierModal)}
-          onClose={() => setCopyTierModal(null)}
-          product={getCopyCheckoutProduct(copyTierModal.tier)}
-          tradingAccountId={copyTierModal.accountId}
-          accounts={accounts.map((account) => ({
-            accountId: account.accountId,
-            accountName: account.accountName,
-          }))}
-        />
-      ) : null}
-    </>
-  );
+    {follow ? <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4"><div className="w-full max-w-md rounded-3xl border border-line bg-panel p-6"><div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-accent" /><h2 className="text-xl font-semibold text-foreground">Confirm live copying</h2></div><p className="mt-3 text-sm leading-6 text-muted">This authorizes the WSA engine to place, modify, and close trades from <strong className="text-foreground">{follow.strategy.name}</strong> on your selected account. Master closes will close the corresponding follower positions.</p><label className="mt-4 flex items-start gap-3 rounded-xl border border-line bg-background p-3 text-sm text-muted"><input type="checkbox" className="mt-1" checked={consent} onChange={(event) => setConsent(event.target.checked)} /><span>I understand that this is live trading and can cause financial loss.</span></label><div className="mt-5 flex justify-end gap-2"><GhostButton type="button" onClick={() => setFollow(null)}>Cancel</GhostButton><PrimaryButton type="button" disabled={!consent || followMutation.isPending} onClick={() => followMutation.mutate()}>{followMutation.isPending ? "Connecting..." : "Start live copying"}</PrimaryButton></div></div></div> : null}
+  </>;
 }

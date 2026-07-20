@@ -13,6 +13,8 @@ import {
   type OpenTradeRequest,
 } from "./BrokerAdapter";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MetaAPI broker adapter (server-only).
 //
@@ -35,6 +37,9 @@ const SUCCESS_STRING = new Set([
   "TRADE_RETCODE_NO_CHANGES",
 ]);
 
+let sharedExecutionApi: any | null = null;
+const sharedExecutionConnections = new Map<string, Promise<any>>();
+
 export const BROKER_EXEC_ERROR = {
   PROVIDER_NOT_CONFIGURED: "BROKER_PROVIDER_NOT_CONFIGURED",
   ACCOUNT_NOT_FOUND: "BROKER_ACCOUNT_NOT_FOUND",
@@ -53,8 +58,6 @@ export class BrokerExecutionError extends Error {
     this.name = "BrokerExecutionError";
   }
 }
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export class MetaApiBrokerAdapter implements BrokerAdapter {
   private readonly token = process.env.METAAPI_TOKEN;
@@ -97,6 +100,39 @@ export class MetaApiBrokerAdapter implements BrokerAdapter {
       );
     }
     return data.provider_account_id as string;
+  }
+
+  /**
+   * Live-copy orders reuse long-lived RPC connections. This avoids a deploy,
+   * websocket handshake and full synchronization for every follower order.
+   * The MetaApi SDK owns reconnects; a failed initial connection is evicted.
+   */
+  private async withExecutionConnection<T>(accountId: string, fn: (connection: any) => Promise<T>): Promise<T> {
+    this.assertConfigured();
+    if (!this.executionAvailable()) {
+      throw new BrokerExecutionError(BROKER_EXEC_ERROR.PROVIDER_NOT_CONFIGURED, "Broker execution is disabled.", 503);
+    }
+    const providerAccountId = await this.resolveProviderAccountId(accountId);
+    if (!sharedExecutionConnections.has(providerAccountId)) {
+      const pending = (async () => {
+        const MetaApi = ((await import("metaapi.cloud-sdk/node")) as any).default;
+        sharedExecutionApi ??= new MetaApi(this.token);
+        const metaAccount = await sharedExecutionApi.metatraderAccountApi.getAccount(providerAccountId);
+        if (metaAccount.state !== "DEPLOYED") {
+          await metaAccount.deploy();
+          await metaAccount.waitDeployed(120, 1000);
+        }
+        await metaAccount.waitConnected(120, 1000);
+        const connection = metaAccount.getRPCConnection();
+        await connection.connect();
+        await connection.waitSynchronized(120);
+        return connection;
+      })();
+      sharedExecutionConnections.set(providerAccountId, pending);
+      pending.catch(() => sharedExecutionConnections.delete(providerAccountId));
+    }
+    const connection = await sharedExecutionConnections.get(providerAccountId)!;
+    return fn(connection);
   }
 
   /** Open a deployed, synchronized RPC connection, run fn, then always close. */
@@ -238,8 +274,12 @@ export class MetaApiBrokerAdapter implements BrokerAdapter {
   // ── Execution ────────────────────────────────────────────────────────────────
 
   async openTrade(req: OpenTradeRequest): Promise<BrokerExecutionResult> {
-    return this.withConnection(req.accountId, async (connection) => {
-      const options = req.comment ? { comment: req.comment } : undefined;
+    return this.withExecutionConnection(req.accountId, async (connection) => {
+      const options = {
+        ...(req.comment ? { comment: req.comment } : {}),
+        ...(req.magic !== null && req.magic !== undefined ? { magic: req.magic } : {}),
+        ...(req.slippage !== null && req.slippage !== undefined ? { slippage: req.slippage } : {}),
+      };
       const resp =
         req.side === "BUY"
           ? await connection.createMarketBuyOrder(
@@ -247,14 +287,14 @@ export class MetaApiBrokerAdapter implements BrokerAdapter {
               req.volume,
               req.stopLoss ?? undefined,
               req.takeProfit ?? undefined,
-              options,
+              Object.keys(options).length ? options : undefined,
             )
           : await connection.createMarketSellOrder(
               req.symbol,
               req.volume,
               req.stopLoss ?? undefined,
               req.takeProfit ?? undefined,
-              options,
+              Object.keys(options).length ? options : undefined,
             );
       const result = this.interpretTradeResponse(resp);
       return { ...result, executedVolume: req.volume };
@@ -262,14 +302,17 @@ export class MetaApiBrokerAdapter implements BrokerAdapter {
   }
 
   async closeTrade(req: CloseTradeRequest): Promise<BrokerExecutionResult> {
-    return this.withConnection(req.accountId, async (connection) => {
-      const resp = await connection.closePosition(req.brokerPositionId, req.comment ? { comment: req.comment } : {});
+    return this.withExecutionConnection(req.accountId, async (connection) => {
+      const options = req.comment ? { comment: req.comment } : {};
+      const resp = req.volume && req.volume > 0
+        ? await connection.closePositionPartially(req.brokerPositionId, req.volume, options)
+        : await connection.closePosition(req.brokerPositionId, options);
       return this.interpretTradeResponse(resp);
     });
   }
 
   async modifyTrade(req: ModifyTradeRequest): Promise<BrokerExecutionResult> {
-    return this.withConnection(req.accountId, async (connection) => {
+    return this.withExecutionConnection(req.accountId, async (connection) => {
       const resp = await connection.modifyPosition(
         req.brokerPositionId,
         req.stopLoss ?? undefined,

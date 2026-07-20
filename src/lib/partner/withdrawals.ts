@@ -19,25 +19,77 @@ export interface PartnerWithdrawalDto {
   paidAt: string | null;
   createdAt: string;
   updatedAt: string;
+  includedItems?: PartnerWithdrawalIncludedItemDto[];
 }
 
 export interface PartnerWithdrawalBalanceDto {
   approved: number;
+  approvedCommissions: number;
+  approvedRebates: number;
   reserved: number;
   available: number;
   currency: string;
   minimum: number;
 }
 
+export interface PartnerWithdrawalIncludedItemDto {
+  id: string;
+  type: "COMMISSION" | "REBATE";
+  ledgerItemId: string;
+  allocatedAmount: number;
+  sourceType: string;
+  paymentOrderId: string | null;
+}
+
+export interface PartnerLedgerItemDto {
+  id: string;
+  type: "COMMISSION" | "REBATE";
+  traderId: string | null;
+  sourceType: string;
+  paymentOrderId: string | null;
+  amount: number;
+  currency: string;
+  status: "PENDING" | "APPROVED" | "PAID" | "CANCELLED" | "REVERSED";
+  description: string | null;
+  createdAt: string;
+  paidAt: string | null;
+}
+
+export interface PartnerFinancialLedgerDto {
+  partnerId: string;
+  partnerName: string;
+  partnerEmail: string;
+  referralCode: string | null;
+  referredTraderCount: number;
+  currency: string;
+  pendingCommissions: number;
+  approvedUnpaidCommissions: number;
+  paidCommissions: number;
+  cancelledOrReversedCommissions: number;
+  pendingRebates: number;
+  approvedUnpaidRebates: number;
+  paidRebates: number;
+  cancelledOrReversedRebates: number;
+  lockedWithdrawalAmount: number;
+  withdrawableBalance: number;
+  activeWithdrawalCount: number;
+  historicalPaidWithdrawals: number;
+  items: PartnerLedgerItemDto[];
+}
+
 export function calculateWithdrawalBalance(
   approvedAmounts: number[],
   reservedOrPaidAllocations: number[],
   currency = "USD",
+  approvedCommissions = approvedAmounts.reduce((sum, amount) => sum + Number(amount || 0), 0),
+  approvedRebates = 0,
 ): PartnerWithdrawalBalanceDto {
   const approved = approvedAmounts.reduce((sum, amount) => sum + Number(amount || 0), 0);
   const reserved = reservedOrPaidAllocations.reduce((sum, amount) => sum + Number(amount || 0), 0);
   return {
     approved: Number(approved.toFixed(2)),
+    approvedCommissions: Number(approvedCommissions.toFixed(2)),
+    approvedRebates: Number(approvedRebates.toFixed(2)),
     reserved: Number(reserved.toFixed(2)),
     available: Number(Math.max(0, approved - reserved).toFixed(2)),
     currency,

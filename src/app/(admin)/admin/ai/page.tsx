@@ -16,6 +16,7 @@ import {
 } from "@/components/app/WorkspaceUI";
 import { TextField } from "@/components/app/FormFields";
 import { queryKeys } from "@/lib/data/queryKeys";
+import { AiProviderSettingsPanel } from "@/components/admin/AiProviderSettingsPanel";
 
 interface UsageSummary {
   today: { total: number; chat: number; chartAnalysis: number; failed: number };
@@ -226,6 +227,7 @@ export default function AdminAiPage() {
       title="AI Controls"
       description="Use admin-only AI tools, monitor metadata-only usage, and manage per-user limits."
     >
+      <AiProviderSettingsPanel />
       <div className="mb-5 grid gap-5 xl:grid-cols-2">
         <Panel>
           <h2 className="text-lg font-semibold text-foreground">Admin assistant</h2>

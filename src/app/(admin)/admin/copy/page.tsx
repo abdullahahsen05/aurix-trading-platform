@@ -1,647 +1,209 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Play, Plus, Power, Repeat, ShieldOff, X } from "lucide-react";
-import {
-  DataTable,
-  EmptyState,
-  GhostButton,
-  InlineStatusStrip,
-  Panel,
-  PageActionGroup,
-  PrimaryButton,
-  StatusPill,
-  WorkspacePage,
-} from "@/components/app/WorkspaceUI";
-import { SelectField, TextField } from "@/components/app/FormFields";
+import { Copy, ExternalLink, Plus, Repeat, X } from "lucide-react";
+import Link from "next/link";
+import { BrokerConnectPanel } from "@/components/accounts/BrokerConnectPanel";
 import { CopyRulesAdminPanel } from "@/components/copy/CopyRulesAdminPanel";
-import type {
-  CopyGlobalSettingsDto,
-  CopyLogDto,
-  CopyStrategyDto,
-  MasterEventDto,
-} from "@/lib/copy/types";
+import { MasterAccountConnectDialog } from "@/components/copy/MasterAccountConnectDialog";
+import { GhostButton, InlineStatusStrip, Panel, PrimaryButton, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
+import type { CopyStrategyDto } from "@/lib/copy/types";
+import { formatMoney } from "@/lib/utils/format";
 
-interface AdminFollowerDto {
-  id: string;
-  followerAccountId: string;
-  followerAccountName: string | null;
-  traderId: string;
+type MasterAccount = {
+  accountId: string;
+  accountName: string;
+  brokerName: string;
+  serverName: string | null;
+  platform: string | null;
   status: string;
-  tier: "NORMAL" | "PREMIUM";
-  scalingMode: string | null;
-  riskMultiplier: number | null;
-  fixedLot: number | null;
-  maxLot: number | null;
-  createdAt: string;
-}
-import type { TraderAccountSummary } from "@/lib/domain/types";
-
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  const json = await res.json();
-  if (!json.ok) throw new Error(json.error?.message ?? "Request failed");
-  return json.data;
-}
-
-const STATUS_TONE: Record<string, "lime" | "accent" | "danger" | "muted"> = {
-  ACTIVE: "lime",
-  DRAFT: "muted",
-  PAUSED: "accent",
-  ARCHIVED: "muted",
-  SUCCESS: "lime",
-  SKIPPED: "muted",
-  FAILED: "danger",
-  PENDING: "accent",
-  RETRYING: "accent",
+  providerAccountId: string | null;
 };
+
+type RuntimeStatus = { configured: boolean; enabled: boolean; executionEnabled: boolean; provider: "WSA_ENGINE" };
+
+async function api<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const payload = await response.json();
+  if (!payload.ok) throw new Error(payload.error?.message ?? "Request failed.");
+  return payload.data;
+}
 
 export default function AdminCopyPage() {
   const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
-
-  useEffect(() => {
-    if (!notice || notice.type !== "success") return;
-    const t = setTimeout(() => setNotice(null), 6000);
-    return () => clearTimeout(t);
-  }, [notice]);
-  const [selectedId, setSelectedId] = useState("");
-  const [form, setForm] = useState({ name: "", masterAccountId: "", riskMultiplier: "1" });
-
-  const { data: settings } = useQuery<CopyGlobalSettingsDto & { executionConfigured: boolean; metaapiTokenConfigured: boolean; encryptionConfigured: boolean }>({
-    queryKey: ["admin-copy-settings"],
-    queryFn: () => getJson("/api/admin/copy/settings"),
+  const [masterOpen, setMasterOpen] = useState(false);
+  const [strategyOpen, setStrategyOpen] = useState(false);
+  const [connectionAccountId, setConnectionAccountId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [strategyForm, setStrategyForm] = useState({
+    name: "",
+    description: "",
+    masterAccountId: "",
+    monthlyPrice: "10",
+    currency: "USD",
   });
-  const [executeEventId, setExecuteEventId] = useState<string | null>(null);
-  const [confirmLiveCopyOpen, setConfirmLiveCopyOpen] = useState(false);
+
+  const { data: runtime } = useQuery<RuntimeStatus>({
+    queryKey: ["wsa-copy-runtime"],
+    queryFn: () => api("/api/admin/copy/runtime"),
+  });
+  const { data: accounts = [] } = useQuery<MasterAccount[]>({
+    queryKey: ["copy-master-accounts"],
+    queryFn: () => api("/api/admin/copy/master-accounts"),
+  });
   const { data: strategies = [], isLoading } = useQuery<CopyStrategyDto[]>({
     queryKey: ["admin-copy-strategies"],
-    queryFn: () => getJson("/api/admin/copy/strategies"),
-  });
-  // The full account list is only needed for the "create strategy" master
-  // dropdown — defer this heavy query until the dialog actually opens.
-  const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({
-    queryKey: ["admin-accounts"],
-    queryFn: () => getJson("/api/admin/accounts"),
-    enabled: createOpen,
+    queryFn: () => api("/api/admin/copy/strategies"),
   });
 
-  const selectedStrategyId = selectedId || strategies[0]?.id || "";
-  const selectedStrategy = strategies.find((s) => s.id === selectedStrategyId) ?? strategies[0];
-  const { data: events = [] } = useQuery<MasterEventDto[]>({
-    queryKey: ["admin-copy-events", selectedStrategyId],
-    queryFn: () => getJson(`/api/admin/copy/strategies/${selectedStrategyId}/events`),
-    enabled: Boolean(selectedStrategyId),
-  });
-  const { data: logs = [] } = useQuery<CopyLogDto[]>({
-    queryKey: ["admin-copy-logs", selectedStrategyId],
-    queryFn: () => getJson(`/api/admin/copy/logs?strategyId=${selectedStrategyId}`),
-    enabled: Boolean(selectedStrategyId),
-  });
-  const { data: masterCredStatus } = useQuery<{ credentialsStored: boolean; providerAccountId: string | null; lastSyncedAt: string | null }>({
-    queryKey: ["master-cred-status", selectedStrategy?.masterAccountId],
-    queryFn: () => getJson(`/api/trading-accounts/${selectedStrategy!.masterAccountId}/broker-credentials`),
-    enabled: Boolean(selectedStrategy?.masterAccountId),
-    refetchOnWindowFocus: false,
-  });
-
-  const { data: followers = [] } = useQuery<AdminFollowerDto[]>({
-    queryKey: ["admin-copy-followers", selectedStrategyId],
-    queryFn: () => getJson(`/api/admin/copy/strategies/${selectedStrategyId}/followers`),
-    enabled: Boolean(selectedStrategyId),
-  });
-
-  function invalidateAll() {
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["copy-master-accounts"] });
     queryClient.invalidateQueries({ queryKey: ["admin-copy-strategies"] });
-    queryClient.invalidateQueries({ queryKey: ["admin-copy-events", selectedStrategyId] });
-    queryClient.invalidateQueries({ queryKey: ["admin-copy-logs", selectedStrategyId] });
-    queryClient.invalidateQueries({ queryKey: ["admin-copy-followers", selectedStrategyId] });
-    queryClient.invalidateQueries({ queryKey: ["admin-copy-settings"] });
-  }
+  };
 
-  const action = useMutation({
-    mutationFn: async ({
-      url,
-      method,
-      body,
-    }: {
-      url: string;
-      method: string;
-      body?: unknown;
-      label?: string;
-    }) => {
-      const res = await fetch(url, {
-        method,
-        headers: body ? { "Content-Type": "application/json" } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error?.message ?? "Request failed");
-      return json.data;
+  const createStrategy = useMutation({
+    mutationFn: () => api<CopyStrategyDto>("/api/admin/copy/strategies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...strategyForm,
+        monthlyPrice: Number(strategyForm.monthlyPrice),
+        riskMultiplier: 1,
+        defaultScalingMode: "EQUITY_PROPORTIONAL",
+      }),
+    }),
+    onSuccess: () => {
+      refresh();
+      setStrategyOpen(false);
+      setStrategyForm({ name: "", description: "", masterAccountId: "", monthlyPrice: "10", currency: "USD" });
+      setNotice({ tone: "ok", text: "Draft strategy created. Publish it only after its master account is connected." });
     },
-    onSuccess: (_d, vars) => {
-      invalidateAll();
-      setNotice({ type: "success", text: `Done: ${vars.label ?? "updated"}.` });
-    },
-    onError: (err: Error) => setNotice({ type: "error", text: err.message }),
+    onError: (error: Error) => setNotice({ tone: "error", text: error.message }),
   });
 
-  const failedToday = logs.filter(
-    (l) => l.status === "FAILED" && new Date(l.createdAt).toDateString() === new Date().toDateString(),
-  ).length;
+  const strategyAction = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "publish" | "archive" }) =>
+      api(`/api/admin/copy/strategies/${id}/${action}`, { method: "POST" }),
+    onSuccess: (_data, variables) => {
+      refresh();
+      setNotice({
+        tone: "ok",
+        text: variables.action === "publish"
+          ? "Strategy is live on the WSA engine and available for monthly subscriptions."
+          : "Strategy is draining; the WSA engine will close its copied follower positions.",
+      });
+    },
+    onError: (error: Error) => setNotice({ tone: "error", text: error.message }),
+  });
+
+  const connectedMasters = accounts.filter((account) => account.status === "CONNECTED" && account.providerAccountId);
 
   return (
     <WorkspacePage
       eyebrow="Admin"
-      title="Copy Trading Control Center"
-      description="Monitor master strategies, dry-run with simulation, and govern live execution."
+      title="Live Copy Trading"
+      description="Connect master accounts, publish monthly strategies, and control their WSA engine lifecycle."
       action={
-        <PageActionGroup>
-          <PrimaryButton type="button" onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-2 inline-block h-4 w-4" />
-            New strategy
-          </PrimaryButton>
-        </PageActionGroup>
+        <div className="flex flex-wrap gap-2">
+          <GhostButton type="button" onClick={() => setMasterOpen(true)}><Copy className="mr-2 inline h-4 w-4" />New master account</GhostButton>
+          <PrimaryButton type="button" onClick={() => setStrategyOpen(true)}><Plus className="mr-2 inline h-4 w-4" />New strategy</PrimaryButton>
+        </div>
       }
     >
-      <div className={`mb-5 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm ${settings?.executionConfigured ? "border-danger/30 bg-danger/10 text-danger" : "border-accent/30 bg-accent/10 text-accent"}`}>
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-        <div>
-          {settings?.executionConfigured ? (
-            <p><strong>BROKER_EXECUTION_ENABLED=true</strong> — Live orders can be placed on follower accounts. Confirm all safety checks before executing.</p>
-          ) : (
-            <p>Execution mode: <strong>SIMULATION</strong> — Live order execution is disabled (<code>BROKER_EXECUTION_ENABLED=false</code>). Safe to test.</p>
-          )}
-        </div>
+      <div className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${runtime?.configured ? "border-lime/30 bg-lime/10 text-lime" : "border-accent/30 bg-accent/10 text-accent"}`}>
+        <strong>WSA engine:</strong> {runtime?.configured ? "configured for explicit live publishing" : "not enabled on this server"}.
+        {!runtime?.configured ? " Set METAAPI_TOKEN and WSA_COPY_ENGINE_ENABLED=true before publishing; no order will be copied until then." : runtime.executionEnabled ? " Live execution is enabled and can affect connected brokerage accounts." : " Monitoring is configured, but broker execution is still disabled."}
       </div>
 
-      <InlineStatusStrip
-        items={[
-          {
-            label: "Live copy",
-            value: settings?.liveCopyEnabled ? "ENABLED" : "DISABLED",
-            tone: settings?.liveCopyEnabled ? "danger" : "lime",
-          },
-          {
-            label: "Emergency stop",
-            value: settings?.emergencyStopEnabled ? "ON" : "OFF",
-            tone: settings?.emergencyStopEnabled ? "danger" : "lime",
-          },
-          {
-            label: "Live execution",
-            value: settings?.executionConfigured ? "CONFIGURED" : "NOT CONFIGURED",
-            tone: settings?.executionConfigured ? "lime" : "danger",
-          },
-          { label: "Active strategies", value: strategies.filter((s) => s.status === "ACTIVE").length, tone: "accent" },
-          { label: "Followers", value: strategies.reduce((s, x) => s + x.followerCount, 0) },
-          { label: "Failed copies today", value: failedToday, tone: failedToday > 0 ? "danger" : undefined },
-        ]}
-      />
+      {notice ? <div className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${notice.tone === "ok" ? "border-lime/30 bg-lime/10 text-lime" : "border-danger/30 bg-danger/10 text-danger"}`}>{notice.text}</div> : null}
 
-      {notice ? (
-        <div
-          className={`mt-5 rounded-2xl border px-4 py-3 text-sm font-medium ${
-            notice.type === "success"
-              ? "border-accent/20 bg-accent/10 text-accent"
-              : "border-danger/20 bg-danger/10 text-danger"
-          }`}
-        >
-          {notice.text}
+      <InlineStatusStrip items={[
+        { label: "Engine", value: "WSA GLOBAL", tone: "accent" },
+        { label: "Master accounts", value: accounts.length },
+        { label: "Connected masters", value: connectedMasters.length, tone: connectedMasters.length ? "lime" : "accent" },
+        { label: "Live strategies", value: strategies.filter((item) => item.engineStatus === "LIVE").length, tone: "lime" },
+        { label: "Monthly billing", value: "PER STRATEGY", tone: "accent" },
+      ]} />
+
+      <Panel className="mt-5 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-lg font-semibold text-foreground">Master accounts</h2><p className="mt-1 text-sm text-muted">Only dedicated admin-owned master accounts can publish strategies.</p></div>
+          <Link href="/admin/accounts" className="inline-flex items-center gap-2 text-sm font-semibold text-accent">Manage credentials <ExternalLink className="h-4 w-4" /></Link>
         </div>
-      ) : null}
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {accounts.map((account) => (
+            <div key={account.accountId} className="rounded-2xl border border-line bg-background p-4">
+              <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-foreground">{account.accountName}</p><p className="mt-1 text-xs text-muted">{account.brokerName}{account.serverName ? ` · ${account.serverName}` : ""}</p></div><StatusPill tone={account.status === "CONNECTED" ? "lime" : "accent"}>{account.status}</StatusPill></div>
+              {!account.providerAccountId ? <p className="mt-3 text-xs text-accent">Credentials/provider connection required before publishing.</p> : null}
+              <GhostButton type="button" className="mt-4 w-full" onClick={() => setConnectionAccountId(account.accountId)}>
+                {account.providerAccountId ? "Manage MT4 / MT5 connection" : "Connect MT4 / MT5"}
+              </GhostButton>
+            </div>
+          ))}
+          {!accounts.length ? <p className="text-sm text-muted">No copy-master accounts yet.</p> : null}
+        </div>
+      </Panel>
 
-      {/* Global safety controls */}
-      <Panel className="mt-5">
-        <h2 className="text-lg font-semibold text-foreground">Global safety</h2>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <GhostButton
-            type="button"
-            onClick={() => {
-              if (!settings?.liveCopyEnabled) {
-                setConfirmLiveCopyOpen(true);
-              } else {
-                action.mutate({ url: "/api/admin/copy/settings", method: "PATCH", body: { liveCopyEnabled: false }, label: "disable live copy" });
-              }
-            }}
-          >
-            <Power className="mr-2 inline-block h-4 w-4" />
-            {settings?.liveCopyEnabled ? "Disable live copy" : "Enable live copy"}
-          </GhostButton>
-          <GhostButton
-            type="button"
-            onClick={() =>
-              action.mutate({
-                url: "/api/admin/copy/settings",
-                method: "PATCH",
-                body: { emergencyStopEnabled: !settings?.emergencyStopEnabled },
-                label: "emergency stop",
-              })
-            }
-          >
-            <ShieldOff className="mr-2 inline-block h-4 w-4" />
-            {settings?.emergencyStopEnabled ? "Clear emergency stop" : "Emergency stop"}
-          </GhostButton>
+      <Panel className="mt-5 overflow-hidden">
+        <div><h2 className="text-lg font-semibold text-foreground">Published strategies</h2><p className="mt-1 text-sm text-muted">Each live strategy renews monthly for each selected follower account.</p></div>
+        <div className="mt-4 space-y-3">
+          {strategies.map((strategy) => (
+            <div key={strategy.id} className="grid gap-4 rounded-2xl border border-line bg-background p-4 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
+              <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-foreground">{strategy.name}</p><StatusPill tone={strategy.engineStatus === "LIVE" ? "lime" : strategy.engineStatus === "ERROR" ? "danger" : "accent"}>{strategy.engineStatus}</StatusPill></div><p className="mt-1 text-sm text-muted">Master: {strategy.masterAccountName ?? "Unknown"} · {strategy.followerCount} follower(s)</p>{strategy.engineError ? <p className="mt-2 text-xs text-danger">{strategy.engineError}</p> : null}</div>
+              <p className="font-semibold text-foreground">{formatMoney({ amount: strategy.monthlyPrice, currency: strategy.currency })}<span className="text-xs font-normal text-muted"> / month</span></p>
+              <div className="flex gap-2">
+                {strategy.engineStatus !== "LIVE" && strategy.status !== "ARCHIVED" ? <PrimaryButton type="button" disabled={strategyAction.isPending} onClick={() => strategyAction.mutate({ id: strategy.id, action: "publish" })}><Repeat className="mr-2 inline h-4 w-4" />Publish live</PrimaryButton> : null}
+                {strategy.engineStatus === "LIVE" ? <GhostButton type="button" disabled={strategyAction.isPending} onClick={() => window.confirm("Archive this strategy and close its copied follower positions?") && strategyAction.mutate({ id: strategy.id, action: "archive" })}>Archive & close</GhostButton> : null}
+              </div>
+            </div>
+          ))}
+          {!isLoading && !strategies.length ? <p className="text-sm text-muted">No strategies yet. Connect a master account, then create your first strategy.</p> : null}
         </div>
       </Panel>
 
       <CopyRulesAdminPanel />
 
-      {/* Verification readiness checklist */}
-      <Panel className="mt-5">
-        <h2 className="text-lg font-semibold text-foreground">Demo verification readiness</h2>
-        <p className="mt-1 text-sm text-muted">
-          Complete this checklist before enabling live execution. None of these items trigger live trades.
-        </p>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          {(
-            [
-              {
-                label: "Encryption key configured",
-                ok: settings?.encryptionConfigured,
-                hint: "Set ENCRYPTION_KEY in environment",
-              },
-              {
-                label: "MetaAPI token configured",
-                ok: settings?.metaapiTokenConfigured,
-                hint: "Set METAAPI_TOKEN in environment",
-              },
-              {
-                label: "Master account has credentials",
-                ok: masterCredStatus?.credentialsStored,
-                hint: selectedStrategy ? `For: ${selectedStrategy.masterAccountName ?? selectedStrategy.masterAccountId}` : "Select a strategy",
-              },
-              {
-                label: "Master account synced (MetaAPI ID)",
-                ok: Boolean(masterCredStatus?.providerAccountId),
-                hint: masterCredStatus?.lastSyncedAt
-                  ? `Last synced ${new Date(masterCredStatus.lastSyncedAt).toLocaleString()}`
-                  : "Run sync on the account page",
-              },
-              {
-                label: "At least one active follower",
-                ok: (selectedStrategy?.followerCount ?? 0) > 0,
-                hint: `${selectedStrategy?.followerCount ?? 0} follower(s) on selected strategy`,
-              },
-              {
-                label: "Simulation logs exist",
-                ok: logs.some((l) => l.mode === "SIMULATION"),
-                hint: "Run simulate on a master event first",
-              },
-              {
-                label: "Live execution disabled",
-                ok: !settings?.executionConfigured,
-                tone: "safe" as const,
-                hint: settings?.executionConfigured
-                  ? "BROKER_EXECUTION_ENABLED=true — live orders can be placed"
-                  : "BROKER_EXECUTION_ENABLED=false — safe for testing",
-              },
-              {
-                label: "Emergency stop off",
-                ok: !settings?.emergencyStopEnabled,
-                tone: "safe" as const,
-                hint: settings?.emergencyStopEnabled ? "Emergency stop is ON — all execution blocked" : "Normal mode",
-              },
-            ] as Array<{ label: string; ok: boolean | undefined; hint: string; tone?: string }>
-          ).map(({ label, ok, hint }) => (
-            <div
-              key={label}
-              className="flex items-start gap-3 rounded-xl border border-line bg-background px-3 py-2.5"
-            >
-              <span
-                className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${ok ? "bg-accent-2" : ok === false ? "bg-danger" : "bg-muted/30"}`}
-              />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-foreground">{label}</p>
-                <p className="mt-0.5 truncate text-xs text-muted">{hint}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-        {!settings?.executionConfigured ? (
-          <p className="mt-4 text-xs text-muted">
-            <strong className="text-accent-2">Safe:</strong> Live execution is disabled by environment flag. Simulation and monitoring are fully safe to run.
-          </p>
-        ) : (
-          <p className="mt-4 text-xs text-danger">
-            <strong>Warning:</strong> BROKER_EXECUTION_ENABLED=true — Execute will place real orders on follower accounts.
-          </p>
-        )}
-      </Panel>
+      <MasterAccountConnectDialog
+        open={masterOpen}
+        onClose={() => setMasterOpen(false)}
+        onConnected={(message) => {
+          setMasterOpen(false);
+          refresh();
+          setNotice({ tone: "ok", text: message });
+        }}
+      />
 
-      {/* Strategies */}
-      <div className="mt-5">
-        {isLoading ? (
-          <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-12 rounded-xl border border-line bg-panel animate-pulse" />
-            ))}
-          </div>
-        ) : strategies.length === 0 ? (
-          <EmptyState
-            title="No copy strategies yet"
-            description="Create a strategy linked to a master trading account to begin monitoring trades."
-          />
-        ) : (
-          <Panel className="min-w-0">
-            <h2 className="mb-4 text-lg font-semibold text-foreground">Strategies</h2>
-            <DataTable
-              headers={["Strategy", "Master", "Status", "Mode", "Followers", "Actions"]}
-              rows={strategies.map((s) => [
-                <button key="n" type="button" onClick={() => setSelectedId(s.id)} className="text-left">
-                  <p className="text-sm font-semibold text-foreground hover:text-accent">{s.name}</p>
-                </button>,
-                <span key="m">{s.masterAccountName ?? "—"}</span>,
-                <StatusPill key="s" tone={STATUS_TONE[s.status] ?? "muted"}>{s.status}</StatusPill>,
-                <StatusPill key="mo" tone={s.mode === "LIVE" ? "danger" : "muted"}>{s.mode}</StatusPill>,
-                <span key="f">{s.followerCount}</span>,
-                <div key="a" className="flex flex-wrap gap-2">
-                  <GhostButton
-                    type="button"
-                    onClick={() =>
-                      action.mutate({ url: `/api/admin/copy/strategies/${s.id}/monitor`, method: "POST", label: "monitor" })
-                    }
-                  >
-                    <Repeat className="mr-1 inline-block h-3.5 w-3.5" /> Monitor
-                  </GhostButton>
-                  <GhostButton
-                    type="button"
-                    onClick={() =>
-                      action.mutate({ url: `/api/admin/copy/strategies/${s.id}/simulate`, method: "POST", label: "simulate" })
-                    }
-                  >
-                    <Play className="mr-1 inline-block h-3.5 w-3.5" /> Simulate
-                  </GhostButton>
-                  {s.status !== "ACTIVE" ? (
-                    <GhostButton
-                      type="button"
-                      onClick={() =>
-                        action.mutate({ url: `/api/admin/copy/strategies/${s.id}`, method: "PATCH", body: { status: "ACTIVE" }, label: "activate" })
-                      }
-                    >
-                      Activate
-                    </GhostButton>
-                  ) : (
-                    <GhostButton
-                      type="button"
-                      onClick={() =>
-                        action.mutate({ url: `/api/admin/copy/strategies/${s.id}`, method: "PATCH", body: { status: "PAUSED" }, label: "pause" })
-                      }
-                    >
-                      Pause
-                    </GhostButton>
-                  )}
-                </div>,
-              ])}
-            />
-          </Panel>
-        )}
-      </div>
+      <ConnectionDialog
+        open={Boolean(connectionAccountId)}
+        onClose={() => {
+          setConnectionAccountId(null);
+          refresh();
+        }}
+      >
+        {connectionAccountId ? <BrokerConnectPanel accountId={connectionAccountId} /> : null}
+      </ConnectionDialog>
 
-      {/* Selected strategy: events + logs */}
-      {selectedStrategyId ? (
-        <div className="mt-5 grid gap-5 xl:grid-cols-2">
-          <Panel>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">Master events</h3>
-              {events.length > 15 ? <span className="text-xs text-muted">Showing 15 of {events.length}</span> : events.length > 0 ? <span className="text-xs text-muted">{events.length} events</span> : null}
-            </div>
-            {events.length === 0 ? (
-              <p className="text-sm text-muted">No master events detected yet. Click Monitor.</p>
-            ) : (
-              <div className="space-y-2">
-                {events.slice(0, 15).map((e) => (
-                  <div key={e.id} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-background px-3 py-2 text-xs">
-                    <span className="font-semibold text-foreground">{e.symbol} · {e.side ?? "—"} · {e.volume ?? "—"}</span>
-                    <div className="flex items-center gap-2">
-                      <StatusPill tone={e.eventType === "OPEN" ? "lime" : "muted"}>{e.eventType}</StatusPill>
-                      <GhostButton
-                        type="button"
-                        onClick={() => action.mutate({ url: `/api/admin/copy/events/${e.id}/simulate`, method: "POST", label: "simulate event" })}
-                      >
-                        Simulate
-                      </GhostButton>
-                      <GhostButton
-                        type="button"
-                        title={settings?.executionConfigured ? "Execute live copy" : "Live execution is not configured"}
-                        onClick={() => { setNotice(null); setExecuteEventId(e.id); }}
-                      >
-                        Execute
-                      </GhostButton>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-          <Panel>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">Execution logs</h3>
-              {logs.length > 15 ? <span className="text-xs text-muted">Showing 15 of {logs.length}</span> : logs.length > 0 ? <span className="text-xs text-muted">{logs.length} logs</span> : null}
-            </div>
-            {logs.length === 0 ? (
-              <p className="text-sm text-muted">No simulation/execution logs yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {logs.slice(0, 15).map((l) => (
-                  <div key={l.id} className="flex items-center justify-between gap-2 rounded-lg border border-line bg-background px-3 py-2 text-xs">
-                    <div className="min-w-0">
-                      <span className="font-semibold text-foreground">{l.symbol ?? "—"} · {l.action}</span>
-                      <span className="ml-2 text-muted">{l.mode}</span>
-                      {l.calculatedLot ? <span className="ml-2 text-muted">lot {l.calculatedLot}</span> : null}
-                      {l.errorMessage ? <p className="truncate text-muted">{l.errorMessage}</p> : null}
-                    </div>
-                    <StatusPill tone={STATUS_TONE[l.status] ?? "muted"}>{l.status}</StatusPill>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-        </div>
-      ) : null}
-
-      {/* Followers panel */}
-      {selectedStrategyId ? (
-        <Panel className="mt-5">
-          <h3 className="mb-3 text-sm font-semibold text-foreground">
-            Followers
-            <span className="ml-2 text-xs font-normal text-muted">
-              PREMIUM are processed before NORMAL
-            </span>
-          </h3>
-          {followers.length === 0 ? (
-            <p className="text-sm text-muted">No followers on this strategy yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {followers.map((f) => (
-                <div
-                  key={f.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-background px-3 py-2 text-xs"
-                >
-                  <div className="min-w-0">
-                    <span className="font-semibold text-foreground">
-                      {f.followerAccountName ?? f.followerAccountId.slice(0, 8)}
-                    </span>
-                    <span className="ml-2 text-muted">{f.status}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <StatusPill tone={f.tier === "PREMIUM" ? "accent" : "muted"}>
-                      {f.tier}
-                    </StatusPill>
-                    <select
-                      value={f.tier}
-                      onChange={(e) =>
-                        action.mutate({
-                          url: `/api/admin/copy/strategies/${selectedStrategyId}/followers`,
-                          method: "PATCH",
-                          body: { followerId: f.id, tier: e.target.value },
-                          label: `set tier ${e.target.value}`,
-                        })
-                      }
-                      className="rounded border border-line bg-panel px-2 py-0.5 text-xs text-foreground"
-                    >
-                      <option value="NORMAL">NORMAL</option>
-                      <option value="PREMIUM">PREMIUM</option>
-                    </select>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Panel>
-      ) : null}
-
-      {/* Create strategy dialog */}
-      <Dialog.Root open={createOpen} onOpenChange={setCreateOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
-            <Dialog.Title className="text-xl font-semibold text-foreground">New copy strategy</Dialog.Title>
-            <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-              Link a master trading account. New strategies start in SIMULATION with live disabled.
-            </Dialog.Description>
-            <div className="mt-5 grid gap-4">
-              <TextField label="Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-              <SelectField
-                label="Master account"
-                value={form.masterAccountId}
-                onChange={(e) => setForm((f) => ({ ...f, masterAccountId: e.target.value }))}
-              >
-                <option value="">Select an account…</option>
-                {accounts.map((a) => (
-                  <option key={a.accountId} value={a.accountId}>
-                    {a.accountName} — {a.brokerName}
-                  </option>
-                ))}
-              </SelectField>
-              <TextField
-                label="Risk multiplier"
-                type="number"
-                value={form.riskMultiplier}
-                onChange={(e) => setForm((f) => ({ ...f, riskMultiplier: e.target.value }))}
-              />
-            </div>
-            <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
-              <Dialog.Close asChild>
-                <GhostButton type="button">Cancel</GhostButton>
-              </Dialog.Close>
-              <PrimaryButton
-                type="button"
-                disabled={!form.name.trim() || !form.masterAccountId}
-                onClick={() => {
-                  action.mutate({
-                    url: "/api/admin/copy/strategies",
-                    method: "POST",
-                    body: {
-                      name: form.name.trim(),
-                      masterAccountId: form.masterAccountId,
-                      riskMultiplier: Number(form.riskMultiplier) || 1,
-                    },
-                    label: "strategy created",
-                  });
-                  setCreateOpen(false);
-                  setForm({ name: "", masterAccountId: "", riskMultiplier: "1" });
-                }}
-              >
-                Create
-              </PrimaryButton>
-            </div>
-            <Dialog.Close asChild>
-              <button type="button" aria-label="Close" className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-line bg-background text-muted">
-                <X className="h-4 w-4" />
-              </button>
-            </Dialog.Close>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-
-      {/* Enable live copy confirmation */}
-      <Dialog.Root open={confirmLiveCopyOpen} onOpenChange={setConfirmLiveCopyOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-danger/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
-            <Dialog.Title className="flex items-center gap-2 text-xl font-semibold text-foreground">
-              <AlertTriangle className="h-5 w-5 text-danger" />
-              Enable live copy trading?
-            </Dialog.Title>
-            <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-              This enables the live copy flag globally. Trades will still only execute if <code>BROKER_EXECUTION_ENABLED=true</code> is set in the environment. All per-strategy and per-follower guards remain in effect.
-            </Dialog.Description>
-            <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
-              <Dialog.Close asChild>
-                <GhostButton type="button">Cancel</GhostButton>
-              </Dialog.Close>
-              <GhostButton
-                type="button"
-                onClick={() => {
-                  action.mutate({ url: "/api/admin/copy/settings", method: "PATCH", body: { liveCopyEnabled: true }, label: "enable live copy" });
-                  setConfirmLiveCopyOpen(false);
-                }}
-              >
-                Confirm enable
-              </GhostButton>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-
-      {/* Execute confirmation dialog */}
-      <Dialog.Root open={Boolean(executeEventId)} onOpenChange={(o) => !o && setExecuteEventId(null)}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-danger/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
-            <Dialog.Title className="flex items-center gap-2 text-xl font-semibold text-foreground">
-              <AlertTriangle className="h-5 w-5 text-danger" />
-              Execute live copy
-            </Dialog.Title>
-            <Dialog.Description className="mt-2 text-sm leading-6 text-muted">
-              This may place <strong className="text-danger">live trades on follower MT5 accounts</strong>. All safety
-              gates (global live, strategy live, consent, risk) still apply.
-              {settings?.executionConfigured
-                ? " Execution is configured."
-                : " Live execution is NOT configured — this will return COPY_EXECUTION_NOT_CONFIGURED."}
-            </Dialog.Description>
-            <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
-              <Dialog.Close asChild>
-                <GhostButton type="button">Cancel</GhostButton>
-              </Dialog.Close>
-              <PrimaryButton
-                type="button"
-                onClick={() => {
-                  if (executeEventId) {
-                    action.mutate({ url: `/api/admin/copy/events/${executeEventId}/execute`, method: "POST", label: "execute" });
-                  }
-                  setExecuteEventId(null);
-                }}
-              >
-                Confirm execute
-              </PrimaryButton>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <SimpleDialog open={strategyOpen} onClose={() => setStrategyOpen(false)} title="Create monthly live strategy">
+        <Field label="Strategy name" value={strategyForm.name} onChange={(value) => setStrategyForm((current) => ({ ...current, name: value }))} />
+        <Field label="Description" value={strategyForm.description} onChange={(value) => setStrategyForm((current) => ({ ...current, description: value }))} />
+        <label className="space-y-2 text-sm font-semibold text-foreground">Master account<select className="h-12 w-full rounded-xl border border-line bg-background px-3 text-sm" value={strategyForm.masterAccountId} onChange={(event) => setStrategyForm((current) => ({ ...current, masterAccountId: event.target.value }))}><option value="">Select connected master...</option>{connectedMasters.map((account) => <option key={account.accountId} value={account.accountId}>{account.accountName}</option>)}</select></label>
+        <div className="grid grid-cols-2 gap-3"><Field label="Monthly price" type="number" value={strategyForm.monthlyPrice} onChange={(value) => setStrategyForm((current) => ({ ...current, monthlyPrice: value }))} /><Field label="Currency" value={strategyForm.currency} onChange={(value) => setStrategyForm((current) => ({ ...current, currency: value.toUpperCase() }))} /></div>
+        <PrimaryButton type="button" disabled={createStrategy.isPending || !strategyForm.masterAccountId} onClick={() => createStrategy.mutate()}>{createStrategy.isPending ? "Creating..." : "Create draft"}</PrimaryButton>
+      </SimpleDialog>
     </WorkspacePage>
   );
+}
+
+function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange(value: string): void; type?: string }) {
+  return <label className="space-y-2 text-sm font-semibold text-foreground">{label}<input type={type} className="h-12 w-full rounded-xl border border-line bg-background px-3 text-sm outline-none focus:border-accent" value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function SimpleDialog({ open, onClose, title, children }: { open: boolean; onClose(): void; title: string; children: React.ReactNode }) {
+  return <Dialog.Root open={open} onOpenChange={(value) => !value && onClose()}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/75" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6"><Dialog.Title className="text-xl font-semibold text-foreground">{title}</Dialog.Title><div className="mt-5 space-y-4">{children}</div><Dialog.Close className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-full border border-line"><X className="h-4 w-4" /></Dialog.Close></Dialog.Content></Dialog.Portal></Dialog.Root>;
+}
+
+function ConnectionDialog({ open, onClose, children }: { open: boolean; onClose(): void; children: React.ReactNode }) {
+  return <Dialog.Root open={open} onOpenChange={(value) => !value && onClose()}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm" /><Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[94vw] max-w-4xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl border border-line bg-panel p-3 shadow-[0_24px_80px_rgba(0,0,0,0.6)] focus:outline-none"><Dialog.Title className="sr-only">Connect master trading account</Dialog.Title>{children}<Dialog.Close className="absolute right-6 top-6 z-10 grid h-9 w-9 place-items-center rounded-full border border-line bg-background text-muted hover:text-foreground"><X className="h-4 w-4" /></Dialog.Close></Dialog.Content></Dialog.Portal></Dialog.Root>;
 }

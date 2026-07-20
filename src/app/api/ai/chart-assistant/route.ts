@@ -10,10 +10,8 @@ import {
 } from "@/lib/ai/systemPrompt";
 import {
   analyzeImage,
-  chartModel,
-  chatModel,
   generateText,
-} from "@/lib/ai/geminiClient";
+} from "@/lib/ai/providerClient";
 import { canUseTraderChartAssistant } from "@/lib/ai/access";
 import { isTraderChartCaptureEnabled } from "@/lib/ai/chartCapture";
 
@@ -121,7 +119,7 @@ export async function POST(request: Request) {
       pageContext: "dashboard-tradingview",
     });
     const screenshotIncluded = Boolean(payload.image);
-    const model = screenshotIncluded ? chartModel() : chatModel();
+    let model = "configured-provider";
     const contextJson = JSON.stringify({
       chart: {
         symbol: payload.data.symbol,
@@ -137,7 +135,6 @@ export async function POST(request: Request) {
     try {
       if (payload.image) {
         result = await analyzeImage({
-          model,
           systemPrompt: buildChartSystemPrompt(),
           prompt: payload.data.message,
           imageBase64: Buffer.from(await payload.image.arrayBuffer()).toString("base64"),
@@ -146,12 +143,12 @@ export async function POST(request: Request) {
         });
       } else {
         result = await generateText({
-          model,
           systemPrompt: buildChartContextSystemPrompt(),
           userMessage: payload.data.message,
           contextJson,
         });
       }
+      model = result.model;
     } catch (providerError) {
       await logUsage({
         userId: user.id,

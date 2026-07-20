@@ -8,24 +8,11 @@ import { BookOpenCheck, CheckCircle2, Users } from "lucide-react";
 import {
   EmptyState,
   FilterChipRow,
-  GhostButton,
   Panel,
   StatusPill,
   WorkspacePage,
 } from "@/components/app/WorkspaceUI";
-import { BillingCheckoutModal } from "@/components/app/BillingCheckoutModal";
 import type { AcademyCourseDto, CourseProgressDto, MyAcademyProgressDto } from "@/lib/domain/types";
-import type { UserBillingSummaryDto } from "@/lib/services/billingService";
-
-const MENTORSHIP_PRODUCT = {
-  code: "MENTORSHIP_1_1",
-  name: "1-to-1 Professional Mentorship",
-  amount: 2500,
-  currency: "EUR",
-  billingInterval: "ONE_TIME",
-  description:
-    "You will be mentored directly by a professional trader in a private 1-on-1 mentorship program. After payment, an admin will contact you to schedule your sessions.",
-};
 
 type CourseWithProgress = AcademyCourseDto & { progress: CourseProgressDto };
 
@@ -44,25 +31,16 @@ async function apiFetch<T>(url: string): Promise<T> {
 
 export default function AcademyPage() {
   const [filter, setFilter] = useState<"ALL" | "BEGINNER" | "INTERMEDIATE" | "ADVANCED">("ALL");
-  const [mentorshipModalOpen, setMentorshipModalOpen] = useState(false);
 
   const { data: courses = [], isLoading, isError, error } = useQuery<CourseWithProgress[]>({
     queryKey: ["academy-courses"],
     queryFn: () => apiFetch("/api/academy/courses"),
   });
 
-  const { data: billingSummary } = useQuery<UserBillingSummaryDto>({
-    queryKey: ["billing-me"],
-    queryFn: () => apiFetch("/api/billing/me"),
-    staleTime: 0,
-  });
-
   const { data: progressSummary } = useQuery<MyAcademyProgressDto>({
     queryKey: ["academy-progress-me"],
     queryFn: () => apiFetch("/api/academy/progress"),
   });
-
-  const mentorshipState = billingSummary?.mentorshipAccess.status ?? "NONE";
 
   const filtered =
     filter === "ALL" ? courses : courses.filter((c) => c.difficulty === filter);
@@ -239,32 +217,14 @@ export default function AcademyPage() {
                 Get mentored directly by a professional trader in a private 1-on-1 programme.
                 Learn advanced strategies, risk management, and live market analysis tailored to your goals.
               </p>
-              <p className="mt-2 text-sm font-semibold text-accent">EUR 2,500 - one-time</p>
             </div>
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Link href="/academy/mentorship/contact" className="btn-dark">Contact mentorship team</Link>
-            {mentorshipState === "ACTIVE" ? (
-              <StatusPill tone="lime">Mentorship access active</StatusPill>
-            ) : mentorshipState === "PENDING_APPROVAL" ? (
-              <StatusPill tone="accent">Payment received - pending admin approval</StatusPill>
-            ) : mentorshipState === "PENDING_PAYMENT" ? (
-              <StatusPill tone="muted">Payment pending</StatusPill>
-            ) : (
-              <GhostButton type="button" onClick={() => setMentorshipModalOpen(true)}>
-                Pay EUR 2,500
-              </GhostButton>
-            )}
           </div>
         </div>
       </div>
-
-      <BillingCheckoutModal
-        open={mentorshipModalOpen}
-        onClose={() => setMentorshipModalOpen(false)}
-        product={MENTORSHIP_PRODUCT}
-      />
     </WorkspacePage>
   );
 }

@@ -10,6 +10,7 @@ export type AiFeature =
   | "TRADER_CHART_ASSISTANT";
 
 export type AiUsageStatus = "SUCCESS" | "FAILED";
+export type AiProvider = "GEMINI" | "OPENAI";
 
 /**
  * Stable error codes surfaced to the client via the standard envelope.
@@ -50,11 +51,15 @@ export interface TokenUsage {
   totalTokens: number | null;
 }
 
-export interface GeminiResult {
+export interface AiResult {
   text: string;
   model: string;
+  provider: AiProvider;
   usage: TokenUsage;
 }
+
+/** @deprecated Use AiResult. Kept for internal compatibility. */
+export type GeminiResult = AiResult;
 
 export interface RateLimitState {
   limit: number;

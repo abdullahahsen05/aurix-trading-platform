@@ -20,6 +20,8 @@ import type { PartnerActivityDto, PartnerRiskEventDto } from "@/lib/services/par
 import type { PartnerProfileStatusDto } from "@/lib/partner/profile";
 import { referralLink } from "@/lib/partner/referral";
 
+type SessionUser = { id: string; name: string; email: string };
+
 const RISK_TONE: Record<TraderRiskStatus, "lime" | "accent" | "danger"> = {
   OK: "lime",
   AT_RISK: "accent",
@@ -41,6 +43,10 @@ async function getJson<T>(url: string): Promise<T> {
 
 export default function PartnerOverviewPage() {
   const [siteUrl] = useState(() => typeof window === "undefined" ? "" : window.location.origin);
+  const { data: sessionUser } = useQuery<SessionUser>({
+    queryKey: ["session"],
+    queryFn: () => getJson("/api/auth/session"),
+  });
   const { data: profile, isLoading: profileLoading, isError: profileError } = useQuery<PartnerProfileStatusDto>({
     queryKey: ["partner", "profile"],
     queryFn: () => getJson("/api/partner/profile"),
@@ -193,7 +199,7 @@ export default function PartnerOverviewPage() {
   return (
     <WorkspacePage
       eyebrow="Partner"
-      title="Partner Overview"
+      title={`Welcome, ${sessionUser?.name?.trim() || "Partner"}`}
       description="Monitor your assigned traders, activity, risk, and commissions."
     >
       <InlineStatusStrip

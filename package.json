@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "seed:supabase": "tsx scripts/seed-supabase.ts",
     "seed:client-demo": "tsx scripts/seed-client-demo.ts",
-    "migrate": "tsx scripts/run-migrations.ts"
+    "migrate": "tsx scripts/run-migrations.ts",
+    "copy:worker": "tsx scripts/wsa-copy-worker.ts"
   },
   "dependencies": {
     "@google/genai": "^2.8.0",

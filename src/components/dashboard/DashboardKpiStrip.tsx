@@ -125,7 +125,7 @@ export function MarketSentimentStrip({ items }: { items: SentimentItem[] }) {
       variants={itemMotion}
       className="section-surface p-3"
     >
-      <div className="grid gap-0 xl:grid-cols-5">
+      <div className="grid gap-0 xl:grid-cols-4">
         {items.map((item, index) => (
           <div
             key={item.label}

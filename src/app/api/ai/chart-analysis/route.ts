@@ -4,7 +4,7 @@ import { aiChartPromptSchema } from "@/lib/validation/schemas";
 import { AI_ERROR, AiError } from "@/lib/ai/types";
 import { checkLimit, logUsage } from "@/lib/ai/rateLimit";
 import { buildAdminImageSystemPrompt } from "@/lib/ai/systemPrompt";
-import { analyzeImage, chartModel } from "@/lib/ai/geminiClient";
+import { analyzeImage } from "@/lib/ai/providerClient";
 
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"]);
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -50,17 +50,17 @@ export async function POST(request: Request) {
     }
 
     const limitState = await checkLimit(user.id, "chart-analysis");
-    const model = chartModel();
+    let model = "configured-provider";
     let result;
     try {
       result = await analyzeImage({
-        model,
         systemPrompt: buildAdminImageSystemPrompt(),
         prompt: buildAnalysisPrompt(prompt.data),
         imageBase64: Buffer.from(await file.arrayBuffer()).toString("base64"),
         mimeType: file.type,
         contextJson: null,
       });
+      model = result.model;
     } catch (providerError) {
       await logUsage({
         userId: user.id,

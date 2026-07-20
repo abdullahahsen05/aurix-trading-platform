@@ -163,9 +163,9 @@ function RiskContent() {
         ]}
       />
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-[0.35fr_0.65fr]">
-        {/* ── Left: gauges + events ─────────────────────────────────────── */}
-        <div className="grid gap-4">
+      <div className="mt-5 grid gap-4">
+        {/* ── Risk overview ──────────────────────────────────────────────── */}
+        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
           <RiskBar
             label={`Today's closed P&L: ${dailyPnl >= 0 ? "+" : ""}${dailyPnl.toFixed(2)}`}
             value={dailyLossLimit > 0 ? (Math.abs(Math.min(dailyPnl, 0)) / dailyLossLimit) * 100 : 0}
@@ -180,7 +180,7 @@ function RiskContent() {
           />
 
           {/* Warning notifications — read-only for traders */}
-          <div className="rounded-2xl border border-line bg-panel p-5">
+          <div className="rounded-2xl border border-line bg-panel p-5 lg:col-span-2">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h3 className="text-sm font-semibold text-foreground">Warning notifications</h3>
@@ -225,10 +225,10 @@ function RiskContent() {
           </div>
         </div>
 
-        {/* ── Right: rule set + account monitoring ─────────────────────── */}
-        <div className="grid gap-4">
+        {/* ── Full-width rules and account monitoring ──────────────────── */}
+        <div className="grid min-w-0 gap-4">
           <Panel>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-foreground">Rule set</h2>
               <StatusPill tone="lime">{riskRules.length} rules</StatusPill>
             </div>
@@ -261,7 +261,7 @@ function RiskContent() {
           </Panel>
 
           <Panel>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-foreground">
                   Rule-based account monitoring

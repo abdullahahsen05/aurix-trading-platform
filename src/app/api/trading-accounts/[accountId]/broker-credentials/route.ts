@@ -7,6 +7,7 @@ import { connectBrokerAccount } from "@/lib/services/brokerConnectionService";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { writeAuditLog } from "@/lib/services/auditService";
 import { brokerConnectionSchema } from "@/lib/validation/schemas";
+import { resolveBrokerSelection } from "@/lib/services/brokerCatalogService";
 
 // GET — safe credential status (never returns password or encrypted payload)
 export async function GET(
@@ -33,7 +34,7 @@ export async function GET(
         .maybeSingle(),
       supabase
         .from("trading_accounts")
-        .select("provider_account_id, last_synced_at, sync_error, status, broker_name, broker_server, broker_platform")
+        .select("provider_account_id, last_synced_at, sync_error, status, broker_name, broker_server, broker_platform, broker_provider_id")
         .eq("id", accountId)
         .maybeSingle(),
     ]);
@@ -47,6 +48,7 @@ export async function GET(
       syncError: accountRow.data?.sync_error ?? null,
       status: accountRow.data?.status ?? null,
       brokerName: accountRow.data?.broker_name ?? "WSA GLOBAL",
+      brokerProviderId: accountRow.data?.broker_provider_id ?? null,
       serverName: accountRow.data?.broker_server ?? null,
       platform: accountRow.data?.broker_platform ?? null,
     });
@@ -81,11 +83,39 @@ export async function POST(
       );
     }
 
-    const { platform, login, password, server, brokerName, connectNow } = parsed.data;
+    const {
+      platform,
+      login,
+      password,
+      server,
+      brokerProviderId,
+      brokerName,
+      useCustomBrokerServer,
+      connectNow,
+    } = parsed.data;
+    let resolvedBrokerName = brokerName;
+    if (brokerProviderId) {
+      try {
+        const brokerSelection = await resolveBrokerSelection({
+          brokerProviderId,
+          platform,
+          serverName: server,
+          allowUnlistedServer: useCustomBrokerServer,
+        });
+        resolvedBrokerName = brokerSelection.displayName;
+      } catch (selectionError) {
+        return jsonFail(
+          "BROKER_SELECTION_INVALID",
+          selectionError instanceof Error ? selectionError.message : "Selected broker server is invalid.",
+          400,
+        );
+      }
+    }
 
     const result = await connectBrokerAccount({
       accountId,
       actorUserId: user.id,
+      brokerProviderId,
       connectNow,
       credentials: {
         login,
@@ -93,7 +123,7 @@ export async function POST(
         server,
         platform: platform.toLowerCase() as "mt4" | "mt5",
         provider: process.env.BROKER_PROVIDER ?? "metaapi",
-        brokerName,
+        brokerName: resolvedBrokerName,
       },
     });
 
@@ -103,7 +133,11 @@ export async function POST(
       entityType: "trading_account",
       entityId: accountId,
       // Never log login, password, or encrypted payload
-      metadata: { platform, server: "[stored]" },
+      metadata: {
+        platform,
+        server: "[stored]",
+        selectionSource: useCustomBrokerServer ? "CUSTOM" : "CATALOG",
+      },
     });
 
     return jsonOk(result);

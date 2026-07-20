@@ -4,7 +4,7 @@ import { aiChatSchema } from "@/lib/validation/schemas";
 import { AI_ERROR, AiError } from "@/lib/ai/types";
 import { checkLimit, logUsage } from "@/lib/ai/rateLimit";
 import { buildAdminAssistantSystemPrompt } from "@/lib/ai/systemPrompt";
-import { chatModel, generateText } from "@/lib/ai/geminiClient";
+import { generateText } from "@/lib/ai/providerClient";
 
 export async function POST(request: Request) {
   try {
@@ -19,15 +19,15 @@ export async function POST(request: Request) {
     }
 
     const limitState = await checkLimit(user.id, "chat");
-    const model = chatModel();
+    let model = "configured-provider";
     let result;
     try {
       result = await generateText({
-        model,
         systemPrompt: buildAdminAssistantSystemPrompt(),
         userMessage: parsed.data.message,
         contextJson: null,
       });
+      model = result.model;
     } catch (providerError) {
       await logUsage({
         userId: user.id,

@@ -17,6 +17,7 @@ export async function GET(request: Request) {
         accountId: parsed.data.accountId,
         status: parsed.data.status as TradeStatus | undefined,
       }),
+      { headers: { "Cache-Control": "private, no-store, max-age=0" } },
     );
   } catch (err) {
     if (err instanceof AuthError) return jsonFail(err.code, err.message, err.statusCode);

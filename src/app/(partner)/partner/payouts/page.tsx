@@ -4,9 +4,17 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DataTable, EmptyState, InlineStatusStrip, Panel, PrimaryButton, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
 import { formatMoney } from "@/lib/utils/format";
-import type { PartnerWithdrawalBalanceDto, PartnerWithdrawalDto } from "@/lib/partner/withdrawals";
+import type {
+  PartnerFinancialLedgerDto,
+  PartnerWithdrawalBalanceDto,
+  PartnerWithdrawalDto,
+} from "@/lib/partner/withdrawals";
 
-type WithdrawalResponse = { balance: PartnerWithdrawalBalanceDto; withdrawals: PartnerWithdrawalDto[] };
+type WithdrawalResponse = {
+  balance: PartnerWithdrawalBalanceDto;
+  withdrawals: PartnerWithdrawalDto[];
+  ledger: PartnerFinancialLedgerDto;
+};
 const TONES: Record<string, "lime" | "accent" | "danger" | "muted"> = {
   PENDING_REVIEW: "accent", APPROVED: "lime", PAID: "lime", REJECTED: "danger",
 };
@@ -54,16 +62,16 @@ export default function PartnerPayoutsPage() {
   return (
     <WorkspacePage eyebrow="Partner" title="Withdrawals" description="Request payment from approved commission balance and track every review step.">
       <InlineStatusStrip items={[
-        { label: "Approved commissions", value: balance ? formatMoney({ amount: balance.approved, currency: balance.currency }) : "…", tone: "lime" },
-        { label: "Reserved", value: balance ? formatMoney({ amount: balance.reserved, currency: balance.currency }) : "…", tone: "accent" },
-        { label: "Available", value: balance ? formatMoney({ amount: balance.available, currency: balance.currency }) : "…", tone: "lime" },
-        { label: "Minimum", value: balance ? formatMoney({ amount: balance.minimum, currency: balance.currency }) : "…" },
+        { label: "Withdrawable", value: balance ? formatMoney({ amount: balance.available, currency: balance.currency }) : "…", tone: "lime" },
+        { label: "Approved unpaid commissions", value: data?.ledger ? formatMoney({ amount: data.ledger.approvedUnpaidCommissions, currency: data.ledger.currency }) : "…", tone: "lime" },
+        { label: "Approved unpaid rebates", value: data?.ledger ? formatMoney({ amount: data.ledger.approvedUnpaidRebates, currency: data.ledger.currency }) : "…", tone: "lime" },
+        { label: "Reserved / reconciled", value: balance ? formatMoney({ amount: balance.reserved, currency: balance.currency }) : "…", tone: "accent" },
       ]} />
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
         <Panel>
           <h2 className="text-lg font-semibold text-foreground">Request withdrawal</h2>
-          <p className="mt-1 text-sm leading-6 text-muted">Only approved, unreserved commissions are withdrawable. One active request is allowed at a time.</p>
+          <p className="mt-1 text-sm leading-6 text-muted">Only approved, unpaid commissions and rebates that are not already locked are withdrawable. One active request is allowed at a time.</p>
           {message ? <p className="mt-4 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-accent">{message}</p> : null}
           {error ? <p className="mt-4 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</p> : null}
           <form onSubmit={submit} className="mt-5 grid gap-4">
@@ -100,6 +108,34 @@ export default function PartnerPayoutsPage() {
           )}
         </Panel>
       </div>
+
+      <Panel className="mt-5">
+        <h2 className="text-lg font-semibold text-foreground">Commission and rebate ledger</h2>
+        <p className="mt-1 text-sm text-muted">
+          Pending, paid, cancelled, and reversed entries are visible but are not withdrawable.
+        </p>
+        <div className="mt-4">
+          {(data?.ledger.items.length ?? 0) === 0 ? (
+            <EmptyState title="No ledger entries" description="Commission and rebate entries will appear here." />
+          ) : (
+            <DataTable
+              headers={["Date", "Type", "Source", "Amount", "Status", "Reference"]}
+              rows={(data?.ledger.items ?? []).slice(0, 100).map((item) => [
+                <span key="date" className="text-xs text-muted">{new Date(item.createdAt).toLocaleDateString()}</span>,
+                <span key="type">{item.type}</span>,
+                <span key="source" className="text-xs text-muted">{item.sourceType}</span>,
+                <span key="amount">{formatMoney({ amount: item.amount, currency: item.currency })}</span>,
+                <StatusPill key="status" tone={item.status === "APPROVED" || item.status === "PAID" ? "lime" : item.status === "PENDING" ? "accent" : "danger"}>
+                  {item.status}
+                </StatusPill>,
+                <span key="reference" className="font-mono text-xs text-muted">
+                  {item.paymentOrderId ? `…${item.paymentOrderId.slice(-8)}` : "—"}
+                </span>,
+              ])}
+            />
+          )}
+        </div>
+      </Panel>
     </WorkspacePage>
   );
 }

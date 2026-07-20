@@ -40,11 +40,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const entitlements = await getActiveCopyEntitlements(
       trader.id,
       parsed.data.followerAccountId,
+      id,
     );
     if (entitlements.length === 0) {
       return jsonFail(
         "COPY_ENTITLEMENT_REQUIRED",
-        "Choose an active copy tier for this trading account before following strategies.",
+        "Purchase this strategy's monthly subscription for the selected account before following it.",
         403,
       );
     }
