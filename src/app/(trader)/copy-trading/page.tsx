@@ -6,8 +6,9 @@ import { AlertTriangle, Repeat, ShieldCheck } from "lucide-react";
 import { BillingCheckoutModal } from "@/components/app/BillingCheckoutModal";
 import { PlatformSubscriptionLocked } from "@/components/app/PlatformSubscriptionLocked";
 import { GhostButton, Panel, PrimaryButton, StatusPill, WorkspacePage } from "@/components/app/WorkspaceUI";
+import { CopyExecutionLog } from "@/components/copy/CopyExecutionLog";
 import { EMPTY_PLATFORM_SUBSCRIPTION_ACCESS, useTraderAccessSummary } from "@/hooks/useTraderAccessSummary";
-import type { CopyFollowerDto } from "@/lib/copy/types";
+import type { CopyFollowerDto, CopyLogDto } from "@/lib/copy/types";
 import type { TraderAccountSummary } from "@/lib/domain/types";
 import type { TraderStrategyDto } from "@/lib/services/copyTradingService";
 import type { CopyEntitlementDto, UserBillingSummaryDto } from "@/lib/services/billingService";
@@ -42,6 +43,7 @@ function LiveCopyContent({ initialBilling }: { initialBilling?: UserBillingSumma
   const { data: strategies = [] } = useQuery<TraderStrategyDto[]>({ queryKey: ["copy-strategies"], queryFn: () => api("/api/copy/strategies") });
   const { data: accounts = [] } = useQuery<TraderAccountSummary[]>({ queryKey: ["trading-accounts"], queryFn: () => api("/api/trading-accounts") });
   const { data: subscriptions = [] } = useQuery<CopyFollowerDto[]>({ queryKey: ["copy-my-subscriptions"], queryFn: () => api("/api/copy/my-subscriptions") });
+  const { data: copyLogs = [], isLoading: copyLogsLoading } = useQuery<CopyLogDto[]>({ queryKey: ["copy-logs"], queryFn: () => api("/api/copy/logs"), refetchInterval: 5_000 });
   const connectedAccounts = accounts.filter((account) => account.status === "CONNECTED");
 
   const entitlementMap = useMemo(() => new Map(
@@ -99,6 +101,7 @@ function LiveCopyContent({ initialBilling }: { initialBilling?: UserBillingSumma
       {!strategies.length ? <Panel><p className="text-sm text-muted">No live strategies are published yet.</p></Panel> : null}
 
       {subscriptions.length ? <Panel className="mt-5"><h2 className="text-lg font-semibold text-foreground">My live copy connections</h2><div className="mt-4 space-y-3">{subscriptions.map((subscription) => <div key={subscription.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-background p-4"><div><p className="font-semibold text-foreground">{subscription.strategyName}</p><p className="mt-1 text-xs text-muted">{subscription.followerAccountName} · synced {subscription.engineSyncedAt ? new Date(subscription.engineSyncedAt).toLocaleString() : "pending"}</p>{subscription.engineError ? <p className="mt-1 text-xs text-danger">{subscription.engineError}</p> : null}</div><div className="flex gap-2"><StatusPill tone={subscription.status === "ACTIVE" ? "lime" : "accent"}>{subscription.status}</StatusPill><StatusPill tone={subscription.engineStatus === "LIVE" ? "lime" : subscription.engineStatus === "ERROR" ? "danger" : "accent"}>{subscription.engineStatus}</StatusPill></div></div>)}</div></Panel> : null}
+      <CopyExecutionLog logs={copyLogs} loading={copyLogsLoading} />
     </WorkspacePage>
 
     {checkout ? <BillingCheckoutModal open onClose={() => setCheckout(null)} product={{ code: checkout.strategy.billingProductCode, name: checkout.strategy.name, amount: checkout.strategy.monthlyPrice, currency: checkout.strategy.currency, billingInterval: "MONTHLY", description: `Monthly live copy access for ${checkout.strategy.name} on the selected account.` }} tradingAccountId={checkout.accountId} copyStrategyId={checkout.strategy.id} /> : null}

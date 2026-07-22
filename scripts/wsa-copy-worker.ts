@@ -13,7 +13,10 @@ type LiveStrategy = {
   id: string; master_account_id: string;
   trading_accounts: { provider_account_id: string | null } | null;
 };
-type StreamHandle = { close(): Promise<void> };
+type StreamHandle = {
+  reconcile(): Promise<void>;
+  close(): Promise<void>;
+};
 
 const pollMs = Math.max(1_000, Number.parseInt(process.env.WSA_COPY_POLL_MS ?? "3000", 10) || 3_000);
 const workerId = `wsa-copy-${process.pid}`;
@@ -61,6 +64,7 @@ async function persistEvent(strategy: LiveStrategy, eventType: "OPEN" | "MODIFY"
     if ((error as { code?: string }).code === "23505") return;
     throw new Error(`Master event could not be stored: ${error.message}`);
   }
+  console.log(`[copy-worker] detected ${eventType} ${position.symbol} ${Number(position.volume ?? 0)} lot(s)`);
   await enqueueJob({
     type: "EXECUTE_COPY_EVENT",
     payload: { masterEventId: data.id },
@@ -112,14 +116,37 @@ async function openStrategyStream(strategy: LiveStrategy): Promise<StreamHandle>
   connection.addSynchronizationListener(listener);
   await connection.connect();
   await connection.waitSynchronized({ timeoutInSeconds: 120 });
-  for (const position of (connection.terminalState.positions ?? []) as Position[]) {
+  const synchronizedPositions = (connection.terminalState.positions ?? []) as Position[];
+  for (const position of synchronizedPositions) {
     positions.set(String(position.id), position);
   }
   ready = true;
+  // Reconcile positions that opened while the worker was offline or while the
+  // initial synchronization was in progress. The OPEN dedupe key makes this
+  // restart-safe, while event_time still protects copy-new-trades-only rules.
+  for (const position of synchronizedPositions) {
+    await persistEvent(strategy, "OPEN", position);
+  }
   await createAdminClient().from("copy_strategies").update({
     engine_status: "LIVE", engine_error: null, engine_heartbeat_at: new Date().toISOString(),
   }).eq("id", strategy.id);
+  console.log(`[copy-worker] master stream synchronized; monitoring ${positions.size} open position(s)`);
   return {
+    async reconcile() {
+      const current = new Map<string, Position>();
+      for (const position of (connection.terminalState.positions ?? []) as Position[]) {
+        const key = String(position.id);
+        const previous = positions.get(key);
+        current.set(key, position);
+        if (!previous) await persistEvent(strategy, "OPEN", position);
+        else if (changed(previous, position)) await persistEvent(strategy, "MODIFY", position, previous);
+      }
+      for (const [key, previous] of positions) {
+        if (!current.has(key)) await persistEvent(strategy, "CLOSE", previous);
+      }
+      positions.clear();
+      for (const [key, position] of current) positions.set(key, position);
+    },
     async close() {
       ready = false;
       connection.removeSynchronizationListener(listener);
@@ -145,6 +172,7 @@ async function reconcileStreams() {
   }
   for (const strategy of active.values()) {
     if (streams.has(strategy.id)) {
+      await streams.get(strategy.id)!.reconcile();
       await supabase.from("copy_strategies").update({ engine_heartbeat_at: new Date().toISOString() }).eq("id", strategy.id);
       continue;
     }

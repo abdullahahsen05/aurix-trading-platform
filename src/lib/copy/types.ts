@@ -125,6 +125,7 @@ export interface CopyFollowerDto {
 export interface CopyLogDto {
   id: string;
   strategyId: string;
+  strategyName: string;
   masterEventId: string;
   followerAccountId: string | null;
   traderId: string | null;

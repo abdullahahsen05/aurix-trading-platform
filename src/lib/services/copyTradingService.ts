@@ -963,10 +963,13 @@ function mapLog(row: {
   error_code: string | null;
   error_message: string | null;
   created_at: string;
+  copy_strategies: { name: string } | Array<{ name: string }> | null;
 }): CopyLogDto {
+  const strategy = Array.isArray(row.copy_strategies) ? row.copy_strategies[0] : row.copy_strategies;
   return {
     id: row.id,
     strategyId: row.strategy_id,
+    strategyName: strategy?.name ?? "Deleted strategy",
     masterEventId: row.master_event_id,
     followerAccountId: row.follower_account_id,
     traderId: row.trader_id,
@@ -985,7 +988,7 @@ function mapLog(row: {
 }
 
 const LOG_COLS =
-  "id, strategy_id, master_event_id, follower_account_id, trader_id, mode, action, status, calculated_lot, executed_lot, symbol, side, broker_order_id, error_code, error_message, created_at";
+  "id, strategy_id, master_event_id, follower_account_id, trader_id, mode, action, status, calculated_lot, executed_lot, symbol, side, broker_order_id, error_code, error_message, created_at, copy_strategies(name)";
 
 export async function listCopyLogs(filters?: { strategyId?: string }): Promise<CopyLogDto[]> {
   const supabase = createAdminClient();
@@ -1255,8 +1258,8 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
     );
   }
 
-  // Only OPEN events are executed live in this MVP. CLOSE/MODIFY require a
-  // master→follower position-id mapping which is not tracked yet.
+  // OPEN creates the durable master-to-follower position mapping. CLOSE and
+  // MODIFY reuse that mapping to operate on the follower's broker position.
   if (ev.event_type !== "OPEN") {
     return executeLinkedCloseOrModify(ev as LinkedEvent, adapter);
   }
@@ -1346,7 +1349,23 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
       stopAfterLosses: accountRule?.stopAfterLosses,
     });
     if (!elig.eligible) {
-      await supabase.from("copy_execution_logs").insert({ ...baseLog, action: "SKIPPED", status: "SKIPPED", error_code: COPY_ERROR.FOLLOWER_NOT_ELIGIBLE, error_message: elig.reason });
+      let eligibilityMessage = elig.reason;
+      if (elig.reason === "Max open copied trades reached") {
+        const { data: oppositePosition } = await supabase
+          .from("copy_trade_links")
+          .select("id")
+          .eq("strategy_id", strategy.id)
+          .eq("follower_account_id", f.follower_account_id)
+          .eq("symbol", followerSymbol)
+          .neq("side", followerSide)
+          .eq("status", "OPEN")
+          .limit(1)
+          .maybeSingle();
+        if (oppositePosition) {
+          eligibilityMessage = `Max open copied trades reached. This master ${followerSide} is a new hedged position, not a close. Close the original master position to close its follower copy.`;
+        }
+      }
+      await supabase.from("copy_execution_logs").insert({ ...baseLog, action: "SKIPPED", status: "SKIPPED", error_code: COPY_ERROR.FOLLOWER_NOT_ELIGIBLE, error_message: eligibilityMessage });
       const ruleEvent = buildRuleEvent({ eligibility: elig, accountId: f.follower_account_id, strategyId: strategy.id, masterEventId: ev.id, followerId: f.id, mode: "LIVE" });
       if (ruleEvent) await supabase.from("copy_rule_events").insert(ruleEvent);
       summary.skipped++;

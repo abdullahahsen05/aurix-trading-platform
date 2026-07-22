@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "tsx scripts/dev.ts",
+    "dev:web": "next dev --webpack",
     "build": "next build",
-    "start": "next start",
+    "start": "tsx scripts/dev.ts --production",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
