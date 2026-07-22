@@ -6,6 +6,7 @@ import {
   checkExistingAccess,
   createCheckoutSession,
   getProductByCode,
+  resumePendingCheckoutSession,
 } from "@/lib/services/billingService";
 
 export async function POST(req: NextRequest) {
@@ -30,8 +31,23 @@ export async function POST(req: NextRequest) {
       botProductId: body.botProductId,
       copyStrategyId: body.copyStrategyId,
     });
+    if (existing.status === "PENDING_PAYMENT") {
+      const pendingCheckout = await resumePendingCheckoutSession({
+        userId: user.id,
+        productId: product.id,
+        tradingAccountId: body.tradingAccountId,
+        copyStrategyId: body.copyStrategyId,
+        botProductId: body.botProductId,
+      });
+      if (pendingCheckout) return jsonOk(pendingCheckout);
+    }
     if (!canCreateCheckoutForState(existing.status, product.billingInterval === "MONTHLY")) {
-      return jsonFail("DUPLICATE_PURCHASE", existing.message, 409);
+      if (existing.status === "PENDING_PAYMENT") {
+        // The previous order had no usable checkout session and was released
+        // above, so creating a fresh Checkout is safe.
+      } else {
+        return jsonFail("DUPLICATE_PURCHASE", existing.message, 409);
+      }
     }
 
     const origin = req.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "";

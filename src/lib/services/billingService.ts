@@ -789,6 +789,74 @@ export interface CheckoutResult {
   checkoutUrl: string;
 }
 
+export async function resumePendingCheckoutSession(params: {
+  userId: string;
+  productId: string;
+  tradingAccountId?: string;
+  copyStrategyId?: string;
+  botProductId?: string;
+}): Promise<CheckoutResult | null> {
+  const supabase = createAdminClient();
+  let query = supabase
+    .from("payment_orders")
+    .select("id, provider, provider_checkout_url, stripe_checkout_session_id")
+    .eq("user_id", params.userId)
+    .eq("product_id", params.productId)
+    .eq("status", "PENDING")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  query = params.tradingAccountId
+    ? query.eq("trading_account_id", params.tradingAccountId)
+    : query.is("trading_account_id", null);
+  query = params.copyStrategyId
+    ? query.eq("copy_strategy_id", params.copyStrategyId)
+    : query.is("copy_strategy_id", null);
+  query = params.botProductId
+    ? query.eq("bot_product_id", params.botProductId)
+    : query.is("bot_product_id", null);
+
+  const { data: order, error } = await query.maybeSingle();
+  if (error) throw new Error(`Failed to load pending checkout: ${error.message}`);
+  if (!order) return null;
+
+  const checkoutUrl = order.provider_checkout_url as string | null;
+  const stripeSessionId = order.stripe_checkout_session_id as string | null;
+
+  if (order.provider !== "STRIPE") {
+    return checkoutUrl ? { orderId: order.id, checkoutUrl } : null;
+  }
+
+  if (!stripeSessionId || !checkoutUrl) {
+    await supabase.from("payment_orders").update({ status: "FAILED" }).eq("id", order.id).eq("status", "PENDING");
+    return null;
+  }
+
+  try {
+    const session = await getStripe().checkout.sessions.retrieve(stripeSessionId);
+    if (session.status === "open") {
+      return { orderId: order.id, checkoutUrl: session.url ?? checkoutUrl };
+    }
+
+    if (session.status === "complete" && session.payment_status === "paid") {
+      await handleStripeCheckoutCompleted({
+        id: session.id,
+        subscription: typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null,
+        payment_intent: typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null,
+      });
+      throw new Error("Payment is already complete. Refresh the page to use your activated access.");
+    }
+
+    await supabase.from("payment_orders").update({ status: "CANCELLED" }).eq("id", order.id).eq("status", "PENDING");
+    return null;
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Payment is already complete")) throw error;
+    // A transient Stripe API problem should not lock the trader out of an
+    // otherwise valid hosted Checkout URL.
+    return { orderId: order.id, checkoutUrl };
+  }
+}
+
 export type VerifiedPaymentProvisioningDecision =
   | { kind: "SUBSCRIPTION"; status: "ACTIVE" }
   | { kind: "COPY_ACCOUNT"; status: "ACTIVE" }
