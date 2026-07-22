@@ -43,6 +43,8 @@ export interface TradeDto {
   profit: MoneyValue;
   openedAt: string;
   closedAt: string | null;
+  copyStrategyName?: string | null;
+  copySyncPending?: boolean;
 }
 
 export interface AnalyticsSummary {

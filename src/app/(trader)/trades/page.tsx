@@ -46,10 +46,12 @@ function TradesContent() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [syncResult, setSyncResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const { data: tradeList = [], isLoading, isError } = useQuery<TradeDto[]>({
     queryKey: ["trades"],
+    refetchInterval: 5_000,
     queryFn: async () => {
       const res = await fetch("/api/trades");
       const json = await res.json();
@@ -88,9 +90,42 @@ function TradesContent() {
     }
   }, [queryClient]);
 
+  const handleExportCsv = useCallback(async () => {
+    setExporting(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/reports/trades");
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.error?.message ?? "CSV export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `wsa-global-trades-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setSyncResult({ type: "error", text: error instanceof Error ? error.message : "CSV export failed" });
+    } finally {
+      setExporting(false);
+    }
+  }, []);
+
+  const recentTrades = useMemo(
+    () => [...tradeList].sort((a, b) => {
+      const aTime = new Date(a.closedAt ?? a.openedAt).getTime();
+      const bTime = new Date(b.closedAt ?? b.openedAt).getTime();
+      return bTime - aTime;
+    }),
+    [tradeList],
+  );
+
   // Set initial selectedId once trades load
-  const effectiveSelectedId = selectedId || tradeList[0]?.id || "";
-  const selectedTrade = tradeList.find((trade) => trade.id === effectiveSelectedId) ?? tradeList[0];
+  const effectiveSelectedId = selectedId || recentTrades[0]?.id || "";
 
   const openTrades = useMemo(() => tradeList.filter((trade) => trade.status === "OPEN"), [tradeList]);
   const closedTrades = useMemo(() => tradeList.filter((trade) => trade.status === "CLOSED"), [tradeList]);
@@ -105,11 +140,14 @@ function TradesContent() {
     <WorkspacePage
       eyebrow="Trade ledger"
       title="Trade history"
-      description="Minimal trade ledger shell with the searchable history tucked into an overlay."
+      description="Review recent open and closed trades, search the full ledger, or export it to CSV."
       action={
         <PageActionGroup>
           <GhostButton type="button" onClick={() => setSearchOpen(true)}>
             Search
+          </GhostButton>
+          <GhostButton type="button" disabled={exporting || !tradeList.length} onClick={handleExportCsv}>
+            {exporting ? "Exporting…" : "Export CSV"}
           </GhostButton>
           <PrimaryButton type="button" disabled={syncing} onClick={handleSyncTrades}>
             {syncing ? "Syncing…" : "Sync Trades"}
@@ -158,83 +196,77 @@ function TradesContent() {
           <div className="rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
             Failed to load trades. Please refresh the page.
           </div>
-        ) : !selectedTrade ? (
+        ) : !recentTrades.length ? (
           <EmptyState
             title="No trades yet"
             description="Trades will appear here after your account syncs with your broker."
           />
         ) : (
-          <Panel className="min-w-0">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Selected trade</p>
-                <h2 className="mt-2 text-lg font-semibold text-foreground">{selectedTrade.symbol}</h2>
-                <p className="mt-1 text-sm text-muted">
-                  {selectedTrade.shortTradeId} · {selectedTrade.side}
-                </p>
+          <Panel className="overflow-hidden p-0">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+              <div>
+                <h2 className="font-semibold text-foreground">Recent trades</h2>
+                <p className="mt-1 text-xs text-muted">Newest activity first · click a row for full details</p>
               </div>
-              <StatusPill tone={selectedTrade.status === "OPEN" ? "accent" : "muted"}>{selectedTrade.status}</StatusPill>
+              <span className="text-xs font-semibold uppercase tracking-widest text-muted">{recentTrades.length} trades</span>
             </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Volume</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{selectedTrade.volume}</p>
-              </div>
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Open price</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{selectedTrade.openPrice}</p>
-              </div>
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Profit</p>
-                <p
-                  className={`mt-1 text-sm font-semibold ${
-                    selectedTrade.profit.amount >= 0 ? "text-accent-2" : "text-danger"
-                  }`}
-                >
-                  {formatMoney(selectedTrade.profit)}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Opened</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{new Date(selectedTrade.openedAt).toLocaleString()}</p>
-              </div>
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Close price</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">
-                  {selectedTrade.closePrice ?? "—"}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-line bg-background px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Closed</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">
-                  {selectedTrade.closedAt ? new Date(selectedTrade.closedAt).toLocaleString() : "—"}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-3">
-              <GhostButton type="button" onClick={() => setSearchOpen(true)}>
-                Search ledger
-              </GhostButton>
-              <PrimaryButton
-                type="button"
-                onClick={async () => {
-                  const res = await fetch("/api/reports/trades");
-                  if (!res.ok) return;
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `wsa-global-trades-${new Date().toISOString().slice(0, 10)}.csv`;
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                  URL.revokeObjectURL(url);
-                }}
-              >
-                Export CSV
-              </PrimaryButton>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1040px] text-left text-sm">
+                <thead className="border-b border-line bg-background/60 text-[11px] uppercase tracking-widest text-muted">
+                  <tr>
+                    <th className="px-5 py-3 font-semibold">Trade</th>
+                    <th className="px-3 py-3 font-semibold">Side</th>
+                    <th className="px-3 py-3 font-semibold">Status</th>
+                    <th className="px-3 py-3 font-semibold">Volume</th>
+                    <th className="px-3 py-3 font-semibold">Opened</th>
+                    <th className="px-3 py-3 font-semibold">Closed</th>
+                    <th className="px-5 py-3 text-right font-semibold">P&amp;L</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {recentTrades.map((trade) => (
+                    <tr
+                      key={trade.id}
+                      tabIndex={0}
+                      className="cursor-pointer bg-panel transition-colors hover:bg-background/50 focus:bg-background/50 focus:outline-none"
+                      onClick={() => { setSelectedId(trade.id); setSearchOpen(true); }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedId(trade.id);
+                          setSearchOpen(true);
+                        }
+                      }}
+                    >
+                      <td className="px-5 py-3">
+                        <p className="font-mono font-semibold text-foreground">{trade.symbol}</p>
+                        <p className="mt-0.5 text-xs text-muted">{trade.shortTradeId}</p>
+                      </td>
+                      <td className={`px-3 py-3 font-semibold ${trade.side === "BUY" ? "text-lime" : "text-danger"}`}>{trade.side}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-col items-start gap-1.5">
+                          <StatusPill tone={trade.status === "OPEN" ? "accent" : "muted"}>{trade.status}</StatusPill>
+                          {trade.copyStrategyName ? (
+                            <span className="text-[11px] font-semibold text-accent">Copied by {trade.copyStrategyName}</span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 font-mono text-foreground">{trade.volume}</td>
+                      <td className="px-3 py-3">
+                        <p className="font-mono font-semibold text-foreground">{trade.openPrice}</p>
+                        <p className="mt-0.5 text-xs text-muted">{new Date(trade.openedAt).toLocaleString()}</p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <p className="font-mono font-semibold text-foreground">{trade.closePrice ?? "—"}</p>
+                        <p className="mt-0.5 text-xs text-muted">{trade.closedAt ? new Date(trade.closedAt).toLocaleString() : "Still open"}</p>
+                      </td>
+                      <td className={`px-5 py-3 text-right font-mono font-semibold ${trade.profit.amount >= 0 ? "text-lime" : "text-danger"}`}>
+                        {trade.copySyncPending ? <span className="text-xs text-muted">Sync pending</span> : formatMoney(trade.profit)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Panel>
         )}
@@ -244,8 +276,8 @@ function TradesContent() {
         open={searchOpen}
         onOpenChange={setSearchOpen}
         title="Search trades"
-        description="Search, status filters, and paging stay in the overlay to keep the ledger minimal."
-        items={tradeList}
+        description="Search every trade by ID, symbol, account, side, status, price, volume, or time."
+        items={recentTrades}
         selectedId={effectiveSelectedId}
         onSelect={(id) => {
           setSelectedId(id);
@@ -273,7 +305,15 @@ function TradesContent() {
             search.length === 0 ||
             trade.shortTradeId.toLowerCase().includes(search) ||
             trade.symbol.toLowerCase().includes(search) ||
-            trade.accountId.toLowerCase().includes(search);
+            trade.accountId.toLowerCase().includes(search) ||
+            trade.side.toLowerCase().includes(search) ||
+            trade.status.toLowerCase().includes(search) ||
+            (trade.copyStrategyName?.toLowerCase().includes(search) ?? false) ||
+            String(trade.volume).includes(search) ||
+            String(trade.openPrice).includes(search) ||
+            String(trade.closePrice ?? "").includes(search) ||
+            new Date(trade.openedAt).toLocaleString().toLowerCase().includes(search) ||
+            (trade.closedAt ? new Date(trade.closedAt).toLocaleString().toLowerCase().includes(search) : false);
           const matchesStatus = state.filters.status === "ALL" || trade.status === state.filters.status;
           return matchesQuery && matchesStatus;
         }}
@@ -283,6 +323,9 @@ function TradesContent() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{trade.symbol}</p>
                 <p className="mt-1 truncate text-xs text-muted">{trade.shortTradeId}</p>
+                {trade.copyStrategyName ? (
+                  <p className="mt-1 truncate text-xs font-semibold text-accent">Copied by {trade.copyStrategyName}</p>
+                ) : null}
               </div>
               <StatusPill tone={trade.status === "OPEN" ? "accent" : "muted"}>{trade.status}</StatusPill>
             </div>
@@ -293,6 +336,11 @@ function TradesContent() {
               <span className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
                 {new Date(trade.openedAt).toLocaleDateString()}
               </span>
+              {trade.copyStrategyName ? (
+                <span className="rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                  Copied by {trade.copyStrategyName}
+                </span>
+              ) : null}
             </div>
           </>
         )}
@@ -305,6 +353,9 @@ function TradesContent() {
                 <p className="mt-1 text-sm text-muted">
                   {trade.shortTradeId} · {trade.side}
                 </p>
+                {trade.copyStrategyName ? (
+                  <p className="mt-1 text-sm font-semibold text-accent">Copied by {trade.copyStrategyName}</p>
+                ) : null}
               </div>
               <StatusPill tone={trade.status === "OPEN" ? "accent" : "muted"}>{trade.status}</StatusPill>
             </div>
@@ -324,7 +375,7 @@ function TradesContent() {
                     trade.profit.amount >= 0 ? "text-accent-2" : "text-danger"
                   }`}
                 >
-                  {formatMoney(trade.profit)}
+                  {trade.copySyncPending ? "Sync pending" : formatMoney(trade.profit)}
                 </p>
               </div>
               <div className="rounded-2xl border border-line bg-background px-4 py-3">
