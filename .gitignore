@@ -13,6 +13,7 @@
 # testing
 /coverage
 /tests/e2e/.auth/
+/tests/e2e/screenshots/
 /playwright-report/
 /test-results/
 
@@ -26,6 +27,14 @@
 # misc
 .DS_Store
 *.pem
+/.claude/
+/.codex-migration-*/
+/.metaapi/
+/supabase/.temp/
+
+# local QA and implementation reports
+/AURIX_*.md
+/WSA_GLOBAL_*.md
 
 # debug
 npm-debug.log*
