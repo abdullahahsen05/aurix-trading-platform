@@ -96,11 +96,12 @@ export default function TraderDashboardPage() {
 }
 
 function TraderDashboardContent() {
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>("DAILY");
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>("MONTHLY");
   const [selectedView, setSelectedView] = useState<DashboardView>("CURRENT_EQUITY");
   const [activeOverlay, setActiveOverlay] = useState<DashboardView | null>(null);
   const [statsNow, setStatsNow] = useState(() => new Date());
   const [subModalOpen, setSubModalOpen] = useState(false);
+  const [accountIndex, setAccountIndex] = useState(0);
 
   const { data: sessionUser } = useQuery<SessionUser>({
     queryKey: ["session"],
@@ -143,16 +144,23 @@ function TraderDashboardContent() {
     refetchInterval: 60_000,
   });
 
-  // Fetch all trades
+  const baseAccount = accounts[Math.min(accountIndex, Math.max(accounts.length - 1, 0))] ?? accounts[0];
+
+  // Keep the selected account's ledger current. Supabase Realtime invalidates
+  // this query immediately; polling is the fallback if a realtime socket drops.
   const { data: trades = [] } = useQuery<TradeDto[]>({
-    queryKey: ["trades"],
+    queryKey: ["trades", baseAccount?.accountId],
     queryFn: async () => {
-      const res = await fetch("/api/trades");
+      const params = new URLSearchParams({ accountId: baseAccount!.accountId });
+      const res = await fetch(`/api/trades?${params.toString()}`, { cache: "no-store" });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load trades");
       return json.data;
     },
-    staleTime: 60_000,
+    enabled: Boolean(baseAccount?.accountId),
+    staleTime: 0,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
   });
 
   // Fetch risk rules
@@ -176,8 +184,6 @@ function TraderDashboardContent() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const [accountIndex, setAccountIndex] = useState(0);
-  const baseAccount = accounts[Math.min(accountIndex, accounts.length - 1)] ?? accounts[0];
   const live = useMemo(
     () => ({
       balance: baseAccount?.balance.amount ?? 0,
@@ -204,6 +210,7 @@ function TraderDashboardContent() {
   const periodProfitFactor = useMemo(() => calculateProfitFactor(periodTrades), [periodTrades]);
   const periodAvgWinLoss = useMemo(() => calculateAverageWinLossRatio(periodTrades), [periodTrades]);
   const periodConsistency = useMemo(() => calculateConsistencyScore(periodTrades), [periodTrades]);
+  const hasClosedTrades = periodTrades.length > 0;
   const pnlPositive = live.pnl >= 0;
   const pnlPrefix = pnlPositive ? "↑" : "↓";
   const accountDrawdown = baseAccount?.drawdownPercent ?? 0;
@@ -222,30 +229,30 @@ function TraderDashboardContent() {
     () => [
       {
         label: "Win %",
-        value: formatPercent(periodStats.winRate),
-        status: periodStats.winRate >= 60 ? "Excellent" : periodStats.winRate >= 50 ? "Good" : "Average",
-        statusTone: periodStats.winRate >= 60 ? ("lime" as const) : periodStats.winRate >= 50 ? ("accent" as const) : ("muted" as const),
+        value: hasClosedTrades ? formatPercent(periodStats.winRate) : "—",
+        status: !hasClosedTrades ? "No closed trades" : periodStats.winRate >= 60 ? "Excellent" : periodStats.winRate >= 50 ? "Good" : "Average",
+        statusTone: !hasClosedTrades ? ("muted" as const) : periodStats.winRate >= 60 ? ("lime" as const) : periodStats.winRate >= 50 ? ("accent" as const) : ("muted" as const),
         progress: periodStats.winRate / 100,
         tone: "yellow" as const,
       },
       {
         label: "Profit Factor",
-        value: periodProfitFactor.toFixed(2),
-        status: periodProfitFactor >= 2 ? "Excellent" : periodProfitFactor >= 1.4 ? "Good" : "Average",
-        statusTone: periodProfitFactor >= 2 ? ("lime" as const) : periodProfitFactor >= 1.4 ? ("accent" as const) : ("muted" as const),
+        value: hasClosedTrades ? periodProfitFactor.toFixed(2) : "—",
+        status: !hasClosedTrades ? "No closed trades" : periodProfitFactor >= 2 ? "Excellent" : periodProfitFactor >= 1.4 ? "Good" : "Average",
+        statusTone: !hasClosedTrades ? ("muted" as const) : periodProfitFactor >= 2 ? ("lime" as const) : periodProfitFactor >= 1.4 ? ("accent" as const) : ("muted" as const),
         progress: Math.min(periodProfitFactor / 4, 1),
         tone: "lime" as const,
       },
       {
         label: "Win/Loss",
-        value: periodAvgWinLoss.toFixed(2),
-        status: periodAvgWinLoss >= 1.8 ? "Good" : "Average",
-        statusTone: periodAvgWinLoss >= 1.8 ? ("accent" as const) : ("muted" as const),
+        value: hasClosedTrades ? periodAvgWinLoss.toFixed(2) : "—",
+        status: !hasClosedTrades ? "No closed trades" : periodAvgWinLoss >= 1.8 ? "Good" : "Average",
+        statusTone: !hasClosedTrades ? ("muted" as const) : periodAvgWinLoss >= 1.8 ? ("accent" as const) : ("muted" as const),
         progress: Math.min(periodAvgWinLoss / 4, 1),
         tone: "yellow" as const,
       },
     ],
-    [periodAvgWinLoss, periodProfitFactor, periodStats.winRate],
+    [hasClosedTrades, periodAvgWinLoss, periodProfitFactor, periodStats.winRate],
   );
 
   const kpiItems = [
@@ -414,6 +421,30 @@ function TraderDashboardContent() {
             <MarketSentimentStrip items={marketSentimentItems} />
           </div>
           <Panel className="mt-4">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Live performance</p>
+                <p className="mt-1 text-xs text-muted">
+                  Updates automatically from {baseAccount?.accountName ?? "your selected account"}.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(["DAILY", "WEEKLY", "MONTHLY"] as Period[]).map((period) => (
+                  <button
+                    key={period}
+                    type="button"
+                    onClick={() => setSelectedPeriod(period)}
+                    className={`h-9 rounded-full border px-4 text-xs font-semibold transition ${
+                      selectedPeriod === period
+                        ? "border-accent bg-accent text-background"
+                        : "border-line bg-background text-muted hover:text-foreground"
+                    }`}
+                  >
+                    {period === "DAILY" ? "Today" : period === "WEEKLY" ? "7 days" : "30 days"}
+                  </button>
+                ))}
+              </div>
+            </div>
             <PerformanceRings items={performanceRings} />
           </Panel>
           <div className="mt-4">
