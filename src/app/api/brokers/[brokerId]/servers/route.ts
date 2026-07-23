@@ -1,6 +1,11 @@
 import { jsonFail, jsonOk } from "@/lib/api/envelope";
 import { AuthError, requireAuth } from "@/lib/auth/session";
-import { listBrokerServers, type BrokerPlatform } from "@/lib/services/brokerCatalogService";
+import {
+  getBrokerProvider,
+  listBrokerServers,
+  type BrokerPlatform,
+} from "@/lib/services/brokerCatalogService";
+import { searchKnownMetaApiServers } from "@/lib/services/metaApiServerDiscoveryService";
 
 export async function GET(
   request: Request,
@@ -9,21 +14,55 @@ export async function GET(
   try {
     await requireAuth();
     const { brokerId } = await context.params;
-    const value = new URL(request.url).searchParams.get("platform")?.toUpperCase();
+    const url = new URL(request.url);
+    const value = url.searchParams.get("platform")?.toUpperCase();
     if (value !== "MT4" && value !== "MT5") {
       return jsonFail("INVALID_PLATFORM", "Platform must be MT4 or MT5.", 400);
     }
-    return jsonOk({
-      servers: await listBrokerServers({
+    const provider = await getBrokerProvider(brokerId);
+    if (!provider?.isActive) {
+      return jsonFail("BROKER_NOT_FOUND", "Selected broker is not active.", 404);
+    }
+    const configured = await listBrokerServers({
         brokerProviderId: brokerId,
         platform: value as BrokerPlatform,
-      }),
-      source: "ADMIN_CONFIGURED",
-      sourceLabel: "Configured broker servers",
-      refreshedAt: null,
+      });
+    const searchQuery = (url.searchParams.get("query") ?? provider.displayName).trim().slice(0, 100);
+    const discovered = await searchKnownMetaApiServers({
+      platform: value as BrokerPlatform,
+      query: searchQuery,
+    });
+    const configuredNames = new Set(configured.map((server) => server.serverName.toLowerCase()));
+    const liveServers = discovered.servers
+      .filter((server) => !configuredNames.has(server.serverName.toLowerCase()))
+      .map((server, index) => ({
+        id: `metaapi:${value}:${index}:${server.serverName}`,
+        brokerProviderId: brokerId,
+        platform: value as BrokerPlatform,
+        serverName: server.serverName,
+        brokerName: server.brokerName,
+        source: "METAAPI" as const,
+        isActive: true,
+        lastRefreshedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }));
+    return jsonOk({
+      servers: [
+        ...configured.map((server) => ({ ...server, brokerName: provider.displayName })),
+        ...liveServers,
+      ],
+      source: liveServers.length > 0 ? "ADMIN_AND_METAAPI" : "ADMIN_CONFIGURED",
+      sourceLabel: liveServers.length > 0
+        ? "Configured and MetaApi-known broker servers"
+        : "Configured broker servers",
+      discoveryAvailable: discovered.available,
+      discoveryMessage: discovered.message,
+      searchQuery,
+      refreshedAt: new Date().toISOString(),
     });
   } catch (error) {
     if (error instanceof AuthError) return jsonFail(error.code, error.message, error.statusCode);
-    return jsonFail("BROKER_SERVERS_UNAVAILABLE", "Configured broker servers are unavailable.", 503);
+    return jsonFail("BROKER_SERVERS_UNAVAILABLE", "Broker servers are unavailable.", 503);
   }
 }

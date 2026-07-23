@@ -87,6 +87,13 @@ export async function listBrokerProviders(params?: {
   }));
 }
 
+export async function getBrokerProvider(
+  brokerProviderId: string,
+): Promise<BrokerProviderDto | null> {
+  const providers = await listBrokerProviders({ includeInactive: true });
+  return providers.find((provider) => provider.id === brokerProviderId) ?? null;
+}
+
 export async function listBrokerServers(params: {
   brokerProviderId: string;
   platform?: BrokerPlatform;
