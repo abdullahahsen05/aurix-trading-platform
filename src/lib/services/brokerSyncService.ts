@@ -251,8 +251,18 @@ async function runMetaApiSync(params: {
   credentials: BrokerCredentialPayload;
   platform: 'mt4' | 'mt5';
   existingProviderAccountId: string | null;
+  preserveRestricted: boolean;
 }): Promise<SyncSummary> {
-  const { token, accountId, supabase, actorUserId, credentials, platform, existingProviderAccountId } = params;
+  const {
+    token,
+    accountId,
+    supabase,
+    actorUserId,
+    credentials,
+    platform,
+    existingProviderAccountId,
+    preserveRestricted,
+  } = params;
 
   // '/node' subpath → dists/cjs/index.js (Node CJS bundle, no window references).
   // Default import() follows the "import" exports condition → dists/esm-web/index.js which references window.
@@ -444,7 +454,7 @@ async function runMetaApiSync(params: {
     await supabase
       .from('trading_accounts')
       .update({
-        status: 'CONNECTED',
+        status: preserveRestricted ? 'RESTRICTED' : 'CONNECTED',
         last_synced_at: new Date().toISOString(),
         sync_error: null,
         provider: credentials.provider,
@@ -532,7 +542,9 @@ export async function syncTradingAccount(
   // 5. Set SYNCING in DB
   await supabase
     .from('trading_accounts')
-    .update({ status: 'SYNCING', sync_error: null })
+    .update(account.status === 'RESTRICTED'
+      ? { sync_error: null }
+      : { status: 'SYNCING', sync_error: null })
     .eq('id', accountId);
 
   void writeAuditLog({
@@ -556,6 +568,7 @@ export async function syncTradingAccount(
     credentials,
     platform,
     existingProviderAccountId: account.provider_account_id ?? null,
+    preserveRestricted: account.status === 'RESTRICTED',
   });
 
   const result = await Promise.race([syncPromise, timeoutPromise]);
@@ -654,7 +667,7 @@ export async function getBrokerConnectionStatus(
     const providerConnectionStatus = providerAccount.connectionStatus ?? null;
     const providerReady = providerState === 'DEPLOYED' && providerConnectionStatus === 'CONNECTED';
 
-    if (providerReady && localStatus !== 'CONNECTED') {
+    if (providerReady && localStatus !== 'CONNECTED' && localStatus !== 'RESTRICTED') {
       await supabase
         .from('trading_accounts')
         .update({ status: 'CONNECTED', sync_error: null })
@@ -664,7 +677,7 @@ export async function getBrokerConnectionStatus(
     return {
       accountId,
       status: providerReady
-        ? 'CONNECTED'
+        ? localStatus === 'RESTRICTED' ? 'RESTRICTED' : 'CONNECTED'
         : localStatus === 'DISCONNECTED'
           ? 'DISCONNECTED'
           : 'SYNCING',

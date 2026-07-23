@@ -2,7 +2,12 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { mapRiskRuleToDto, mapRiskEventToDto } from '@/lib/mappers/riskMapper'
 import { writeAuditLog } from '@/lib/services/auditService'
-import type { RiskRuleDto, RiskEventDto } from '@/lib/domain/types'
+import type {
+  RiskRuleAction,
+  RiskRuleDto,
+  RiskEventDto,
+  RiskEnforcementStateDto,
+} from '@/lib/domain/types'
 import { isAdmin, type UserRole } from '@/lib/auth/rbac'
 
 export async function listRiskRules(
@@ -16,7 +21,7 @@ export async function listRiskRules(
   // Platform-level rules (trading_account_id IS NULL) always included for active users
   const { data: platformRules } = await supabase
     .from('risk_rules')
-    .select('id, trading_account_id, name, severity, metric, threshold, enabled')
+    .select('id, trading_account_id, name, severity, action, metric, threshold, enabled')
     .is('trading_account_id', null)
 
   let accountRules: typeof platformRules = []
@@ -24,15 +29,28 @@ export async function listRiskRules(
   if (isAdmin(role)) {
     const { data } = await supabase
       .from('risk_rules')
-      .select('id, trading_account_id, name, severity, metric, threshold, enabled')
+      .select('id, trading_account_id, name, severity, action, metric, threshold, enabled')
       .not('trading_account_id', 'is', null)
     accountRules = data ?? []
   } else if (accountId) {
     const { data } = await supabase
       .from('risk_rules')
-      .select('id, trading_account_id, name, severity, metric, threshold, enabled')
+      .select('id, trading_account_id, name, severity, action, metric, threshold, enabled')
       .eq('trading_account_id', accountId)
     accountRules = data ?? []
+  } else {
+    const { data: accounts } = await supabase
+      .from('trading_accounts')
+      .select('id')
+      .eq('user_id', userId)
+    const accountIds = (accounts ?? []).map((account) => account.id)
+    if (accountIds.length > 0) {
+      const { data } = await supabase
+        .from('risk_rules')
+        .select('id, trading_account_id, name, severity, action, metric, threshold, enabled')
+        .in('trading_account_id', accountIds)
+      accountRules = data ?? []
+    }
   }
 
   const all = [...(platformRules ?? []), ...(accountRules ?? [])]
@@ -79,6 +97,7 @@ export async function createRiskRule(data: {
   accountId?: string
   name: string
   severity: string
+  action: RiskRuleAction
   metric: string
   threshold: number
 }): Promise<RiskRuleDto> {
@@ -94,11 +113,12 @@ export async function createRiskRule(data: {
       trading_account_id: data.accountId ?? null,
       name: data.name,
       severity: data.severity,
+      action: data.action,
       metric: data.metric,
       threshold: data.threshold,
       enabled: true,
     })
-    .select('id, trading_account_id, name, severity, metric, threshold, enabled')
+    .select('id, trading_account_id, name, severity, action, metric, threshold, enabled')
     .single()
 
   if (error || !rule) throw new Error(`Failed to create risk rule: ${error?.message}`)
@@ -108,6 +128,7 @@ export async function createRiskRule(data: {
 export async function updateRiskRule(id: string, data: {
   name?: string
   severity?: string
+  action?: RiskRuleAction
   threshold?: number
   enabled?: boolean
 }): Promise<RiskRuleDto> {
@@ -117,7 +138,7 @@ export async function updateRiskRule(id: string, data: {
     .from('risk_rules')
     .update(data)
     .eq('id', id)
-    .select('id, trading_account_id, name, severity, metric, threshold, enabled')
+    .select('id, trading_account_id, name, severity, action, metric, threshold, enabled')
     .single()
 
   if (error || !rule) throw new Error(`Failed to update risk rule: ${error?.message}`)
@@ -175,4 +196,25 @@ export async function findActiveRiskEvent(
     .limit(1)
   if (error) throw new Error(`Failed to query active risk event: ${error.message}`)
   return data?.[0]?.id ?? null
+}
+
+export async function getRiskEnforcementState(
+  accountId: string,
+): Promise<RiskEnforcementStateDto | null> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('account_risk_states')
+    .select('trading_account_id, blocked_new_trades, restricted, breached_rules, source, last_evaluated_at')
+    .eq('trading_account_id', accountId)
+    .maybeSingle()
+  if (error) throw new Error(`Failed to load risk enforcement state: ${error.message}`)
+  if (!data) return null
+  return {
+    accountId: data.trading_account_id,
+    blockedNewTrades: data.blocked_new_trades,
+    restricted: data.restricted,
+    breachedRules: Array.isArray(data.breached_rules) ? data.breached_rules : [],
+    source: data.source as RiskEnforcementStateDto['source'],
+    lastEvaluatedAt: data.last_evaluated_at,
+  }
 }

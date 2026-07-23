@@ -14,7 +14,8 @@
     "seed:supabase": "tsx scripts/seed-supabase.ts",
     "seed:client-demo": "tsx scripts/seed-client-demo.ts",
     "migrate": "tsx scripts/run-migrations.ts",
-    "copy:worker": "tsx scripts/wsa-copy-worker.ts"
+    "copy:worker": "tsx scripts/wsa-copy-worker.ts",
+    "risk:worker": "tsx scripts/wsa-risk-worker.ts"
   },
   "dependencies": {
     "@google/genai": "^2.8.0",

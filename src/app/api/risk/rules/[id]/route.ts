@@ -6,6 +6,7 @@ import { z } from "zod";
 const updateRuleSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   severity: z.enum(["INFO", "WARNING", "CRITICAL"]).optional(),
+  action: z.enum(["WARN", "LIMIT", "RESTRICT"]).optional(),
   threshold: z.number().positive().optional(),
   enabled: z.boolean().optional(),
 });

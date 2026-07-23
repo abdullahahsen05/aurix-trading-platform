@@ -9,6 +9,7 @@ export type AccountStatus =
 export type TradeStatus = "OPEN" | "CLOSED";
 export type TradeSide = "BUY" | "SELL";
 export type RiskSeverity = "INFO" | "WARNING" | "CRITICAL";
+export type RiskRuleAction = "WARN" | "LIMIT" | "RESTRICT";
 
 export interface MoneyValue {
   amount: number;
@@ -71,17 +72,36 @@ export interface EquityPoint {
 
 export interface RiskRuleDto {
   id: string;
+  accountId: string | null;
   scope: "PLATFORM" | "ACCOUNT";
   name: string;
   severity: RiskSeverity;
+  action: RiskRuleAction;
   metric: "DAILY_LOSS" | "MAX_DRAWDOWN" | "OPEN_TRADES";
   threshold: number;
   enabled: boolean;
 }
 
+export interface RiskEnforcementStateDto {
+  accountId: string;
+  blockedNewTrades: boolean;
+  restricted: boolean;
+  breachedRules: Array<{
+    ruleId: string;
+    name: string;
+    metric: RiskRuleDto["metric"];
+    action: RiskRuleAction;
+    threshold: number;
+  }>;
+  source: "SYNC" | "METAAPI_STREAM" | "COPY_PREFLIGHT";
+  lastEvaluatedAt: string;
+}
+
 export interface RiskEventDto {
   id: string;
   accountId: string;
+  ruleId?: string;
+  action?: RiskRuleAction;
   ruleName: string;
   severity: RiskSeverity;
   message: string;

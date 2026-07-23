@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Bell, ShieldAlert, SlidersHorizontal } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { Bell, ShieldAlert } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DataTable,
   GhostButton,
@@ -14,186 +14,395 @@ import {
 } from "@/components/app/WorkspaceUI";
 import { SelectField, TextField } from "@/components/app/FormFields";
 import { formatMoney, formatPercent } from "@/lib/utils/format";
-import type { RiskEventDto, RiskRuleDto, TraderAccountSummary } from "@/lib/domain/types";
+import type {
+  RiskEventDto,
+  RiskRuleAction,
+  RiskRuleDto,
+  TraderAccountSummary,
+} from "@/lib/domain/types";
+
+type RuleDraft = {
+  name: string;
+  metric: RiskRuleDto["metric"];
+  threshold: string;
+  severity: RiskRuleDto["severity"];
+  action: RiskRuleAction;
+  scope: RiskRuleDto["scope"];
+  accountId: string;
+  enabled: boolean;
+};
+
+const EMPTY_DRAFT: RuleDraft = {
+  name: "",
+  metric: "DAILY_LOSS",
+  threshold: "",
+  severity: "CRITICAL",
+  action: "RESTRICT",
+  scope: "PLATFORM",
+  accountId: "",
+  enabled: true,
+};
 
 export default function AdminRiskPage() {
+  const queryClient = useQueryClient();
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<RuleDraft>(EMPTY_DRAFT);
   const [message, setMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const { data: riskRules = [] } = useQuery<RiskRuleDto[]>({
     queryKey: ["risk-rules"],
     queryFn: async () => {
-      const res = await fetch("/api/risk/rules");
-      const json = await res.json();
+      const response = await fetch("/api/risk/rules");
+      const json = await response.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk rules");
       return json.data;
     },
   });
-
   const { data: riskEvents = [] } = useQuery<RiskEventDto[]>({
     queryKey: ["risk-events"],
     queryFn: async () => {
-      const res = await fetch("/api/risk/events");
-      const json = await res.json();
+      const response = await fetch("/api/risk/events");
+      const json = await response.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load risk events");
       return json.data;
     },
   });
-
   const { data: tradingAccounts = [] } = useQuery<TraderAccountSummary[]>({
     queryKey: ["trading-accounts"],
     queryFn: async () => {
-      const res = await fetch("/api/trading-accounts");
-      const json = await res.json();
+      const response = await fetch("/api/trading-accounts");
+      const json = await response.json();
       if (!json.ok) throw new Error(json.error?.message ?? "Failed to load accounts");
       return json.data;
     },
   });
 
-  const handleSave = (event: FormEvent<HTMLFormElement>) => {
+  const startCreate = () => {
+    setEditingRuleId(null);
+    setDraft(EMPTY_DRAFT);
+    setMessage("");
+    setErrorMessage("");
+    document.getElementById("risk-rule-form")?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const startEdit = (rule: RiskRuleDto) => {
+    setEditingRuleId(rule.id);
+    setDraft({
+      name: rule.name,
+      metric: rule.metric,
+      threshold: String(rule.threshold),
+      severity: rule.severity,
+      action: rule.action,
+      scope: rule.scope,
+      accountId: rule.accountId ?? "",
+      enabled: rule.enabled,
+    });
+    setMessage("");
+    setErrorMessage("");
+    document.getElementById("risk-rule-form")?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const saveRule = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setMessage("Admin risk rule saved and queued for supervision.");
+    setSaving(true);
+    setMessage("");
+    setErrorMessage("");
+    const threshold = Number(draft.threshold);
+    if (!Number.isFinite(threshold) || threshold <= 0) {
+      setErrorMessage("Threshold must be greater than zero.");
+      setSaving(false);
+      return;
+    }
+    if (!editingRuleId && draft.scope === "ACCOUNT" && !draft.accountId) {
+      setErrorMessage("Select the account this rule should apply to.");
+      setSaving(false);
+      return;
+    }
+
+    const body = editingRuleId
+      ? {
+          name: draft.name,
+          severity: draft.severity,
+          action: draft.action,
+          threshold,
+          enabled: draft.enabled,
+        }
+      : {
+          name: draft.name,
+          metric: draft.metric,
+          severity: draft.severity,
+          action: draft.action,
+          threshold,
+          ...(draft.scope === "ACCOUNT" ? { accountId: draft.accountId } : {}),
+        };
+    try {
+      const response = await fetch(
+        editingRuleId ? `/api/risk/rules/${editingRuleId}` : "/api/risk/rules",
+        {
+          method: editingRuleId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      const json = await response.json();
+      if (!json.ok) throw new Error(json.error?.message ?? "Risk rule could not be saved.");
+      await queryClient.invalidateQueries({ queryKey: ["risk-rules"] });
+      setMessage(editingRuleId ? "Risk rule updated." : "Risk rule created.");
+      if (!editingRuleId) setDraft(EMPTY_DRAFT);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Risk rule could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const acknowledgeEvent = async (eventId: string) => {
+    const response = await fetch(`/api/risk/events/${eventId}/acknowledge`, { method: "POST" });
+    const json = await response.json();
+    if (!json.ok) {
+      setErrorMessage(json.error?.message ?? "Risk event could not be acknowledged.");
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ["risk-events"] });
+    setMessage("Risk event acknowledged. If the breach still exists, the live monitor will raise it again.");
   };
 
   return (
     <WorkspacePage
       eyebrow="Admin"
       title="Risk configuration"
-      description="Configure risk rules, threshold severity, warning signals, and future account restrictions."
-      action={<PrimaryButton type="button">Create rule</PrimaryButton>}
+      description="Configure real-time limits for connected trader accounts and control their enforcement action."
+      action={<PrimaryButton type="button" onClick={startCreate}>Create rule</PrimaryButton>}
     >
       <InlineStatusStrip
         items={[
           { label: "Rules", value: riskRules.length },
+          { label: "Enabled", value: riskRules.filter((rule) => rule.enabled).length, tone: "lime" },
           {
-            label: "Enabled",
-            value: riskRules.filter((rule) => rule.enabled).length,
-            tone: "lime",
-          },
-          {
-            label: "Critical",
-            value: riskRules.filter((rule) => rule.severity === "CRITICAL").length,
+            label: "Enforced",
+            value: riskRules.filter((rule) => rule.action !== "WARN" && rule.enabled).length,
             tone: "danger",
           },
-          { label: "Events", value: riskEvents.length, tone: "accent" },
+          { label: "Open events", value: riskEvents.length, tone: "accent" },
         ]}
       />
 
       {message ? (
-        <div className="mt-5 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm font-medium text-accent">
+        <div className="mt-5 rounded-2xl border border-accent-2/20 bg-accent-2/10 px-4 py-3 text-sm font-medium text-accent-2">
           {message}
         </div>
       ) : null}
+      {errorMessage ? (
+        <div className="mt-5 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-medium text-danger">
+          {errorMessage}
+        </div>
+      ) : null}
 
-      <div className="mt-5 grid items-stretch gap-4 xl:grid-cols-[1fr_1fr]">
-        <Panel className="flex flex-col">
-          <div className="flex items-center justify-between gap-3">
+      <div className="mt-5 grid gap-4">
+        <Panel>
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-foreground">Risk rules</h2>
-              <p className="mt-1 text-sm text-muted">Editable rule set used by platform operations.</p>
+              <p className="mt-1 text-sm text-muted">
+                LIMIT blocks new WSA copy openings. RESTRICT also locks the account until the breach clears.
+              </p>
             </div>
-            <StatusPill tone="accent">Live monitor</StatusPill>
+            <StatusPill tone="lime">MetaApi live monitor</StatusPill>
           </div>
-          <div className="mt-4 flex-1">
+          <div className="mt-4">
             <DataTable
-              headers={["Rule", "Scope", "Metric", "Threshold", "Severity", "Enabled"]}
+              headers={["Rule", "Scope", "Metric", "Threshold", "Severity", "Action", "State", ""]}
               rows={riskRules.map((rule) => [
-                <span key="name" className="font-semibold text-foreground">
-                  {rule.name}
-                </span>,
+                <span key="name" className="font-semibold text-foreground">{rule.name}</span>,
                 rule.scope,
                 rule.metric,
                 rule.threshold,
                 <StatusPill
                   key="severity"
-                  tone={
-                    rule.severity === "CRITICAL"
-                      ? "danger"
-                      : rule.severity === "WARNING"
-                        ? "accent"
-                        : "muted"
-                  }
+                  tone={rule.severity === "CRITICAL" ? "danger" : rule.severity === "WARNING" ? "accent" : "muted"}
                 >
                   {rule.severity}
                 </StatusPill>,
-                rule.enabled ? "Yes" : "No",
+                <StatusPill key="action" tone={rule.action === "RESTRICT" ? "danger" : rule.action === "LIMIT" ? "accent" : "muted"}>
+                  {rule.action}
+                </StatusPill>,
+                rule.enabled ? "Enabled" : "Disabled",
+                <button
+                  key="edit"
+                  type="button"
+                  className="text-sm font-semibold text-accent hover:text-accent-2"
+                  onClick={() => startEdit(rule)}
+                >
+                  Edit
+                </button>,
               ])}
             />
           </div>
         </Panel>
 
-        <div className="flex flex-col gap-4">
-          <Panel>
-            <div className="flex items-start gap-4">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-accent/10 text-accent">
-                <SlidersHorizontal className="h-5 w-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">Trading limit settings</h2>
-                <p className="mt-1 text-sm leading-5 text-muted">Set the platform defaults before backend enforcement.</p>
-              </div>
-            </div>
-            <form className="mt-6 grid gap-5" onSubmit={handleSave}>
-              <div className="grid gap-4 xl:grid-cols-2">
-                <TextField label="Daily loss limit" defaultValue="2500" />
-                <TextField label="Max drawdown" defaultValue="5" />
-                <SelectField label="Action" defaultValue="WARN">
-                  <option value="WARN">Warn only</option>
-                  <option value="LIMIT">Limit sizing</option>
-                  <option value="RESTRICT">Restrict account</option>
-                </SelectField>
-                <SelectField label="Scope" defaultValue="PLATFORM">
-                  <option value="PLATFORM">Platform</option>
-                  <option value="ACCOUNT">Account</option>
-                </SelectField>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-                <p className="text-sm text-muted">Changes will apply to the platform risk configuration.</p>
-                <div className="flex gap-3">
-                  <GhostButton type="button">Reset</GhostButton>
-                  <PrimaryButton type="submit">Save settings</PrimaryButton>
-                </div>
-              </div>
-            </form>
-          </Panel>
-
-          <Panel className="flex flex-1 flex-col">
-            <div className="flex items-start gap-4">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-danger/10 text-danger">
-                <ShieldAlert className="h-5 w-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">Platform moderation tools</h2>
-                <p className="mt-1 text-sm text-muted">Quick actions for the moderation queue.</p>
-              </div>
-            </div>
-            <div className="mt-5 grid flex-1 grid-cols-2 grid-rows-2 gap-3">
-              <button className="flex flex-col justify-between rounded-2xl border border-line bg-background p-5 text-left transition hover:border-accent/40">
-                <p className="text-sm font-semibold text-foreground">Suspend user</p>
-                <p className="mt-2 text-xs leading-5 text-muted">Disable access for a trader or admin account.</p>
-              </button>
-              <button className="flex flex-col justify-between rounded-2xl border border-line bg-background p-5 text-left transition hover:border-accent/40">
-                <p className="text-sm font-semibold text-foreground">Lock account</p>
-                <p className="mt-2 text-xs leading-5 text-muted">Prevent new trade submissions until review.</p>
-              </button>
-              <button className="flex flex-col justify-between rounded-2xl border border-line bg-background p-5 text-left transition hover:border-accent/40">
-                <p className="text-sm font-semibold text-foreground">Resolve warning</p>
-                <p className="mt-2 text-xs leading-5 text-muted">Mark a risk event as reviewed and archived.</p>
-              </button>
-              <button className="flex flex-col justify-between rounded-2xl border border-line bg-background p-5 text-left transition hover:border-accent/40">
-                <p className="text-sm font-semibold text-foreground">Recheck broker</p>
-                <p className="mt-2 text-xs leading-5 text-muted">Run another mock supervision sync.</p>
-              </button>
-            </div>
-          </Panel>
-        </div>
-      </div>
-
-      <div className="mt-5">
+        <div id="risk-rule-form">
         <Panel>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-start gap-4">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-danger/10 text-danger">
+              <ShieldAlert className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                {editingRuleId ? "Edit risk rule" : "Create risk rule"}
+              </h2>
+              <p className="mt-1 text-sm leading-5 text-muted">
+                Rules are evaluated from the MetaApi account stream and again after every manual sync.
+              </p>
+            </div>
+          </div>
+          <form className="mt-6 grid gap-5" onSubmit={saveRule}>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <TextField
+                label="Rule name"
+                value={draft.name}
+                onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                required
+              />
+              <SelectField
+                label="Metric"
+                value={draft.metric}
+                disabled={Boolean(editingRuleId)}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  metric: event.target.value as RuleDraft["metric"],
+                }))}
+              >
+                <option value="DAILY_LOSS">Daily closed loss (account currency)</option>
+                <option value="MAX_DRAWDOWN">Current drawdown (%)</option>
+                <option value="OPEN_TRADES">Open positions</option>
+              </SelectField>
+              <TextField
+                label="Threshold"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={draft.threshold}
+                onChange={(event) => setDraft((current) => ({ ...current, threshold: event.target.value }))}
+                required
+              />
+              <SelectField
+                label="Severity"
+                value={draft.severity}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  severity: event.target.value as RuleDraft["severity"],
+                }))}
+              >
+                <option value="INFO">Info</option>
+                <option value="WARNING">Warning</option>
+                <option value="CRITICAL">Critical</option>
+              </SelectField>
+              <SelectField
+                label="Enforcement"
+                value={draft.action}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  action: event.target.value as RuleDraft["action"],
+                }))}
+              >
+                <option value="WARN">Warn only</option>
+                <option value="LIMIT">Block new WSA copy openings</option>
+                <option value="RESTRICT">Restrict account and block openings</option>
+              </SelectField>
+              <SelectField
+                label="Scope"
+                value={draft.scope}
+                disabled={Boolean(editingRuleId)}
+                onChange={(event) => setDraft((current) => ({
+                  ...current,
+                  scope: event.target.value as RuleDraft["scope"],
+                  accountId: "",
+                }))}
+              >
+                <option value="PLATFORM">All trader accounts</option>
+                <option value="ACCOUNT">One account</option>
+              </SelectField>
+              {draft.scope === "ACCOUNT" ? (
+                <SelectField
+                  label="Trading account"
+                  value={draft.accountId}
+                  disabled={Boolean(editingRuleId)}
+                  onChange={(event) => setDraft((current) => ({ ...current, accountId: event.target.value }))}
+                  required
+                >
+                  <option value="">Select an account</option>
+                  {tradingAccounts.map((account) => (
+                    <option key={account.accountId} value={account.accountId}>
+                      {account.accountName} · {account.brokerName}
+                    </option>
+                  ))}
+                </SelectField>
+              ) : null}
+              {editingRuleId ? (
+                <SelectField
+                  label="State"
+                  value={draft.enabled ? "ENABLED" : "DISABLED"}
+                  onChange={(event) => setDraft((current) => ({
+                    ...current,
+                    enabled: event.target.value === "ENABLED",
+                  }))}
+                >
+                  <option value="ENABLED">Enabled</option>
+                  <option value="DISABLED">Disabled</option>
+                </SelectField>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+              <p className="text-sm text-muted">
+                Existing positions remain closable even while new openings are blocked.
+              </p>
+              <div className="flex gap-3">
+                <GhostButton type="button" onClick={startCreate}>Reset</GhostButton>
+                <PrimaryButton type="submit" disabled={saving}>
+                  {saving ? "Saving…" : editingRuleId ? "Update rule" : "Create rule"}
+                </PrimaryButton>
+              </div>
+            </div>
+          </form>
+        </Panel>
+        </div>
+
+        <Panel>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Open risk events</h2>
+              <p className="mt-1 text-sm text-muted">
+                Acknowledging removes the alert; an unresolved live breach will be raised again.
+              </p>
+            </div>
+            <StatusPill tone="accent">{riskEvents.length} open</StatusPill>
+          </div>
+          <div className="mt-4 grid gap-3">
+            {riskEvents.length === 0 ? (
+              <p className="rounded-2xl border border-line bg-background p-4 text-sm text-muted">
+                No open risk events.
+              </p>
+            ) : riskEvents.map((event) => (
+              <div key={event.id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-line bg-background p-4">
+                <div>
+                  <p className="font-semibold text-foreground">{event.ruleName}</p>
+                  <p className="mt-1 text-sm text-muted">{event.message}</p>
+                </div>
+                <GhostButton type="button" onClick={() => void acknowledgeEvent(event.id)}>
+                  Acknowledge
+                </GhostButton>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel>
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-foreground">Rule-based account monitoring</h2>
-              <p className="mt-1 text-sm text-muted">Accounts are shown with the current mock risk posture.</p>
+              <p className="mt-1 text-sm text-muted">Live connection and restriction status for every trading account.</p>
             </div>
             <StatusPill tone="accent">{tradingAccounts.length} accounts</StatusPill>
           </div>
@@ -201,25 +410,28 @@ export default function AdminRiskPage() {
             <DataTable
               headers={["Account", "Broker", "Status", "Balance", "Equity", "Drawdown", "Risk state"]}
               rows={tradingAccounts.map((account) => [
-                <span key="account" className="font-semibold text-foreground">
-                  {account.accountName}
-                </span>,
+                <span key="account" className="font-semibold text-foreground">{account.accountName}</span>,
                 account.brokerName,
-                <StatusPill key="status" tone={account.status === "CONNECTED" ? "lime" : "accent"}>
+                <StatusPill
+                  key="status"
+                  tone={account.status === "RESTRICTED" ? "danger" : account.status === "CONNECTED" ? "lime" : "accent"}
+                >
                   {account.status}
                 </StatusPill>,
                 formatMoney(account.balance),
-                <span key="equity" className="font-semibold text-accent-2">
-                  {formatMoney(account.equity)}
-                </span>,
+                <span key="equity" className="font-semibold text-accent-2">{formatMoney(account.equity)}</span>,
                 formatPercent(account.drawdownPercent),
-                account.drawdownPercent >= 5 ? "Watch" : "Normal",
+                account.status === "RESTRICTED"
+                  ? <StatusPill key="risk" tone="danger">Restricted</StatusPill>
+                  : account.drawdownPercent >= 5
+                    ? <StatusPill key="risk" tone="accent">Watch</StatusPill>
+                    : <StatusPill key="risk" tone="lime">Normal</StatusPill>,
               ])}
             />
           </div>
           <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-muted">
             <Bell className="h-4 w-4 text-accent" />
-            Risk events are live from the platform monitoring stream.
+            MetaApi stream changes are evaluated without waiting for the trader to press Sync.
           </div>
         </Panel>
       </div>

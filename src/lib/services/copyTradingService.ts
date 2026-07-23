@@ -4,6 +4,7 @@ import { calculateFollowerLot } from "@/lib/copy/lotScaling";
 import { evaluateFollowerEligibility } from "@/lib/copy/eligibility";
 import { BrokerExecutionError, MetaApiBrokerAdapter } from "@/lib/broker/MetaApiBrokerAdapter";
 import { logBrokerOperation } from "@/lib/services/brokerOperationLog";
+import { getRiskEnforcementState } from "@/lib/services/riskService";
 import {
   copyModeToScalingMode,
   mapFollowerSymbol,
@@ -1318,6 +1319,37 @@ export async function executeCopyForEvent(eventId: string, actorUserId: string |
 
     const accountStatus = statusByAccount.get(f.follower_account_id) ?? "DISCONNECTED";
     const accountRule = accountRules.get(f.follower_account_id);
+    const generalRiskState = await getRiskEnforcementState(f.follower_account_id);
+    if (generalRiskState?.blockedNewTrades) {
+      const reason = generalRiskState.breachedRules.length > 0
+        ? `General risk rule blocked new copied trades: ${generalRiskState.breachedRules.map((rule) => rule.name).join(", ")}.`
+        : "General risk controls blocked new copied trades.";
+      await Promise.all([
+        supabase.from("copy_execution_logs").insert({
+          ...baseLog,
+          action: "SKIPPED",
+          status: "SKIPPED",
+          error_code: COPY_ERROR.COPY_RISK_BLOCKED,
+          error_message: reason,
+        }),
+        supabase.from("copy_rule_events").insert({
+          scope: "ACCOUNT",
+          rule_code: "GENERAL_RISK_RULE",
+          reason,
+          trading_account_id: f.follower_account_id,
+          strategy_id: strategy.id,
+          master_event_id: ev.id,
+          follower_id: f.id,
+          mode: "LIVE",
+          details: {
+            source: "general_risk_engine",
+            rules: generalRiskState.breachedRules.map((rule) => rule.ruleId),
+          },
+        }),
+      ]);
+      summary.skipped++;
+      return;
+    }
     const risk = await loadAccountRiskRuntime(f.follower_account_id, "LIVE");
     const elig = evaluateFollowerEligibility({
       globalEmergencyStop: settings.emergencyStopEnabled || f.emergency_stop,

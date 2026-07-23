@@ -129,6 +129,8 @@ function RiskContent() {
 
   const dailyLossLimit =
     riskRules.find((rule) => rule.metric === "DAILY_LOSS")?.threshold ?? 1250;
+  const maxDrawdownLimit =
+    riskRules.find((rule) => rule.metric === "MAX_DRAWDOWN")?.threshold ?? 5;
   const maxDrawdown =
     tradingAccounts.length > 0
       ? Math.max(...tradingAccounts.map((a) => a.drawdownPercent))
@@ -159,7 +161,12 @@ function RiskContent() {
             value: formatPercent(maxDrawdown),
             tone: maxDrawdown >= 5 ? "danger" : "accent",
           },
-          { label: "Restricted", value: "0", helper: "No account locked", tone: "lime" },
+          {
+            label: "Restricted",
+            value: tradingAccounts.filter((account) => account.status === "RESTRICTED").length,
+            helper: "Live enforced account locks",
+            tone: tradingAccounts.some((account) => account.status === "RESTRICTED") ? "danger" : "lime",
+          },
         ]}
       />
 
@@ -175,8 +182,8 @@ function RiskContent() {
           <RiskBar
             label="Max drawdown protection"
             value={maxDrawdown}
-            max={8}
-            tone={maxDrawdown >= 5 ? "danger" : "lime"}
+            max={maxDrawdownLimit}
+            tone={maxDrawdown >= maxDrawdownLimit ? "danger" : "lime"}
           />
 
           {/* Warning notifications — read-only for traders */}
@@ -234,7 +241,7 @@ function RiskContent() {
             </div>
             <div className="mt-4">
               <DataTable
-                headers={["Rule", "Scope", "Metric", "Threshold", "Severity", "State"]}
+                headers={["Rule", "Scope", "Metric", "Threshold", "Severity", "Action", "State"]}
                 rows={riskRules.map((rule) => [
                   <span key="name" className="font-semibold text-foreground">
                     {rule.name}
@@ -254,6 +261,7 @@ function RiskContent() {
                   >
                     {rule.severity}
                   </StatusPill>,
+                  rule.action,
                   rule.enabled ? "Enabled" : "Disabled",
                 ])}
               />

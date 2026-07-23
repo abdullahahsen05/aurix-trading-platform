@@ -20,18 +20,22 @@ const account: TraderAccountSummary = {
 const rules: RiskRuleDto[] = [
   {
     id: "daily",
+    accountId: null,
     scope: "PLATFORM",
     name: "Daily loss limit",
     severity: "CRITICAL",
+    action: "RESTRICT",
     metric: "DAILY_LOSS",
     threshold: 1000,
     enabled: true,
   },
   {
     id: "drawdown",
+    accountId: null,
     scope: "PLATFORM",
     name: "Max drawdown",
     severity: "WARNING",
+    action: "RESTRICT",
     metric: "MAX_DRAWDOWN",
     threshold: 5,
     enabled: true,
@@ -83,9 +87,11 @@ describe("risk", () => {
   test("creates event for open trade count breach", () => {
     const openTradesRule: RiskRuleDto = {
       id: "open-trades",
+      accountId: null,
       scope: "PLATFORM",
       name: "Max 3 open trades",
       severity: "INFO",
+      action: "LIMIT",
       metric: "OPEN_TRADES",
       threshold: 3,
       enabled: true,
@@ -103,6 +109,8 @@ describe("risk", () => {
     expect(events).toHaveLength(1);
     expect(events[0].ruleName).toBe("Max 3 open trades");
     expect(events[0].message).toContain("Open trades: 3");
+    expect(events[0].ruleId).toBe("open-trades");
+    expect(events[0].action).toBe("LIMIT");
   });
 
   test("message includes account name, metric, threshold, and observed value", () => {

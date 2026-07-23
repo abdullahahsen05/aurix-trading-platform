@@ -72,7 +72,7 @@ function makeQuery(resolveValue: unknown) {
       Promise.resolve(resolveValue).then(resolve, reject),
     single: vi.fn().mockResolvedValue(resolveValue),
   };
-  const chainMethods = ["select", "eq", "is", "not", "order", "limit", "gte", "lte", "neq", "in"];
+  const chainMethods = ["select", "eq", "is", "not", "order", "limit", "gte", "lte", "neq", "in", "update", "upsert"];
   for (const method of chainMethods) {
     obj[method] = vi.fn().mockReturnValue(obj);
   }
@@ -90,6 +90,7 @@ const mockAccount = {
   account_name: "Eval 100K",
   broker_name: "MT5 Demo",
   status: "CONNECTED",
+  risk_restricted_at: null,
 };
 const mockSnapshot = [{ balance: 10000, equity: 9500, drawdown_percent: 5.0 }];
 const mockDrawdownRule = {
@@ -119,7 +120,9 @@ function setupMockClient(overrides: {
     .mockReturnValueOnce(
       makeQuery({ data: overrides.platformRules ?? [mockDrawdownRule], error: null }),
     )
-    .mockReturnValueOnce(makeQuery({ data: overrides.accountRules ?? [], error: null }));
+    .mockReturnValueOnce(makeQuery({ data: overrides.accountRules ?? [], error: null }))
+    .mockReturnValueOnce(makeQuery({ data: [], error: null }))
+    .mockReturnValueOnce(makeQuery({ data: null, error: null }));
   vi.mocked(createAdminClient).mockReturnValue(
     { from: mockFrom } as unknown as ReturnType<typeof createAdminClient>,
   );

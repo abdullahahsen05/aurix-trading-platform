@@ -52,3 +52,10 @@ if (process.env.WSA_COPY_ENGINE_ENABLED === "true" && process.env.BROKER_EXECUTI
 } else {
   console.warn("[dev] WSA live copy worker is disabled by the execution flags.");
 }
+
+if (process.env.METAAPI_TOKEN && process.env.WSA_RISK_ENGINE_ENABLED !== "false") {
+  start("WSA risk worker", [resolve("node_modules/tsx/dist/cli.mjs"), resolve("scripts/wsa-risk-worker.ts")]);
+  console.log("[dev] WSA live risk worker enabled.");
+} else {
+  console.warn("[dev] WSA live risk worker is disabled or METAAPI_TOKEN is missing.");
+}

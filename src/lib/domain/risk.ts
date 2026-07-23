@@ -31,6 +31,8 @@ export function evaluateRiskRules(input: RiskEvaluationInput): RiskEventDto[] {
       return {
         id: `${account.accountId}-${rule.id}`,
         accountId: account.accountId,
+        ruleId: rule.id,
+        action: rule.action,
         ruleName: rule.name,
         severity: rule.severity,
         message: `[${rule.severity}] ${rule.name} breached for ${account.accountName}. ${observed}.`,
