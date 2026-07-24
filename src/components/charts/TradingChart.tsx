@@ -313,7 +313,7 @@ export function TradingChart({ accountId }: { accountId?: string }) {
           <button
             type="button"
             onClick={() => setAssistantOpen((open) => !open)}
-            className="absolute bottom-4 right-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-accent/40 bg-background/95 px-4 text-sm font-semibold text-accent shadow-xl backdrop-blur transition  hover:bg-panel"
+            className="absolute bottom-4 right-4 inline-flex min-h-11 items-center gap-2 rounded-[5px] border border-accent/40 bg-background/95 px-4 text-sm font-semibold text-accent transition hover:bg-panel"
           >
             <Sparkles className="h-4 w-4" />
             {ASK_ASSISTANT_LABEL}
@@ -324,10 +324,7 @@ export function TradingChart({ accountId }: { accountId?: string }) {
           <div className="inner-surface p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Data source</p>
             <div className="mt-3 flex items-center gap-3">
-              <span className="relative flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-30" />
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-accent" />
-              </span>
+              <span className="inline-flex h-3 w-3 rounded-full bg-accent" />
               <div>
                 <p className="text-sm font-semibold text-foreground">TradingView</p>
                 <p className="text-xs text-muted">Live market data via embedded widget.</p>
@@ -374,7 +371,7 @@ export function TradingChart({ accountId }: { accountId?: string }) {
                     : "Uses XAUUSD, timeframe, selected-account metrics, recent trades, and news. Live chart capture is disabled on this deployment."}
               </p>
             </div>
-            <span className="rounded-full border border-line bg-background px-3 py-1 text-xs font-semibold text-muted">
+            <span className="rounded-[4px] border border-line bg-background px-3 py-1 text-xs font-semibold text-muted">
               {visionStatus}
             </span>
           </div>

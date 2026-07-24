@@ -8,7 +8,7 @@ export function RiskStatusPanel({
   rules: RiskRuleDto[];
 }) {
   return (
-    <div className="rounded-lg border border-line bg-panel p-4">
+    <div className="rounded-[4px] border border-line bg-panel p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Risk monitor</h3>
         <span className="text-xs text-muted">{rules.filter((rule) => rule.enabled).length} rules</span>

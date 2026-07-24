@@ -53,7 +53,7 @@ export function WorkspacePage({
       variants={pageMotion}
       initial="hidden"
       animate="show"
-      className="mx-auto w-full max-w-[1600px]"
+      className="w-full"
     >
       <motion.div variants={itemMotion} className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-line pb-5">
         <div>
@@ -82,7 +82,7 @@ export function FilterChipRow({
   }>;
 }) {
   return (
-    <div className="inline-flex max-w-full flex-wrap gap-px rounded-[4px] border border-line bg-background p-1">
+    <div className="invisible-scrollbar inline-flex max-w-full flex-nowrap gap-px overflow-x-auto rounded-[4px] border border-line bg-background p-1">
       {chips.map((chip) => (
         <button
           key={chip.label}
@@ -138,7 +138,7 @@ export function StatTile({
   return (
     <motion.div
       variants={itemMotion}
-      className="border border-line bg-panel p-5"
+      className="bg-panel p-5"
     >
       <p className="text-sm font-semibold text-muted">{label}</p>
       <p className={`mt-3 text-2xl font-semibold ${toneClass}`}>{value}</p>
@@ -158,7 +158,7 @@ export function InlineStatusStrip({
   }>;
   }) {
   return (
-    <div className="overflow-x-auto border border-line bg-panel">
+    <div className="invisible-scrollbar overflow-x-auto border border-line bg-panel">
       <div className="flex min-w-max">
         {items.map((item) => {
           const toneClass =
@@ -221,7 +221,7 @@ export function DataTable({
   rows: Array<Array<ReactNode>>;
 }) {
   return (
-    <div className="overflow-x-auto border border-line bg-panel">
+    <div className="invisible-scrollbar overflow-x-auto border border-line bg-panel">
       <table className="w-full min-w-[780px] text-left text-sm">
         <thead className="bg-panel-strong text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
           <tr>
@@ -319,7 +319,7 @@ export function EmptyState({
   const Icon = icon;
 
   return (
-    <div className="border border-line bg-panel p-6 text-left">
+    <div className="py-4 text-left">
       <div className="grid h-9 w-9 place-items-center rounded-[4px] bg-accent/10 text-accent">
         <Icon className="h-5 w-5" />
       </div>

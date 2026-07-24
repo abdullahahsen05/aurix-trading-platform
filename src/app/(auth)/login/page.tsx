@@ -396,15 +396,15 @@ export default function LoginPage() {
 
             <p className="mt-8 text-[13px] text-muted">
               New trader?{" "}
-              <a
+              <Link
                 href="/register"
                 className="font-semibold text-accent transition-colors hover:text-foreground"
               >
                 Create account <span aria-hidden="true">-&gt;</span>
-              </a>
+              </Link>
             </p>
 
-            <a
+            <Link
               href="/demo"
               className="mt-8 flex items-center justify-between border border-line bg-[#090b0b] p-4 text-sm font-semibold text-foreground transition-colors hover:border-white/20 hover:bg-[#0d1010] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent md:hidden"
             >
@@ -412,7 +412,7 @@ export default function LoginPage() {
               <span className="text-accent" aria-hidden="true">
                 -&gt;
               </span>
-            </a>
+            </Link>
           </div>
         </section>
       </div>

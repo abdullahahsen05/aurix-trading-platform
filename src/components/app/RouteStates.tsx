@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { AlertTriangle, RefreshCcw, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import { GhostButton, PrimaryButton } from "@/components/app/WorkspaceUI";
+import { BRAND_INITIAL, BRAND_WORDMARK } from "@/lib/brand";
 
 function SkeletonBlock({ className = "" }: { className?: string }) {
   return <div className={`animate-pulse rounded-[4px] bg-panel-strong/80 ${className}`} />;
@@ -19,7 +20,7 @@ export function WorkspaceLoadingState({
   description?: string;
 }) {
   return (
-    <section className="mx-auto max-w-[1440px]">
+    <section className="w-full">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase text-accent">{eyebrow}</p>
@@ -28,17 +29,18 @@ export function WorkspaceLoadingState({
         </div>
         <SkeletonBlock className="h-10 w-36 rounded-[4px]" />
       </div>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-px overflow-hidden rounded-[4px] border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <SkeletonBlock key={index} className="h-28 rounded-[4px]" />
+          <SkeletonBlock key={index} className="h-24 rounded-none bg-panel" />
         ))}
       </div>
-      <div className="mt-5 grid gap-4 xl:grid-cols-[0.64fr_0.36fr]">
-        <SkeletonBlock className="h-[28rem] rounded-[4px]" />
-        <SkeletonBlock className="h-[28rem] rounded-[4px]" />
+      <div className="mt-5 grid items-stretch gap-4 xl:grid-cols-[0.64fr_0.36fr]">
+        <SkeletonBlock className="h-72 rounded-[4px]" />
+        <SkeletonBlock className="h-72 rounded-[4px]" />
       </div>
-      <div className="mt-5">
-        <SkeletonBlock className="h-[26rem] rounded-[4px]" />
+      <div className="mt-5 grid items-stretch gap-4 xl:grid-cols-2">
+        <SkeletonBlock className="h-52 rounded-[4px]" />
+        <SkeletonBlock className="h-52 rounded-[4px]" />
       </div>
       <p className="mt-5 text-sm text-muted">{title}</p>
       <p className="mt-2 text-sm leading-6 text-muted">{description}</p>
@@ -48,18 +50,36 @@ export function WorkspaceLoadingState({
 
 export function AuthLoadingState() {
   return (
-    <main className="grid min-h-screen place-items-center px-4 py-10">
-      <section className="w-full max-w-md rounded-[6px] border border-line bg-panel p-6">
-        <SkeletonBlock className="h-10 w-28" />
-        <SkeletonBlock className="mt-8 h-8 w-48" />
-        <SkeletonBlock className="mt-3 h-4 w-full" />
-        <div className="mt-7 grid gap-4">
-          <SkeletonBlock className="h-12 w-full rounded-[4px]" />
-          <SkeletonBlock className="h-12 w-full rounded-[4px]" />
+    <main className="grid min-h-screen bg-background text-foreground md:grid-cols-2">
+      <aside className="relative hidden min-h-screen overflow-hidden border-r border-line bg-[#060808] p-10 md:flex md:flex-col lg:p-14">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-accent text-sm font-black text-background">
+            {BRAND_INITIAL}
+          </span>
+          <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
         </div>
-        <div className="mt-6 flex items-center justify-between gap-4">
-          <SkeletonBlock className="h-4 w-28" />
-          <SkeletonBlock className="h-11 w-28 rounded-[4px]" />
+        <div className="my-auto max-w-md">
+          <SkeletonBlock className="h-8 w-72" />
+          <SkeletonBlock className="mt-4 h-4 w-full" />
+          <SkeletonBlock className="mt-2 h-4 w-4/5" />
+        </div>
+      </aside>
+      <section className="flex min-h-screen items-center justify-center bg-[#060808] px-5 py-8 sm:px-8 lg:px-14">
+        <div className="w-full max-w-xl">
+          <div className="mb-10 flex items-center gap-3 md:hidden">
+            <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-accent text-sm font-black text-background">
+              {BRAND_INITIAL}
+            </span>
+            <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
+          </div>
+          <SkeletonBlock className="h-3 w-28" />
+          <SkeletonBlock className="mt-6 h-9 w-64 max-w-full" />
+          <SkeletonBlock className="mt-4 h-4 w-full" />
+          <div className="mt-8 grid gap-5">
+            <SkeletonBlock className="h-14 w-full rounded-[6px]" />
+            <SkeletonBlock className="h-14 w-full rounded-[6px]" />
+            <SkeletonBlock className="h-14 w-full rounded-[6px]" />
+          </div>
         </div>
       </section>
     </main>
@@ -110,23 +130,41 @@ export function AuthErrorState({
   unstable_retry: () => void;
 }) {
   return (
-    <main className="grid min-h-screen place-items-center px-4 py-10">
-      <section className="w-full max-w-md rounded-[6px] border border-line bg-panel p-6">
-        <div className="grid h-12 w-12 place-items-center rounded-[4px] bg-danger/10 text-danger">
-          <AlertTriangle className="h-5 w-5" />
+    <main className="grid min-h-screen bg-background text-foreground md:grid-cols-2">
+      <aside className="relative hidden min-h-screen overflow-hidden border-r border-line bg-[#060808] p-10 md:flex md:flex-col lg:p-14">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-accent text-sm font-black text-background">
+            {BRAND_INITIAL}
+          </span>
+          <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
         </div>
-        <h1 className="mt-6 text-2xl font-semibold text-foreground">Authentication screen failed</h1>
-        <p className="mt-3 text-sm leading-6 text-muted">
-          We could not render this auth flow. Try again and the page will re-fetch.
-        </p>
-        <div className="mt-6 flex gap-3">
-          <GhostButton type="button" onClick={unstable_retry}>
-            Retry
-          </GhostButton>
-          <PrimaryButton type="button" onClick={unstable_retry}>
-            <RefreshCcw className="mr-2 inline-block h-4 w-4" />
-            Reload
-          </PrimaryButton>
+        <div className="my-auto max-w-md">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent">Secure access</p>
+          <h2 className="mt-4 text-3xl font-semibold leading-tight">Operate with clarity. Scale with control.</h2>
+        </div>
+      </aside>
+      <section className="flex min-h-screen items-center justify-center bg-[#060808] px-5 py-8 sm:px-8 lg:px-14">
+        <div className="w-full max-w-xl">
+          <div className="mb-10 flex items-center gap-3 md:hidden">
+            <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-accent text-sm font-black text-background">
+              {BRAND_INITIAL}
+            </span>
+            <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
+          </div>
+          <div className="grid h-11 w-11 place-items-center rounded-[4px] border border-danger/25 bg-danger/10 text-danger">
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <h1 className="mt-6 text-3xl font-semibold text-foreground">Authentication screen failed</h1>
+          <p className="mt-3 max-w-lg text-sm leading-6 text-muted">
+            We could not render this auth flow. Try again and the page will re-fetch.
+          </p>
+          <div className="mt-7 flex flex-wrap gap-3 border-t border-line pt-5">
+            <GhostButton type="button" onClick={unstable_retry}>Retry</GhostButton>
+            <PrimaryButton type="button" onClick={unstable_retry}>
+              <RefreshCcw className="mr-2 inline-block h-4 w-4" />
+              Reload
+            </PrimaryButton>
+          </div>
         </div>
       </section>
     </main>
@@ -147,7 +185,7 @@ export function EmptyState({
   const Icon = icon;
 
   return (
-    <div className="rounded-[4px] border border-line bg-panel/70 p-6 text-left">
+    <div className="py-4 text-left">
       <div className="grid h-9 w-9 place-items-center rounded-[4px] bg-accent/10 text-accent">
         <Icon className="h-5 w-5" />
       </div>

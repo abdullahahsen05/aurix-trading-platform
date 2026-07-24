@@ -169,7 +169,7 @@ export function CrmOverlay({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/82 backdrop-blur-sm" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/82" />
         <Dialog.Content className="fixed inset-0 z-50 overflow-hidden bg-panel focus:outline-none">
           <motion.div
             initial={{ opacity: 0, y: 36 }}
@@ -226,7 +226,7 @@ export function CrmOverlay({
               </div>
             </div>
 
-            <motion.div variants={pageMotion} initial="hidden" animate="show" className="min-h-0 flex-1 overflow-y-auto p-5">
+            <motion.div variants={pageMotion} initial="hidden" animate="show" className="min-h-0 flex-1 invisible-scrollbar overflow-y-auto p-5">
               {activeTab === "CONTACT_DIRECTORY" ? (
                 <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
                   <Panel>
@@ -327,7 +327,7 @@ export function CrmOverlay({
                       </div>
                       <StatusPill tone="muted">{contacts.length} contacts</StatusPill>
                     </div>
-                    <div className="mt-4 max-h-[calc(100vh-260px)] space-y-2 overflow-y-auto pr-1">
+                    <div className="mt-4 max-h-[calc(100vh-260px)] space-y-2 invisible-scrollbar overflow-y-auto pr-1">
                       {totalContacts === 0 ? (
                         <EmptyState
                           title="No profiles match"
@@ -356,10 +356,10 @@ export function CrmOverlay({
                                 <StatusPill tone={contact.role === "TRADER" ? "lime" : "accent"}>{contact.role}</StatusPill>
                               </div>
                               <div className="mt-3 flex flex-wrap gap-2">
-                                <span className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
+                                <span className="rounded-[4px] border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
                                   {contact.role === "TRADER" ? contact.segment : contact.team}
                                 </span>
-                                <span className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
+                                <span className="rounded-[4px] border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
                                   {new Date(contact.lastActivityAt).toLocaleDateString()}
                                 </span>
                               </div>
@@ -412,7 +412,7 @@ export function CrmOverlay({
 
                       <div className="mt-4 flex flex-wrap gap-2">
                         {selectedContact.tags.map((tag) => (
-                          <span key={tag} className="rounded-full border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
+                          <span key={tag} className="rounded-[4px] border border-line bg-panel px-3 py-1 text-xs font-semibold text-muted">
                             {tag}
                           </span>
                         ))}

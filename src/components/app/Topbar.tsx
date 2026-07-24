@@ -129,7 +129,7 @@ export function Topbar({
   }, [notificationsOpen]);
 
   return (
-    <header className="sticky top-0 z-20 min-h-16 border-b border-line bg-panel/95 px-4 py-3 backdrop-blur-sm lg:px-6">
+    <header className="sticky top-0 z-20 min-h-16 border-b border-line bg-panel px-4 py-3 lg:px-7">
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           <button
@@ -155,7 +155,7 @@ export function Topbar({
             >
               <Bell className="h-4 w-4" />
               {unreadCount > 0 && (
-                <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-bold text-background">
+                <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-[4px] bg-accent px-1 text-[10px] font-bold text-background">
                   {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
               )}
@@ -193,7 +193,7 @@ export function Topbar({
                   </button>
                 </div>
               </div>
-              <div className="max-h-80 overflow-auto">
+              <div className="invisible-scrollbar max-h-80 overflow-y-auto">
                 {notifications.length === 0 ? (
                   <p className="px-4 py-6 text-center text-sm text-muted">No notifications yet.</p>
                 ) : (
@@ -260,7 +260,7 @@ export function Topbar({
           ) : null}
         </div>
       </div>
-      <nav className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+      <nav className="invisible-scrollbar mt-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">
         {mobileItems.map((item) => (
           <Link
             key={item.href}

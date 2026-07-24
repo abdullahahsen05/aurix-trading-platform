@@ -72,7 +72,7 @@ export default function EvaluationsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-sm font-semibold text-foreground">{prog.name}</h3>
                     {locked && (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                      <span className="rounded-[4px] bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                         Locked
                       </span>
                     )}

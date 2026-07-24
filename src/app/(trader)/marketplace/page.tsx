@@ -95,7 +95,7 @@ export default function MarketplacePage() {
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-52 animate-pulse rounded-3xl bg-panel" />
+            <div key={i} className="h-52 animate-pulse rounded-[4px] bg-panel" />
           ))}
         </div>
       ) : isError ? (
@@ -116,7 +116,7 @@ export default function MarketplacePage() {
             return (
               <div
                 key={product.id}
-                className="flex flex-col gap-3 rounded-3xl border border-line bg-panel p-5"
+                className="flex flex-col gap-3 rounded-[4px] border border-line bg-panel p-5"
               >
                 <div className="flex items-start justify-between gap-2">
                   <Link

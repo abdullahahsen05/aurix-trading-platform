@@ -148,7 +148,7 @@ export default async function AccountDetailPage({
           <div className="mt-4 space-y-3">
             {latestSnapshots.length > 0 ? (
               latestSnapshots.map((snapshot) => (
-                <div key={snapshot.capturedAt} className="flex items-center justify-between rounded-xl border border-line bg-background p-3 text-sm">
+                <div key={snapshot.capturedAt} className="flex items-center justify-between rounded-[4px] border border-line bg-background p-3 text-sm">
                   <span className="text-muted">{new Date(snapshot.capturedAt).toLocaleString()}</span>
                   <span className="font-semibold text-accent-2">${snapshot.equity.toLocaleString()}</span>
                 </div>

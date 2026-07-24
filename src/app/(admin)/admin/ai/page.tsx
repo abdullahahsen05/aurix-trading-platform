@@ -228,8 +228,8 @@ export default function AdminAiPage() {
       description="Use admin-only AI tools, monitor metadata-only usage, and manage per-user limits."
     >
       <AiProviderSettingsPanel />
-      <div className="mb-5 grid gap-5 xl:grid-cols-2">
-        <Panel>
+      <div className="mb-5 grid items-stretch gap-5 xl:h-[560px] xl:grid-cols-2">
+        <Panel className="invisible-scrollbar min-h-0 overflow-y-auto xl:h-full">
           <h2 className="text-lg font-semibold text-foreground">Admin assistant</h2>
           <p className="mt-1 text-sm text-muted">
             Operations and support guidance without automatic access to platform-wide user data.
@@ -240,7 +240,7 @@ export default function AdminAiPage() {
             rows={3}
             maxLength={4000}
             placeholder="Draft a risk-review checklist for a disconnected trader account."
-            className="mt-4 w-full resize-none rounded-xl border border-line bg-background px-4 py-3 text-sm text-foreground outline-none focus:border-accent"
+            className="mt-4 w-full resize-none rounded-[4px] border border-line bg-background px-4 py-3 text-sm text-foreground outline-none focus:border-accent"
           />
           <PrimaryButton
             type="button"
@@ -253,13 +253,13 @@ export default function AdminAiPage() {
           </PrimaryButton>
           {assistantError ? <p className="mt-3 text-sm text-danger">{assistantError}</p> : null}
           {assistantResult ? (
-            <div className="mt-4 whitespace-pre-wrap rounded-xl border border-line bg-background px-4 py-4 text-sm leading-6 text-foreground/90">
+            <div className="mt-4 whitespace-pre-wrap rounded-[4px] border border-line bg-background px-4 py-4 text-sm leading-6 text-foreground/90">
               {assistantResult}
             </div>
           ) : null}
         </Panel>
 
-        <Panel>
+        <Panel className="invisible-scrollbar min-h-0 overflow-y-auto xl:h-full">
           <h2 className="text-lg font-semibold text-foreground">Admin image analysis</h2>
           <p className="mt-1 text-sm text-muted">
             Generic image upload is available only to Admin and Super Admin. Images are not written to usage logs.
@@ -290,7 +290,7 @@ export default function AdminAiPage() {
             rows={2}
             maxLength={1000}
             placeholder="Optional analysis focus"
-            className="mt-3 w-full resize-none rounded-xl border border-line bg-background px-4 py-3 text-sm text-foreground outline-none focus:border-accent"
+            className="mt-3 w-full resize-none rounded-[4px] border border-line bg-background px-4 py-3 text-sm text-foreground outline-none focus:border-accent"
           />
           <PrimaryButton
             type="button"
@@ -303,7 +303,7 @@ export default function AdminAiPage() {
           </PrimaryButton>
           {imageError ? <p className="mt-3 text-sm text-danger">{imageError}</p> : null}
           {imageResult ? (
-            <div className="mt-4 whitespace-pre-wrap rounded-xl border border-line bg-background px-4 py-4 text-sm leading-6 text-foreground/90">
+            <div className="mt-4 whitespace-pre-wrap rounded-[4px] border border-line bg-background px-4 py-4 text-sm leading-6 text-foreground/90">
               {imageResult}
             </div>
           ) : null}
@@ -321,7 +321,7 @@ export default function AdminAiPage() {
 
       {notice ? (
         <div
-          className={`mt-5 rounded-2xl border px-4 py-3 text-sm font-medium ${
+          className={`mt-5 rounded-[4px] border px-4 py-3 text-sm font-medium ${
             notice.type === "success"
               ? "border-accent/20 bg-accent/10 text-accent"
               : "border-danger/20 bg-danger/10 text-danger"
@@ -331,21 +331,21 @@ export default function AdminAiPage() {
         </div>
       ) : null}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.5fr_1fr]">
+      <div className="mt-5 grid items-stretch gap-5 xl:h-[680px] xl:grid-cols-[1.5fr_1fr]">
         {/* Users + limits */}
-        <Panel className="min-w-0">
+        <Panel className="flex min-h-0 min-w-0 flex-col overflow-hidden xl:h-full">
           <h2 className="text-lg font-semibold text-foreground">Trader AI limits</h2>
           <p className="mt-1 text-sm text-muted">Select a user to manage their access and daily limits.</p>
 
-          <div className="mt-4">
+          <div className="invisible-scrollbar mt-4 min-h-0 flex-1 overflow-auto">
             {usersLoading ? (
               <div className="space-y-2">
                 {[...Array(5)].map((_, i) => (
-                  <div key={i} className="h-12 rounded-xl border border-line bg-panel animate-pulse" />
+                  <div key={i} className="h-12 rounded-[4px] border border-line bg-panel animate-pulse" />
                 ))}
               </div>
             ) : isError ? (
-              <div className="rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+              <div className="rounded-[4px] border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
                 Failed to load users.
               </div>
             ) : users.length === 0 ? (
@@ -376,9 +376,9 @@ export default function AdminAiPage() {
         </Panel>
 
         {/* Selected user controls + recent activity */}
-        <div className="space-y-5">
+        <div className="flex min-h-0 flex-col gap-5 xl:h-full">
           {selected ? (
-            <Panel>
+            <Panel className="invisible-scrollbar min-h-0 shrink overflow-y-auto">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-accent">Manage user</p>
@@ -449,7 +449,7 @@ export default function AdminAiPage() {
                     <select
                       value={creditMode}
                       onChange={(e) => setCreditMode(e.target.value as "add" | "set")}
-                      className="w-full rounded-xl border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                      className="w-full rounded-[4px] border border-line bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
                     >
                       <option value="add">Add</option>
                       <option value="set">Set exact</option>
@@ -467,13 +467,13 @@ export default function AdminAiPage() {
             </Panel>
           ) : null}
 
-          <Panel>
+          <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <h3 className="text-sm font-semibold text-foreground">Recent activity</h3>
-            <div className="mt-3 space-y-2">
+            <div className="invisible-scrollbar mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto">
               {(usage?.recent ?? []).slice(0, 12).map((r) => (
                 <div
                   key={r.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-line bg-background px-3 py-2 text-xs"
+                  className="flex items-center justify-between gap-3 border-b border-line bg-background px-3 py-2 text-xs last:border-b-0"
                 >
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-foreground">{r.userName}</p>
@@ -494,8 +494,8 @@ export default function AdminAiPage() {
       {/* Disable AI confirmation */}
       <Dialog.Root open={Boolean(disableAiUser)} onOpenChange={(o) => !o && setDisableAiUser(null)}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-danger/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75" />
+          <Dialog.Content className="max-h-[90vh] invisible-scrollbar overflow-y-auto fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[6px] border border-danger/30 bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
             <Dialog.Title className="flex items-center gap-2 text-xl font-semibold text-foreground">
               <AlertTriangle className="h-5 w-5 text-danger" />
               Disable AI for {disableAiUser?.name}?

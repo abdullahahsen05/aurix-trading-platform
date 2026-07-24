@@ -133,7 +133,7 @@ export default function RegisterPage() {
     router.push(redirect);
   };
 
-  const BrandHeader = () => (
+  const brandHeader = (
     <Link href="/" className="flex w-fit items-center gap-3">
       <span className="grid h-10 w-10 place-items-center rounded-[7px] bg-accent text-sm font-black text-background">
         {BRAND_INITIAL}
@@ -144,7 +144,7 @@ export default function RegisterPage() {
     </Link>
   );
 
-  const BrandPanel = () => (
+  const brandPanel = (
     <aside className="relative hidden min-h-screen overflow-hidden border-r border-line bg-[#060808] md:flex md:flex-col">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.038)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:112px_112px] opacity-75" />
@@ -220,7 +220,7 @@ export default function RegisterPage() {
       </div>
 
       <header className="relative z-10 px-8 pt-8 lg:px-12 lg:pt-10 xl:px-[60px] xl:pt-[44px]">
-        <BrandHeader />
+        {brandHeader}
       </header>
 
       <div className="relative z-10 mt-auto px-8 pb-[68px] lg:px-12 xl:px-[60px]">
@@ -286,12 +286,12 @@ export default function RegisterPage() {
     return (
       <main className="min-h-screen overflow-x-hidden bg-background text-foreground">
         <div className="grid min-h-screen md:grid-cols-[50%_50%]">
-          <BrandPanel />
+          {brandPanel}
 
           <section className="flex min-h-screen items-start justify-center bg-[#060808] px-5 py-7 sm:px-8 md:items-center md:px-10 md:py-10 lg:px-14 xl:px-[72px]">
             <div className="w-full max-w-[560px] md:-translate-y-[14px]">
               <div className="mb-10 md:hidden">
-                <BrandHeader />
+                {brandHeader}
               </div>
 
               <p className="text-[12px] font-bold uppercase tracking-[0.3em] text-accent">
@@ -367,12 +367,12 @@ export default function RegisterPage() {
   return (
     <main className="min-h-screen overflow-x-hidden bg-background text-foreground">
       <div className="grid min-h-screen md:grid-cols-[50%_50%]">
-        <BrandPanel />
+        {brandPanel}
 
         <section className="flex min-h-screen items-start justify-center bg-[#060808] px-5 py-7 sm:px-8 md:items-center md:px-10 md:py-10 lg:px-14 xl:px-[72px]">
           <div className="w-full max-w-[560px] md:-translate-y-[8px]">
             <div className="mb-10 md:hidden">
-              <BrandHeader />
+              {brandHeader}
             </div>
 
             <button

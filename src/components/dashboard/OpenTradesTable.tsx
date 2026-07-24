@@ -15,11 +15,11 @@ export function OpenTradesTable({
           <h3 className="text-sm font-semibold text-foreground">Open trades</h3>
           <p className="mt-1 text-xs text-muted">Refreshing from the mock broker feed</p>
         </div>
-        <span className="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+        <span className="rounded-[4px] bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
           {updatedAt ? `Updated ${updatedAt}` : "Live refresh"}
         </span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="invisible-scrollbar overflow-x-auto">
         <table className="w-full min-w-[620px] text-left text-sm">
           <thead className="bg-panel-strong text-xs font-semibold uppercase tracking-[0.12em] text-muted">
             <tr>

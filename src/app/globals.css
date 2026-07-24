@@ -43,11 +43,14 @@
 
 * {
   box-sizing: border-box;
+}
+
+.invisible-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-*::-webkit-scrollbar {
+.invisible-scrollbar::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -66,18 +69,6 @@ body {
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.28), transparent 70%);
 }
 
 ::selection {
@@ -103,6 +94,21 @@ body::before {
   background: var(--background);
   border: 1px solid var(--line);
   border-radius: 4px;
+}
+
+.definition-grid {
+  display: grid;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.definition-grid > * {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--background);
 }
 
 .label-text {

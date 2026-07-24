@@ -38,7 +38,7 @@ export function CopyExecutionLog({ logs, loading }: { logs: CopyLogDto[]; loadin
       {loading ? (
         <p className="px-5 py-8 text-sm text-muted">Loading copy activity…</p>
       ) : logs.length ? (
-        <div className="overflow-x-auto">
+        <div className="invisible-scrollbar overflow-x-auto">
           <table className="w-full min-w-[780px] text-left text-sm">
             <thead className="border-b border-line bg-background/60 text-xs uppercase tracking-widest text-muted">
               <tr>

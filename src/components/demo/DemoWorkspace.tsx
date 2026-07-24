@@ -124,7 +124,7 @@ function DemoTradingChartSection() {
           {bars.map((bar, index) => (
             <div key={index} className="flex flex-1 items-end gap-1">
               <div
-                className={`w-full rounded-t-xl ${index % 3 === 0 ? "bg-danger/70" : "bg-accent/80"}`}
+                className={`w-full rounded-t-[4px] ${index % 3 === 0 ? "bg-danger/70" : "bg-accent/80"}`}
                 style={{ height: `${bar}%` }}
               />
             </div>
@@ -134,10 +134,7 @@ function DemoTradingChartSection() {
           <div className="inner-surface p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Data source</p>
             <div className="mt-3 flex items-center gap-3">
-              <span className="relative flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-30" />
-                <span className="relative inline-flex h-3 w-3 rounded-full bg-accent" />
-              </span>
+              <span className="inline-flex h-3 w-3 rounded-full bg-accent" />
               <div>
                 <p className="text-sm font-semibold text-foreground">Demo market data</p>
                 <p className="text-xs text-muted">No live feed, dxFeed, or broker API is used.</p>
@@ -178,7 +175,7 @@ function DemoDashboardPage() {
         <PageActionGroup>
           <select
             aria-label="Demo account selector"
-            className="h-9 rounded-full border border-line bg-background px-3 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
+            className="h-9 rounded-[4px] border border-line bg-background px-3 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50"
             defaultValue={demoAccounts[0]?.id}
           >
             {demoAccounts.map((account) => (
@@ -316,7 +313,7 @@ function DemoAccountsPage() {
                 <p className="text-sm text-muted">{account.accountNumber} · {account.sync}</p>
                 <Link
                   href={`/demo/accounts/${account.id}`}
-                  className="rounded-full bg-panel-strong px-5 py-2 text-sm font-semibold text-accent transition "
+                  className="rounded-[4px] bg-panel-strong px-5 py-2 text-sm font-semibold text-accent transition "
                 >
                   View details
                 </Link>
@@ -363,7 +360,7 @@ function DemoCopyTradingPage() {
             {demoAccounts.slice(0, 2).map((account, index) => (
               <span
                 key={account.id}
-                className="rounded-full border border-lime/30 bg-lime/10 px-3 py-1 text-xs font-semibold text-lime"
+                className="rounded-[4px] border border-lime/30 bg-lime/10 px-3 py-1 text-xs font-semibold text-lime"
               >
                 {account.name}: {index === 0 ? "Ultra Fast" : "Normal"}
               </span>
@@ -535,7 +532,7 @@ function DemoAiPage() {
             <DemoDisabledButton>Clear</DemoDisabledButton>
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto py-4">
+          <div className="flex-1 space-y-4 invisible-scrollbar overflow-y-auto py-4">
             <div className="grid gap-4 lg:grid-cols-3">
               {demoAiCards.map((card) => (
                 <div key={card.title} className="rounded-[4px] border border-line bg-background px-4 py-3">
@@ -661,7 +658,7 @@ function DemoTerminalPage() {
         </header>
 
         <div className="flex min-h-[640px]">
-          <aside className="hidden w-36 shrink-0 overflow-y-auto border-r border-line bg-panel lg:block">
+          <aside className="hidden w-36 shrink-0 invisible-scrollbar overflow-y-auto border-r border-line bg-panel lg:block">
             {["forex", "commodities", "indices", "crypto"].map((cat) => (
               <div key={cat} className="border-b border-line">
                 <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-widest text-muted">{cat}</div>
@@ -700,7 +697,7 @@ function DemoTerminalPage() {
                       {[40, 52, 46, 61, 58, 70, 63, 76, 72, 84, 79, 91].map((bar, index) => (
                         <div key={index} className="flex flex-1 items-end">
                           <div
-                            className={`w-full rounded-t-xl ${index % 4 === 0 ? "bg-danger/70" : "bg-accent/80"}`}
+                            className={`w-full rounded-t-[4px] ${index % 4 === 0 ? "bg-danger/70" : "bg-accent/80"}`}
                             style={{ height: `${bar}%` }}
                           />
                         </div>
@@ -983,7 +980,7 @@ function DemoEvaluationsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-semibold text-foreground">{program.name}</h3>
                   {!program.unlocked ? (
-                    <span className="rounded-full bg-panel-strong px-2 py-0.5 text-xs text-muted">Locked</span>
+                    <span className="rounded-[4px] bg-panel-strong px-2 py-0.5 text-xs text-muted">Locked</span>
                   ) : null}
                   <StatusPill tone={program.status === "PASSED" ? "lime" : program.status === "ACTIVE" ? "accent" : "muted"}>
                     {program.status}

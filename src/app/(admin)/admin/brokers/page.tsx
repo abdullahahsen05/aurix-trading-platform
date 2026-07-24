@@ -161,7 +161,7 @@ export default function AdminBrokersPage() {
       title="Broker catalog"
       description="Manage the broker companies and MetaTrader servers traders can select during account connection."
     >
-      <Panel>
+      <div className="border border-line border-l-2 border-l-accent bg-panel px-4 py-3">
         <div className="flex items-start gap-3">
           <WalletCards className="mt-0.5 h-5 w-5 text-accent" />
           <div>
@@ -172,10 +172,10 @@ export default function AdminBrokersPage() {
             </p>
           </div>
         </div>
-      </Panel>
+      </div>
 
       {notice ? (
-        <div className={`mt-5 rounded-xl border px-4 py-3 text-sm ${
+        <div className={`mt-5 rounded-[4px] border px-4 py-3 text-sm ${
           notice.tone === "success"
             ? "border-accent/20 bg-accent/10 text-accent"
             : "border-danger/20 bg-danger/10 text-danger"
@@ -184,11 +184,11 @@ export default function AdminBrokersPage() {
         </div>
       ) : null}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_1fr]">
-        <Panel>
-          <h2 className="text-lg font-semibold text-foreground">Broker providers</h2>
-          <p className="mt-1 text-sm text-muted">Select a provider to manage its server list.</p>
-          <div className="mt-4">
+      <div className="mt-5 grid items-stretch gap-5 xl:h-[520px] xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.7fr)]">
+        <Panel className="flex min-h-0 flex-col overflow-hidden xl:h-full">
+          <h2 className="shrink-0 text-lg font-semibold text-foreground">Broker providers</h2>
+          <p className="mt-1 shrink-0 text-sm text-muted">Select a provider to manage its server list.</p>
+          <div className="invisible-scrollbar mt-4 min-h-0 flex-1 overflow-auto">
             {providers.isLoading ? (
               <p className="text-sm text-muted">Loading broker catalog…</p>
             ) : (providers.data?.providers.length ?? 0) === 0 ? (
@@ -217,7 +217,7 @@ export default function AdminBrokersPage() {
           </div>
         </Panel>
 
-        <Panel>
+        <Panel className="invisible-scrollbar min-h-0 overflow-y-auto xl:h-full">
           <h2 className="text-lg font-semibold text-foreground">Add broker provider</h2>
           <form className="mt-4 space-y-4" onSubmit={createProvider}>
             <TextField
@@ -283,8 +283,8 @@ export default function AdminBrokersPage() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-            <div>
+          <div className="mt-5 grid items-stretch gap-5 lg:h-[500px] lg:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.7fr)]">
+            <div className="invisible-scrollbar min-h-0 overflow-auto lg:h-full">
               {(servers.data?.servers.length ?? 0) === 0 ? (
                 <EmptyState title="No configured servers" description="Add a server name for this broker and platform." />
               ) : (
@@ -322,7 +322,7 @@ export default function AdminBrokersPage() {
               )}
             </div>
             {editingServerId ? (
-              <form onSubmit={updateServer} className="space-y-4 rounded-2xl border border-accent/30 bg-background p-4">
+              <form onSubmit={updateServer} className="invisible-scrollbar min-h-0 space-y-4 overflow-y-auto rounded-[4px] border border-accent/30 bg-background p-4 lg:h-full">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-accent">Editing server</p>
                   <h3 className="mt-1 font-semibold text-foreground">
@@ -355,7 +355,7 @@ export default function AdminBrokersPage() {
                 </div>
               </form>
             ) : (
-              <form onSubmit={createServer} className="space-y-4 rounded-2xl border border-line bg-background p-4">
+              <form onSubmit={createServer} className="invisible-scrollbar min-h-0 space-y-4 overflow-y-auto rounded-[4px] border border-line bg-background p-4 lg:h-full">
                 <h3 className="font-semibold text-foreground">Add configured server</h3>
                 <SelectField
                   label="Platform"

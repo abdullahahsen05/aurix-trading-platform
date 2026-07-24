@@ -19,7 +19,7 @@ export function MetricCard({
     tone === "positive" ? "text-accent" : tone === "warning" ? "text-accent-2" : "text-foreground";
 
   return (
-    <article className="group rounded-lg border border-line bg-panel p-4 shadow-[0_20px_60px_rgba(0,0,0,0.16)] transition duration-200  hover:border-accent/45">
+    <article className="group rounded-[4px] border border-line bg-panel p-4 transition-colors duration-200 hover:border-accent/45">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-muted">{label}</p>
         {Icon ? (

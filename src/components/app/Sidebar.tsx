@@ -71,7 +71,7 @@ export function Sidebar({
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Workspace</p>
         </div>
         <div className="mt-2 flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 overflow-y-auto">
+          <div className="invisible-scrollbar flex-1 overflow-y-auto">
             {renderNav()}
           </div>
           <div className="border-t border-line/70 pt-4">
@@ -89,8 +89,8 @@ export function Sidebar({
 
       <Dialog.Root open={mobileNavOpen} onOpenChange={onMobileNavOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm lg:hidden" />
-        <Dialog.Content className="fixed left-0 top-0 z-50 flex h-full w-[88vw] max-w-sm flex-col border-r border-line bg-panel px-5 py-5 shadow-[18px_0_60px_rgba(0,0,0,0.45)] focus:outline-none lg:hidden">
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 lg:hidden" />
+        <Dialog.Content className="fixed left-0 top-0 z-50 flex h-full w-[88vw] max-w-sm flex-col border-r border-line bg-panel px-5 py-5 focus:outline-none lg:hidden">
           <Dialog.Title className="sr-only">Navigation menu</Dialog.Title>
           <div className="mb-7 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -109,7 +109,7 @@ export function Sidebar({
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Workspace</p>
             </div>
             <div className="mt-2 flex min-h-0 flex-1 flex-col">
-              <div className="flex-1 overflow-y-auto">
+              <div className="invisible-scrollbar flex-1 overflow-y-auto">
                 {renderNav(() => onMobileNavOpenChange(false))}
               </div>
               <div className="border-t border-line/70 pt-4">

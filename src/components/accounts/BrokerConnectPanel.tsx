@@ -235,7 +235,7 @@ export function BrokerConnectPanel({ accountId }: { accountId: string }) {
   if (isLoading) {
     return (
       <Panel>
-        <div className="h-6 w-48 animate-pulse rounded-lg bg-panel" />
+        <div className="h-6 w-48 animate-pulse rounded-[4px] bg-panel" />
       </Panel>
     );
   }

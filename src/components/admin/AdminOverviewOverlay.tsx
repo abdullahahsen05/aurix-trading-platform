@@ -189,7 +189,7 @@ export function AdminOverviewOverlay({
             </Dialog.Close>
           </header>
 
-          <div className="min-h-0 overflow-y-auto p-4 sm:p-5">
+          <div className="min-h-0 invisible-scrollbar overflow-y-auto p-4 sm:p-5">
             {view === "OVERVIEW" ? (
               <div className="grid gap-4">
                 <MetricRail
@@ -234,7 +234,7 @@ export function AdminOverviewOverlay({
             ) : null}
 
             {view === "ACCOUNTS" ? (
-              <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(320px,0.8fr)]">
+              <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(320px,0.8fr)]">
                 <Section
                   eyebrow="Accounts"
                   title="Account supervision"
@@ -242,7 +242,7 @@ export function AdminOverviewOverlay({
                   action={<StatusPill tone="accent">{tradingAccounts.length} accounts</StatusPill>}
                   className="h-[clamp(320px,52vh,520px)]"
                 >
-                  <div className="-mx-px -mb-px min-h-0 flex-1 overflow-auto">
+                  <div className="-mx-px -mb-px min-h-0 flex-1 invisible-scrollbar overflow-auto">
                     <DataTable
                       headers={["Account", "Broker", "Status", "Balance", "Equity", "Drawdown"]}
                       rows={tradingAccounts.map((account) => [
@@ -266,7 +266,7 @@ export function AdminOverviewOverlay({
                   action={<StatusPill tone="muted">{tradingAccounts.length}</StatusPill>}
                   className="h-[clamp(320px,52vh,520px)]"
                 >
-                  <div className="min-h-0 flex-1 overflow-y-auto">
+                  <div className="min-h-0 flex-1 invisible-scrollbar overflow-y-auto">
                     {tradingAccounts.map((account) => (
                       <div key={account.accountId} className="border-b border-line px-5 py-4 last:border-b-0">
                         <div className="flex items-start justify-between gap-3">
@@ -288,7 +288,7 @@ export function AdminOverviewOverlay({
             ) : null}
 
             {view === "RISK_QUEUE" ? (
-              <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.85fr)_minmax(340px,0.9fr)]">
+              <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.85fr)_minmax(340px,0.9fr)]">
                 <Section
                   eyebrow="Risk queue"
                   title="Risk rules"
@@ -296,7 +296,7 @@ export function AdminOverviewOverlay({
                   action={<StatusPill tone="accent">{riskRules.length} rules</StatusPill>}
                   className="h-[clamp(320px,52vh,520px)]"
                 >
-                  <div className="-mx-px -mb-px min-h-0 flex-1 overflow-auto">
+                  <div className="-mx-px -mb-px min-h-0 flex-1 invisible-scrollbar overflow-auto">
                     <DataTable
                       headers={["Rule", "Scope", "Metric", "Threshold", "Severity", "Enabled"]}
                       rows={riskRules.map((rule) => [
@@ -323,7 +323,7 @@ export function AdminOverviewOverlay({
                   action={<StatusPill tone={riskEvents.length > 0 ? "danger" : "lime"}>{riskEvents.length} open</StatusPill>}
                   className="h-[clamp(320px,52vh,520px)]"
                 >
-                  <div className="min-h-0 flex-1 overflow-y-auto">
+                  <div className="min-h-0 flex-1 invisible-scrollbar overflow-y-auto">
                     {riskEvents.length > 0 ? (
                       riskEvents.map((event) => (
                         <div key={event.id} className="relative border-b border-line border-l-2 border-l-danger px-5 py-4 last:border-b-0">
@@ -346,7 +346,7 @@ export function AdminOverviewOverlay({
             ) : null}
 
             {view === "CRM" ? (
-              <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(340px,0.9fr)]">
+              <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(340px,0.9fr)]">
                 <Section
                   eyebrow="CRM"
                   title="Trader watchlist"
@@ -354,7 +354,7 @@ export function AdminOverviewOverlay({
                   action={<StatusPill tone="muted">Live review</StatusPill>}
                   className="h-[clamp(320px,52vh,520px)]"
                 >
-                  <div className="-mx-px -mb-px min-h-0 flex-1 overflow-auto">
+                  <div className="-mx-px -mb-px min-h-0 flex-1 invisible-scrollbar overflow-auto">
                     <DataTable
                       headers={["Trader", "Segment", "Accounts", "Equity", "Last active"]}
                       rows={traders.map((trader) => [
@@ -378,7 +378,7 @@ export function AdminOverviewOverlay({
                   className="h-[clamp(320px,52vh,520px)]"
                 >
                   {crmNotes.length > 0 ? (
-                    <div className="min-h-0 flex-1 overflow-y-auto">
+                    <div className="min-h-0 flex-1 invisible-scrollbar overflow-y-auto">
                       {crmNotes.map((note) => (
                         <div key={note.id} className="border-b border-line px-5 py-4 last:border-b-0">
                           <p className="text-sm leading-6 text-foreground">{note.note}</p>

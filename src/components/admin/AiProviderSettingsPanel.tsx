@@ -170,7 +170,7 @@ export function AiProviderSettingsPanel() {
                   </p>
                 </div>
                 {provider.lastError ? (
-                  <p className="mt-3 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger">
+                  <p className="mt-3 rounded-[4px] border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger">
                     {provider.lastError}
                   </p>
                 ) : null}
@@ -232,8 +232,8 @@ export function AiProviderSettingsPanel() {
         }}
       >
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[6px] border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75" />
+          <Dialog.Content className="max-h-[90vh] invisible-scrollbar overflow-y-auto fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[6px] border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
             <Dialog.Title className="text-xl font-semibold text-foreground">
               {editingProvider ? `${providerName(editingProvider)} API key` : "AI provider key"}
             </Dialog.Title>

@@ -597,7 +597,7 @@ export default function AdminOverviewPage() {
       title={`Welcome, ${sessionUser?.name?.trim() || "Admin"}`}
       description="A single calm operations dashboard for traders, accounts, risk, subscriptions, and audits."
     >
-      <nav className="-mt-1 mb-5 overflow-x-auto border-b border-line">
+      <nav className="-mt-1 mb-5 invisible-scrollbar overflow-x-auto border-b border-line">
         <div className="flex min-w-max gap-7">
           {adminTabs.map((tab) => {
             const active = overlayView === tab.key;
@@ -704,7 +704,7 @@ export default function AdminOverviewPage() {
             <StatusPill tone="muted">Live review</StatusPill>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="min-h-0 flex-1 invisible-scrollbar overflow-auto">
             <table className="w-full min-w-[720px] table-fixed text-left text-sm">
               <colgroup>
                 <col className="w-[28%]" />
@@ -794,7 +794,7 @@ export default function AdminOverviewPage() {
           </header>
 
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 invisible-scrollbar overflow-y-auto">
             {riskEvents.length > 0 ? (
               riskEvents.map((event) => (
                 <article

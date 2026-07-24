@@ -120,7 +120,7 @@ export default function AcademyPage() {
 
       {isLoading ? (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {[1, 2, 3].map((i) => <div key={i} className="h-52 animate-pulse rounded-3xl bg-panel" />)}
+          {[1, 2, 3].map((i) => <div key={i} className="h-52 animate-pulse rounded-[4px] bg-panel" />)}
         </div>
       ) : isError ? (
         <Panel className="mt-4">
@@ -138,10 +138,10 @@ export default function AcademyPage() {
             <Link
               key={course.id}
               href={`/academy/${course.slug}`}
-              className="group flex flex-col gap-3 rounded-3xl border border-line bg-panel p-5 transition-colors hover:border-accent/40 hover:bg-panel/80"
+              className="group flex flex-col gap-3 rounded-[4px] border border-line bg-panel p-5 transition-colors hover:border-accent/40 hover:bg-panel/80"
             >
               {course.coverImageUrl ? (
-                <div className="relative h-32 w-full overflow-hidden rounded-xl">
+                <div className="relative h-32 w-full overflow-hidden rounded-[4px]">
                   <Image
                     src={course.coverImageUrl}
                     alt={course.title}
@@ -152,7 +152,7 @@ export default function AcademyPage() {
                   />
                 </div>
               ) : (
-                <div className="flex h-32 w-full items-center justify-center rounded-xl bg-panel-strong">
+                <div className="flex h-32 w-full items-center justify-center rounded-[4px] bg-panel-strong">
                   <BookOpenCheck className="h-10 w-10 text-muted/40" />
                 </div>
               )}
@@ -203,10 +203,10 @@ export default function AcademyPage() {
         </div>
       )}
 
-      <div className="mt-6 rounded-3xl border border-accent/30 bg-accent/5 p-6">
+      <div className="mt-6 rounded-[4px] border border-accent/30 bg-accent/5 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-4">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-accent/15">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-[4px] bg-accent/15">
               <Users className="h-6 w-6 text-accent" />
             </div>
             <div>
