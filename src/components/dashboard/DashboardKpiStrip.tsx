@@ -87,7 +87,6 @@ function KpiCard({ item }: { item: DashboardKpiItem }) {
   return (
     <motion.article
       variants={itemMotion}
-      whileHover={{ y: -2 }}
       className="card-surface min-h-[116px] px-5 py-4"
     >
       <div className="flex items-start justify-between gap-5">

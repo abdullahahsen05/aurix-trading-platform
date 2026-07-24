@@ -212,7 +212,7 @@ export function CopyRulesAdminPanel() {
       <Panel>
         <h2 className="mb-4 text-lg font-semibold text-foreground">Recent rule triggers</h2>
         {events.length === 0 ? (
-          <p className="rounded-xl border border-line bg-background px-4 py-5 text-sm text-muted">
+          <p className="rounded-[4px] border border-line bg-background px-4 py-5 text-sm text-muted">
             No copy rule has blocked an event yet.
           </p>
         ) : (

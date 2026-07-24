@@ -85,7 +85,7 @@ export function DirectorySearchOverlay<T>({
     >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[92vh] w-[96vw] max-w-6xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[28px] border border-line bg-panel shadow-[0_30px_90px_rgba(0,0,0,0.6)] focus:outline-none">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[92vh] w-[96vw] max-w-6xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[6px] border border-line bg-panel shadow-[0_30px_90px_rgba(0,0,0,0.6)] focus:outline-none">
           <div className="flex min-h-0 w-full flex-col">
             <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
               <div>
@@ -178,7 +178,7 @@ export function DirectorySearchOverlay<T>({
                           key={id}
                           type="button"
                           onClick={() => onSelect(id)}
-                          className={`w-full rounded-2xl border p-3 text-left transition ${
+                          className={`w-full rounded-[4px] border p-3 text-left transition ${
                             active
                               ? "border-accent/40 bg-accent/10"
                               : "border-line bg-background hover:border-accent/30"

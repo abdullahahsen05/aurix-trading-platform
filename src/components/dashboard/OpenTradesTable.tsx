@@ -9,7 +9,7 @@ export function OpenTradesTable({
   updatedAt?: string;
 }) {
   return (
-    <div className="overflow-hidden rounded-3xl border border-line bg-panel">
+    <div className="overflow-hidden rounded-[6px] border border-line bg-panel">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold text-foreground">Open trades</h3>

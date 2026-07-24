@@ -20,7 +20,7 @@ export function CopyExecutionLog({ logs, loading }: { logs: CopyLogDto[]; loadin
     <Panel className="mt-5 overflow-hidden p-0">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line px-5 py-5">
         <div className="flex items-start gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-lime/25 bg-lime/10 text-lime">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[4px] border border-lime/25 bg-lime/10 text-lime">
             <Activity className="h-5 w-5" />
           </div>
           <div>

@@ -84,7 +84,7 @@ export function BillingCheckoutModal({
     <Dialog.Root open={open} onOpenChange={(o) => !o && handleClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[6px] border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
           <Dialog.Title className="text-xl font-semibold text-foreground">
             {product.name}
           </Dialog.Title>
@@ -95,7 +95,7 @@ export function BillingCheckoutModal({
             </Dialog.Description>
           )}
 
-          <div className="mt-4 space-y-2 rounded-xl border border-line bg-background px-4 py-3 text-sm">
+          <div className="mt-4 space-y-2 rounded-[4px] border border-line bg-background px-4 py-3 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted">Amount</span>
               <span className="font-semibold text-foreground">
@@ -132,7 +132,7 @@ export function BillingCheckoutModal({
             </div>
           )}
 
-          <div className="mt-4 flex items-start gap-2 rounded-xl border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-muted">
+          <div className="mt-4 flex items-start gap-2 rounded-[4px] border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-muted">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
             <span>
               {autoActivatesAfterPayment ? (
@@ -149,7 +149,7 @@ export function BillingCheckoutModal({
           </div>
 
           {apiError && (
-            <p className="mt-3 rounded-xl border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger">
+            <p className="mt-3 rounded-[4px] border border-danger/20 bg-danger/10 px-3 py-2 text-xs text-danger">
               {apiError}
             </p>
           )}

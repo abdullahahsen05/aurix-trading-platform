@@ -65,7 +65,7 @@ function DrawdownPanel({ drawdown, riskReward }: { drawdown: number; riskReward:
         </div>
         <TrendingDown className="h-5 w-5 text-accent" />
       </div>
-      <div className="mt-5 rounded-2xl border border-line bg-background p-4">
+      <div className="mt-5 rounded-[4px] border border-line bg-background p-4">
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Max drawdown</p>
@@ -82,11 +82,11 @@ function DrawdownPanel({ drawdown, riskReward }: { drawdown: number; riskReward:
         <p className="mt-2 text-xs text-muted">Threshold mapped to an 8% reference band.</p>
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <div className="rounded-2xl border border-line bg-background p-4">
+        <div className="rounded-[4px] border border-line bg-background p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Risk / reward</p>
           <p className="mt-2 text-xl font-semibold text-accent-2">{riskReward.toFixed(2)}</p>
         </div>
-        <div className="rounded-2xl border border-line bg-background p-4">
+        <div className="rounded-[4px] border border-line bg-background p-4">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Account state</p>
           <p className="mt-2 text-xl font-semibold text-foreground">Stable</p>
         </div>
@@ -133,7 +133,7 @@ export function DashboardModeOverlay({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/82 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[92vh] w-[96vw] max-w-7xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[28px] border border-line bg-panel focus:outline-none">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[92vh] w-[96vw] max-w-7xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[6px] border border-line bg-panel focus:outline-none">
           <motion.div
             variants={container}
             initial="hidden"
@@ -235,13 +235,13 @@ export function DashboardModeOverlay({
                       />
                     </div>
                     <div className="mt-5 grid gap-3 md:grid-cols-2">
-                      <div className="rounded-2xl border border-line bg-background p-4">
+                      <div className="rounded-[4px] border border-line bg-background p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Limit headroom</p>
                         <p className="mt-2 text-xl font-semibold text-accent-2">
                           {formatMoney({ amount: dailyLossLimit - 1240, currency: "USD" })}
                         </p>
                       </div>
-                      <div className="rounded-2xl border border-line bg-background p-4">
+                      <div className="rounded-[4px] border border-line bg-background p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted">Risk posture</p>
                         <p className="mt-2 text-xl font-semibold text-foreground">Within bounds</p>
                       </div>

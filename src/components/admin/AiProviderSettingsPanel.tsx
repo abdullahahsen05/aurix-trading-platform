@@ -119,7 +119,7 @@ export function AiProviderSettingsPanel() {
         </div>
 
         {notice ? (
-          <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+          <div className={`mt-4 rounded-[4px] border px-4 py-3 text-sm ${
             notice.tone === "success"
               ? "border-accent/20 bg-accent/10 text-accent"
               : "border-danger/20 bg-danger/10 text-danger"
@@ -129,13 +129,13 @@ export function AiProviderSettingsPanel() {
         ) : null}
 
         {settings.isError ? (
-          <div className="mt-4 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+          <div className="mt-4 rounded-[4px] border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
             Provider settings could not be loaded. Apply migration 037 before using database-managed keys.
           </div>
         ) : (
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             {(data?.providers ?? []).map((provider) => (
-              <div key={provider.provider} className="rounded-2xl border border-line bg-background p-4">
+              <div key={provider.provider} className="rounded-[4px] border border-line bg-background p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -233,7 +233,7 @@ export function AiProviderSettingsPanel() {
       >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm" />
-          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-3xl border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
+          <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[6px] border border-line bg-panel p-6 shadow-[0_20px_60px_rgba(0,0,0,0.48)] focus:outline-none">
             <Dialog.Title className="text-xl font-semibold text-foreground">
               {editingProvider ? `${providerName(editingProvider)} API key` : "AI provider key"}
             </Dialog.Title>

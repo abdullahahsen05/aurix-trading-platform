@@ -83,7 +83,7 @@ export function DemoAppShell({ children }: { children: React.ReactNode }) {
               <DemoNav currentPathname={pathname} />
             </div>
             <div className="space-y-3 border-t border-line/70 pt-4">
-              <div className="rounded-2xl border border-accent/20 bg-accent/5 p-4">
+              <div className="rounded-[4px] border border-accent/20 bg-accent/5 p-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">Demo Mode — sample data only</p>
                 <p className="mt-2 text-sm leading-6 text-muted">
                   Public workspace preview with no broker sync, live trading, or payments.
@@ -122,7 +122,7 @@ export function DemoAppShell({ children }: { children: React.ReactNode }) {
                   <DemoNav currentPathname={pathname} onNavigate={() => setMobileNavOpen(false)} />
                 </div>
                 <div className="space-y-3 border-t border-line/70 pt-4">
-                  <div className="rounded-2xl border border-accent/20 bg-accent/5 p-4">
+                  <div className="rounded-[4px] border border-accent/20 bg-accent/5 p-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">Demo Mode — sample data only</p>
                     <p className="mt-2 text-sm leading-6 text-muted">
                       Public workspace preview with no broker sync, live trading, or payments.

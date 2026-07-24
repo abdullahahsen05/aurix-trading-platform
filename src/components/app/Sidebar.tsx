@@ -33,7 +33,7 @@ export function Sidebar({
   };
 
   const renderNav = (closeDrawer?: () => void) => (
-    <nav className="flex flex-col gap-3">
+    <nav className="flex flex-col gap-1">
       {items.map((item) => {
         const Icon = item.icon;
         const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -42,7 +42,7 @@ export function Sidebar({
               key={item.href}
               href={item.href}
               onClick={closeDrawer}
-              className={`flex min-h-11 items-center gap-3 rounded-r-2xl border-l-2 px-3 py-2.5 text-sm font-semibold transition ${
+              className={`flex h-10 items-center gap-3 rounded-[4px] border-l-2 px-3 text-sm font-medium transition-colors ${
                 active
                   ? "border-l-accent bg-panel-strong/90 text-accent"
                   : "border-l-transparent text-foreground/78 hover:border-l-[#4a4730] hover:bg-panel-strong/55 hover:text-foreground"
@@ -58,10 +58,10 @@ export function Sidebar({
 
   return (
     <>
-    <aside className="hidden h-screen w-[260px] self-start overflow-hidden border-r border-line bg-panel px-5 py-5 lg:sticky lg:top-0 lg:flex lg:flex-col">
+    <aside className="hidden h-screen w-[240px] self-start overflow-hidden border-r border-line bg-panel px-4 py-4 lg:sticky lg:top-0 lg:flex lg:flex-col">
         <div className="mb-7 px-2">
           <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-md bg-accent text-sm font-black text-background shadow-[0_8px_20px_rgba(255,207,0,0.14)]">
+            <span className="grid h-8 w-8 place-items-center rounded-[4px] bg-accent text-sm font-black text-background">
               {BRAND_INITIAL}
             </span>
             <h1 className="text-xl font-black tracking-tight text-foreground">{BRAND_WORDMARK}</h1>
@@ -78,7 +78,7 @@ export function Sidebar({
             <button
               type="button"
               onClick={handleLogout}
-              className="btn-dark flex h-11 w-full items-center justify-center gap-2 px-4 text-sm text-muted transition hover:border-accent/40 hover:text-accent"
+              className="flex h-10 w-full items-center gap-3 rounded-[4px] border border-line px-3 text-sm text-muted transition-colors hover:border-accent/40 hover:text-accent"
             >
               <LogOut className="h-4 w-4" />
               Logout
@@ -94,13 +94,13 @@ export function Sidebar({
           <Dialog.Title className="sr-only">Navigation menu</Dialog.Title>
           <div className="mb-7 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-md bg-accent text-sm font-black text-background shadow-[0_8px_20px_rgba(255,207,0,0.14)]">
+              <span className="grid h-8 w-8 place-items-center rounded-[4px] bg-accent text-sm font-black text-background">
                 {BRAND_INITIAL}
                 </span>
                 <h2 className="text-xl font-black tracking-tight text-foreground">{BRAND_WORDMARK}</h2>
               </div>
               <Dialog.Close asChild>
-                <button className="grid h-10 w-10 place-items-center rounded-full border border-[rgba(255,255,255,0.08)] bg-panel-strong text-muted">
+                <button className="grid h-9 w-9 place-items-center rounded-[4px] border border-line bg-panel-strong text-muted">
                   <X className="h-4 w-4" />
                 </button>
               </Dialog.Close>

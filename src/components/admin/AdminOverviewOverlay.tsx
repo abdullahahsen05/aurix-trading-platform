@@ -114,7 +114,7 @@ export function AdminOverviewOverlay({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/82 backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[92vh] w-[96vw] max-w-7xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[28px] border border-line bg-panel focus:outline-none">
+        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 flex h-[92vh] w-[96vw] max-w-7xl -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[6px] border border-line bg-panel focus:outline-none">
           <motion.div
             variants={container}
             initial="hidden"
@@ -186,21 +186,21 @@ export function AdminOverviewOverlay({
                         action={<StatusPill tone="lime">Stable</StatusPill>}
                       />
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-xl border border-line bg-background p-4">
+                        <div className="rounded-[4px] border border-line bg-background p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Closed trades</p>
                           <p className="mt-2 text-sm font-semibold text-foreground">
                             {trades.filter((trade) => trade.status === "CLOSED").length}
                           </p>
                         </div>
-                        <div className="rounded-xl border border-line bg-background p-4">
+                        <div className="rounded-[4px] border border-line bg-background p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Watchlist</p>
                           <p className="mt-2 text-sm font-semibold text-foreground">{traders.length}</p>
                         </div>
-                        <div className="rounded-xl border border-line bg-background p-4">
+                        <div className="rounded-[4px] border border-line bg-background p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Risk rules</p>
                           <p className="mt-2 text-sm font-semibold text-danger">{riskRules.length}</p>
                         </div>
-                        <div className="rounded-xl border border-line bg-background p-4">
+                        <div className="rounded-[4px] border border-line bg-background p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Notes</p>
                           <p className="mt-2 text-sm font-semibold text-accent">{crmNotes.length}</p>
                         </div>
@@ -247,7 +247,7 @@ export function AdminOverviewOverlay({
                     />
                     <div className="mt-4 space-y-3">
                       {tradingAccounts.map((account) => (
-                        <div key={account.accountId} className="rounded-xl border border-line bg-background p-4">
+                        <div key={account.accountId} className="rounded-[4px] border border-line bg-background p-4">
                           <div className="flex items-center justify-between gap-3">
                             <p className="font-semibold text-foreground">{account.accountName}</p>
                             <StatusPill tone={account.status === "CONNECTED" ? "lime" : "accent"}>
@@ -309,7 +309,7 @@ export function AdminOverviewOverlay({
                     />
                     <div className="mt-4 space-y-3">
                       {riskEvents.map((event) => (
-                        <div key={event.id} className="rounded-xl border border-line bg-background p-4">
+                        <div key={event.id} className="rounded-[4px] border border-line bg-background p-4">
                           <div className="flex items-center justify-between gap-3">
                             <p className="font-semibold text-foreground">{event.ruleName}</p>
                             <StatusPill tone="accent">{event.severity}</StatusPill>
@@ -361,7 +361,7 @@ export function AdminOverviewOverlay({
                     />
                     <div className="mt-4 space-y-3">
                       {crmNotes.map((note) => (
-                        <div key={note.id} className="rounded-xl border border-line bg-background p-4">
+                        <div key={note.id} className="rounded-[4px] border border-line bg-background p-4">
                           <p className="text-sm leading-6 text-foreground">{note.note}</p>
                           <p className="mt-2 text-xs text-muted">
                             {note.authorName} - {new Date(note.createdAt).toLocaleString()}
