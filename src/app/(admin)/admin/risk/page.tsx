@@ -200,8 +200,8 @@ export default function AdminRiskPage() {
         </div>
       ) : null}
 
-      <div className="mt-5 grid gap-4">
-        <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+      <div className="mt-5 grid gap-5">
+        <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
         <Panel className="flex h-[420px] min-w-0 flex-col overflow-hidden">
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
             <div>
@@ -274,7 +274,7 @@ export default function AdminRiskPage() {
         </div>
 
         <div id="risk-rule-form">
-        <Panel>
+        <Panel className="overflow-hidden">
           <div className="flex items-start gap-4">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-[4px] bg-danger/10 text-danger">
               <ShieldAlert className="h-5 w-5" />
@@ -389,7 +389,7 @@ export default function AdminRiskPage() {
               <p className="text-sm text-muted">
                 Existing positions remain closable even while new openings are blocked.
               </p>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <GhostButton type="button" onClick={startCreate}>Reset</GhostButton>
                 <PrimaryButton type="submit" disabled={saving}>
                   {saving ? "Saving…" : editingRuleId ? "Update rule" : "Create rule"}
@@ -400,7 +400,7 @@ export default function AdminRiskPage() {
         </Panel>
         </div>
 
-        <Panel>
+        <Panel className="overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-foreground">Rule-based account monitoring</h2>
@@ -408,7 +408,7 @@ export default function AdminRiskPage() {
             </div>
             <StatusPill tone="accent">{tradingAccounts.length} accounts</StatusPill>
           </div>
-          <div className="mt-4">
+          <div className="invisible-scrollbar mt-4 overflow-auto">
             <DataTable
               headers={["Account", "Broker", "Status", "Balance", "Equity", "Drawdown", "Risk state"]}
               rows={tradingAccounts.map((account) => [

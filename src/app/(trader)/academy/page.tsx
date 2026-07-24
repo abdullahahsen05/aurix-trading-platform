@@ -8,6 +8,7 @@ import { BookOpenCheck, CheckCircle2, Users } from "lucide-react";
 import {
   EmptyState,
   FilterChipRow,
+  PaginationControls,
   Panel,
   StatusPill,
   WorkspacePage,
@@ -31,6 +32,8 @@ async function apiFetch<T>(url: string): Promise<T> {
 
 export default function AcademyPage() {
   const [filter, setFilter] = useState<"ALL" | "BEGINNER" | "INTERMEDIATE" | "ADVANCED">("ALL");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(9);
 
   const { data: courses = [], isLoading, isError, error } = useQuery<CourseWithProgress[]>({
     queryKey: ["academy-courses"],
@@ -44,6 +47,7 @@ export default function AcademyPage() {
 
   const filtered =
     filter === "ALL" ? courses : courses.filter((c) => c.difficulty === filter);
+  const pagedCourses = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   const resumeCourse = courses.find(
     (c) => c.progress.progressPercent > 0 && c.progress.progressPercent < 100,
@@ -111,10 +115,10 @@ export default function AcademyPage() {
 
       <FilterChipRow
         chips={[
-          { label: "All", active: filter === "ALL", onClick: () => setFilter("ALL") },
-          { label: "Beginner", active: filter === "BEGINNER", onClick: () => setFilter("BEGINNER") },
-          { label: "Intermediate", active: filter === "INTERMEDIATE", onClick: () => setFilter("INTERMEDIATE") },
-          { label: "Advanced", active: filter === "ADVANCED", onClick: () => setFilter("ADVANCED") },
+          { label: "All", active: filter === "ALL", onClick: () => { setFilter("ALL"); setPage(1); } },
+          { label: "Beginner", active: filter === "BEGINNER", onClick: () => { setFilter("BEGINNER"); setPage(1); } },
+          { label: "Intermediate", active: filter === "INTERMEDIATE", onClick: () => { setFilter("INTERMEDIATE"); setPage(1); } },
+          { label: "Advanced", active: filter === "ADVANCED", onClick: () => { setFilter("ADVANCED"); setPage(1); } },
         ]}
       />
 
@@ -134,11 +138,11 @@ export default function AcademyPage() {
         />
       ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((course) => (
+          {pagedCourses.map((course) => (
             <Link
               key={course.id}
               href={`/academy/${course.slug}`}
-              className="group flex flex-col gap-3 rounded-[4px] border border-line bg-panel p-5 transition-colors hover:border-accent/40 hover:bg-panel/80"
+              className="group flex h-full flex-col gap-3 rounded-[4px] border border-line bg-panel p-5 transition-colors hover:border-accent/40 hover:bg-panel/80"
             >
               {course.coverImageUrl ? (
                 <div className="relative h-32 w-full overflow-hidden rounded-[4px]">
@@ -202,6 +206,17 @@ export default function AcademyPage() {
           ))}
         </div>
       )}
+
+      <PaginationControls
+        currentPage={page}
+        totalItems={filtered.length}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={(value) => {
+          setPage(1);
+          setPageSize(value);
+        }}
+      />
 
       <div className="mt-6 rounded-[4px] border border-accent/30 bg-accent/5 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">

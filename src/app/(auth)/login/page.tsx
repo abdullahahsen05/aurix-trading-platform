@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Eye, Key } from "lucide-react";
 import { startAuthentication } from "@simplewebauthn/browser";
+import { BrandLogo } from "@/components/app/BrandLogo";
 import { TextField } from "@/components/app/FormFields";
 import { createClient } from "@/lib/supabase/client";
 import { parseUserRole, type UserRole } from "@/lib/auth/rbac";
 import { roleHome } from "@/lib/auth/routeAccess";
-import { BRAND_INITIAL, BRAND_WORDMARK } from "@/lib/brand";
 
 export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -212,13 +212,8 @@ export default function LoginPage() {
           </div>
 
           <header className="relative z-10 px-8 pt-8 lg:px-12 lg:pt-10 xl:px-[60px] xl:pt-[44px]">
-            <Link href="/" className="flex w-fit items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-[7px] bg-accent text-sm font-black text-background">
-                {BRAND_INITIAL}
-              </span>
-              <span className="text-[20px] font-semibold tracking-[-0.015em] text-foreground">
-                {BRAND_WORDMARK}
-              </span>
+            <Link href="/" className="block w-fit">
+              <BrandLogo className="h-14 w-auto max-w-[190px]" priority />
             </Link>
           </header>
 
@@ -287,14 +282,7 @@ export default function LoginPage() {
 
         <section className="flex min-h-screen items-start justify-center bg-[#060808] px-5 py-7 sm:px-8 md:items-center md:px-10 md:py-10 lg:px-14 xl:px-[72px]">
           <div className="w-full max-w-[560px] md:-translate-y-[22px]">
-            <div className="mb-10 flex items-center gap-3 md:hidden">
-              <span className="grid h-10 w-10 place-items-center rounded-[7px] bg-accent text-sm font-black text-background">
-                {BRAND_INITIAL}
-              </span>
-              <span className="text-lg font-semibold text-foreground">
-                {BRAND_WORDMARK}
-              </span>
-            </div>
+            <BrandLogo className="mb-10 h-14 w-auto max-w-[190px] md:hidden" priority />
 
             <p className="text-[12px] font-bold uppercase tracking-[0.3em] text-accent">
               Welcome back

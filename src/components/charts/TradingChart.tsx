@@ -299,7 +299,7 @@ export function TradingChart({ accountId }: { accountId?: string }) {
         </div>
       </div>
 
-      <div className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_240px]">
+      <div className="grid items-stretch gap-4 px-5 py-5 lg:grid-cols-[minmax(0,1.8fr)_minmax(300px,0.7fr)]">
         <div className="relative">
           <div ref={chartRegionRef}>
             <TradingViewAdvancedChart
@@ -320,8 +320,8 @@ export function TradingChart({ accountId }: { accountId?: string }) {
           </button>
         </div>
 
-        <div className="grid gap-3">
-          <div className="inner-surface p-4">
+        <div className="invisible-scrollbar flex min-h-0 flex-col overflow-y-auto border border-line bg-background">
+          <div className="border-b border-line p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Data source</p>
             <div className="mt-3 flex items-center gap-3">
               <span className="inline-flex h-3 w-3 rounded-full bg-accent" />
@@ -332,15 +332,15 @@ export function TradingChart({ accountId }: { accountId?: string }) {
             </div>
           </div>
 
-          <div className="inner-surface p-4">
+          <div className="border-b border-line p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">{AI_ASSISTANT_NAME} chart vision</p>
-            <div className="mt-3 flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-[4px] bg-accent/10 text-accent">
+            <div className="mt-3 flex items-start gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[4px] bg-accent/10 text-accent">
                 <Eye className="h-5 w-5" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground">{visionStatus}</p>
-                <p className="text-xs leading-5 text-muted">
+                <p className="mt-1 text-xs leading-5 text-muted">
                   {chartShared
                     ? `${AI_ASSISTANT_NAME} captures only this chart region when you ask.`
                     : `No trend is claimed until ${AI_ASSISTANT_NAME} receives a chart frame.`}
@@ -349,7 +349,7 @@ export function TradingChart({ accountId }: { accountId?: string }) {
             </div>
           </div>
 
-          <div className="inner-surface p-4">
+          <div className="p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">Chart controls</p>
             <p className="mt-3 text-sm leading-6 text-muted">
               Symbol is locked to XAUUSD so the chart and {AI_ASSISTANT_NAME} stay aligned. Use the timeframe controls above.

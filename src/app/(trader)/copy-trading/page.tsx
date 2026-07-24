@@ -80,27 +80,39 @@ function LiveCopyContent({ initialBilling }: { initialBilling?: UserBillingSumma
 
   return <>
     <WorkspacePage eyebrow="Copy Trading" title="Live Strategies" description="Subscribe monthly per strategy and per follower account. The WSA engine synchronizes the copied trades.">
-      <div className="mb-5 flex items-start gap-3 rounded-[4px] border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>Live copy trading can place and close real orders on the selected connected account. Losses can exceed expectations; review your lot and risk settings before following.</p></div>
+      <div className="mb-5 flex items-center gap-3 border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"><AlertTriangle className="h-4 w-4 shrink-0" /><p>Live copy trading can place and close real orders on the selected connected account. Losses can exceed expectations; review your lot and risk settings before following.</p></div>
       {notice ? <div className={`mb-5 rounded-[4px] border px-4 py-3 text-sm ${notice.tone === "ok" ? "border-lime/30 bg-lime/10 text-lime" : "border-danger/30 bg-danger/10 text-danger"}`}>{notice.text}</div> : null}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {strategies.map((strategy) => {
-          const accountId = accountByStrategy[strategy.id] ?? connectedAccounts[0]?.accountId ?? "";
-          const access = entitlementMap.get(`${strategy.id}:${accountId}`);
-          const activeFollower = subscriptions.find((subscription) => subscription.strategyId === strategy.id && subscription.followerAccountId === accountId && subscription.status !== "REVOKED");
-          return <Panel key={strategy.id} className="flex h-full flex-col">
-            <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Repeat className="h-4 w-4 text-lime" /><h2 className="text-lg font-semibold text-foreground">{strategy.name}</h2></div><p className="mt-2 text-sm leading-6 text-muted">{strategy.description || "Live WSA strategy."}</p></div><StatusPill tone="lime">LIVE</StatusPill></div>
-            <div className="mt-5 grid grid-cols-2 gap-3 rounded-[4px] border border-line bg-background p-4"><div><p className="text-xs uppercase tracking-widest text-muted">Subscription</p><p className="mt-1 font-semibold text-foreground">{formatMoney({ amount: strategy.monthlyPrice, currency: strategy.currency })} / month</p></div><div><p className="text-xs uppercase tracking-widest text-muted">Scaling</p><p className="mt-1 font-semibold text-foreground">{strategy.defaultScalingMode.replaceAll("_", " ")}</p></div></div>
-            <label className="mt-4 space-y-2 text-sm font-semibold text-foreground">Follower account<select className="h-12 w-full rounded-[4px] border border-line bg-background px-3 text-sm" value={accountId} onChange={(event) => setAccountByStrategy((current) => ({ ...current, [strategy.id]: event.target.value }))}><option value="">Select connected account...</option>{connectedAccounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.accountName} · {account.brokerName}</option>)}</select></label>
-            <div className="mt-auto flex flex-wrap gap-2 pt-5">
-              {!accountId ? <p className="text-sm text-accent">Connect a trading account before subscribing.</p> : activeFollower ? <><StatusPill tone={activeFollower.engineStatus === "LIVE" ? "lime" : activeFollower.engineStatus === "ERROR" ? "danger" : "accent"}>{activeFollower.engineStatus}</StatusPill>{activeFollower.status === "ACTIVE" ? <GhostButton type="button" onClick={() => updateMutation.mutate({ id: activeFollower.id, status: "PAUSED" })}>Pause new trades</GhostButton> : <PrimaryButton type="button" onClick={() => updateMutation.mutate({ id: activeFollower.id, status: "ACTIVE" })}>Resume</PrimaryButton>}<GhostButton type="button" onClick={() => window.confirm("Stop following and gracefully close copied positions when the master closes them?") && updateMutation.mutate({ id: activeFollower.id, status: "REVOKED" })}>Stop & close gracefully</GhostButton></> : access?.status === "ACTIVE" ? <PrimaryButton type="button" onClick={() => { setFollow({ strategy, accountId }); setConsent(false); }}>Start live copying</PrimaryButton> : <PrimaryButton type="button" onClick={() => setCheckout({ strategy, accountId })}>Subscribe monthly</PrimaryButton>}
-            </div>
-          </Panel>;
-        })}
-      </div>
-      {!strategies.length ? <Panel><p className="text-sm text-muted">No live strategies are published yet.</p></Panel> : null}
+      <div className="grid items-stretch gap-5 xl:grid-cols-2">
+        <Panel className="flex min-h-0 flex-col overflow-hidden">
+          <h2 className="shrink-0 text-lg font-semibold text-foreground">Available live strategies</h2>
+          <div className="invisible-scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
+            {strategies.length ? strategies.map((strategy) => {
+              const accountId = accountByStrategy[strategy.id] ?? connectedAccounts[0]?.accountId ?? "";
+              const access = entitlementMap.get(`${strategy.id}:${accountId}`);
+              const activeFollower = subscriptions.find((subscription) => subscription.strategyId === strategy.id && subscription.followerAccountId === accountId && subscription.status !== "REVOKED");
+              return <div key={strategy.id} className="flex flex-col border border-line bg-background p-4">
+                <div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Repeat className="h-4 w-4 text-lime" /><h3 className="font-semibold text-foreground">{strategy.name}</h3></div><p className="mt-2 text-sm leading-6 text-muted">{strategy.description || "Live WSA strategy."}</p></div><StatusPill tone="lime">LIVE</StatusPill></div>
+                <div className="mt-4 grid grid-cols-2 border border-line">
+                  <div className="border-r border-line px-3 py-2"><p className="text-[10px] uppercase tracking-widest text-muted">Subscription</p><p className="mt-1 font-semibold text-foreground">{formatMoney({ amount: strategy.monthlyPrice, currency: strategy.currency })} / month</p></div>
+                  <div className="px-3 py-2"><p className="text-[10px] uppercase tracking-widest text-muted">Scaling</p><p className="mt-1 font-semibold text-foreground">{strategy.defaultScalingMode.replaceAll("_", " ")}</p></div>
+                </div>
+                <label className="mt-4 space-y-2 text-sm font-semibold text-foreground">Follower account<select className="h-12 w-full rounded-[4px] border border-line bg-background px-3 text-sm" value={accountId} onChange={(event) => setAccountByStrategy((current) => ({ ...current, [strategy.id]: event.target.value }))}><option value="">Select connected account...</option>{connectedAccounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.accountName} · {account.brokerName}</option>)}</select></label>
+                <div className="mt-4 flex flex-wrap gap-3 border-t border-line pt-4">
+                  {!accountId ? <p className="text-sm text-accent">Connect a trading account before subscribing.</p> : activeFollower ? <><StatusPill tone={activeFollower.engineStatus === "LIVE" ? "lime" : activeFollower.engineStatus === "ERROR" ? "danger" : "accent"}>{activeFollower.engineStatus}</StatusPill>{activeFollower.status === "ACTIVE" ? <GhostButton type="button" onClick={() => updateMutation.mutate({ id: activeFollower.id, status: "PAUSED" })}>Pause new trades</GhostButton> : <PrimaryButton type="button" onClick={() => updateMutation.mutate({ id: activeFollower.id, status: "ACTIVE" })}>Resume</PrimaryButton>}<GhostButton type="button" onClick={() => window.confirm("Stop following and gracefully close copied positions when the master closes them?") && updateMutation.mutate({ id: activeFollower.id, status: "REVOKED" })}>Stop & close gracefully</GhostButton></> : access?.status === "ACTIVE" ? <PrimaryButton type="button" onClick={() => { setFollow({ strategy, accountId }); setConsent(false); }}>Start live copying</PrimaryButton> : <PrimaryButton type="button" onClick={() => setCheckout({ strategy, accountId })}>Subscribe monthly</PrimaryButton>}
+                </div>
+              </div>;
+            }) : <p className="text-sm text-muted">No live strategies are published yet.</p>}
+          </div>
+        </Panel>
 
-      {subscriptions.length ? <Panel className="mt-5"><h2 className="text-lg font-semibold text-foreground">My live copy connections</h2><div className="mt-4 space-y-3">{subscriptions.map((subscription) => <div key={subscription.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[4px] border border-line bg-background p-4"><div><p className="font-semibold text-foreground">{subscription.strategyName}</p><p className="mt-1 text-xs text-muted">{subscription.followerAccountName} · synced {subscription.engineSyncedAt ? new Date(subscription.engineSyncedAt).toLocaleString() : "pending"}</p>{subscription.engineError ? <p className="mt-1 text-xs text-danger">{subscription.engineError}</p> : null}</div><div className="flex gap-2"><StatusPill tone={subscription.status === "ACTIVE" ? "lime" : "accent"}>{subscription.status}</StatusPill><StatusPill tone={subscription.engineStatus === "LIVE" ? "lime" : subscription.engineStatus === "ERROR" ? "danger" : "accent"}>{subscription.engineStatus}</StatusPill></div></div>)}</div></Panel> : null}
+        <Panel className="flex min-h-0 flex-col overflow-hidden">
+          <h2 className="shrink-0 text-lg font-semibold text-foreground">My live copy connections</h2>
+          <div className="invisible-scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
+            {subscriptions.length ? subscriptions.map((subscription) => <div key={subscription.id} className="flex flex-wrap items-center justify-between gap-3 border border-line bg-background p-4"><div><p className="font-semibold text-foreground">{subscription.strategyName}</p><p className="mt-1 text-xs text-muted">{subscription.followerAccountName} · synced {subscription.engineSyncedAt ? new Date(subscription.engineSyncedAt).toLocaleString() : "pending"}</p>{subscription.engineError ? <p className="mt-1 text-xs text-danger">{subscription.engineError}</p> : null}</div><div className="flex flex-wrap justify-end gap-2"><StatusPill tone={subscription.status === "ACTIVE" ? "lime" : "accent"}>{subscription.status}</StatusPill><StatusPill tone={subscription.engineStatus === "LIVE" ? "lime" : subscription.engineStatus === "ERROR" ? "danger" : "accent"}>{subscription.engineStatus}</StatusPill></div></div>) : <p className="text-sm text-muted">No active live copy connections yet.</p>}
+          </div>
+        </Panel>
+      </div>
       <CopyExecutionLog logs={copyLogs} loading={copyLogsLoading} />
     </WorkspacePage>
 

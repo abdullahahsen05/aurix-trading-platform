@@ -3,8 +3,8 @@
 import { motion } from "framer-motion";
 import { AlertTriangle, RefreshCcw, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
+import { BrandLogo } from "@/components/app/BrandLogo";
 import { GhostButton, PrimaryButton } from "@/components/app/WorkspaceUI";
-import { BRAND_INITIAL, BRAND_WORDMARK } from "@/lib/brand";
 
 function SkeletonBlock({ className = "" }: { className?: string }) {
   return <div className={`animate-pulse rounded-[4px] bg-panel-strong/80 ${className}`} />;
@@ -52,12 +52,7 @@ export function AuthLoadingState() {
   return (
     <main className="grid min-h-screen bg-background text-foreground md:grid-cols-2">
       <aside className="relative hidden min-h-screen overflow-hidden border-r border-line bg-[#060808] p-10 md:flex md:flex-col lg:p-14">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-accent text-sm font-black text-background">
-            {BRAND_INITIAL}
-          </span>
-          <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
-        </div>
+        <BrandLogo className="h-14 w-auto max-w-[180px]" priority />
         <div className="my-auto max-w-md">
           <SkeletonBlock className="h-8 w-72" />
           <SkeletonBlock className="mt-4 h-4 w-full" />
@@ -66,12 +61,7 @@ export function AuthLoadingState() {
       </aside>
       <section className="flex min-h-screen items-center justify-center bg-[#060808] px-5 py-8 sm:px-8 lg:px-14">
         <div className="w-full max-w-xl">
-          <div className="mb-10 flex items-center gap-3 md:hidden">
-            <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-accent text-sm font-black text-background">
-              {BRAND_INITIAL}
-            </span>
-            <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
-          </div>
+          <BrandLogo className="mb-10 h-14 w-auto max-w-[180px] md:hidden" priority />
           <SkeletonBlock className="h-3 w-28" />
           <SkeletonBlock className="mt-6 h-9 w-64 max-w-full" />
           <SkeletonBlock className="mt-4 h-4 w-full" />
@@ -132,12 +122,7 @@ export function AuthErrorState({
   return (
     <main className="grid min-h-screen bg-background text-foreground md:grid-cols-2">
       <aside className="relative hidden min-h-screen overflow-hidden border-r border-line bg-[#060808] p-10 md:flex md:flex-col lg:p-14">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-accent text-sm font-black text-background">
-            {BRAND_INITIAL}
-          </span>
-          <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
-        </div>
+        <BrandLogo className="h-14 w-auto max-w-[180px]" priority />
         <div className="my-auto max-w-md">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent">Secure access</p>
           <h2 className="mt-4 text-3xl font-semibold leading-tight">Operate with clarity. Scale with control.</h2>
@@ -145,12 +130,7 @@ export function AuthErrorState({
       </aside>
       <section className="flex min-h-screen items-center justify-center bg-[#060808] px-5 py-8 sm:px-8 lg:px-14">
         <div className="w-full max-w-xl">
-          <div className="mb-10 flex items-center gap-3 md:hidden">
-            <span className="grid h-10 w-10 place-items-center rounded-[6px] bg-accent text-sm font-black text-background">
-              {BRAND_INITIAL}
-            </span>
-            <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
-          </div>
+          <BrandLogo className="mb-10 h-14 w-auto max-w-[180px] md:hidden" priority />
           <div className="grid h-11 w-11 place-items-center rounded-[4px] border border-danger/25 bg-danger/10 text-danger">
             <AlertTriangle className="h-5 w-5" />
           </div>

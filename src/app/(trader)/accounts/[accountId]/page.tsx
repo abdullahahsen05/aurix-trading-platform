@@ -131,6 +131,8 @@ export default async function AccountDetailPage({
           <div className="mt-4">
             <DataTable
               headers={["Trade ID", "Symbol", "Side", "Status", "Profit", "Close price", "Closed"]}
+              paginated
+              initialPageSize={10}
               rows={accountTrades.map((trade) => [
                 <span key="trade-id" className="font-mono text-xs text-muted">{trade.shortTradeId}</span>,
                 <span key="symbol" className="font-semibold text-foreground">{trade.symbol}</span>,

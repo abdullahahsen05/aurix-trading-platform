@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, BriefcaseBusiness, TrendingUp } from "lucide-react";
+import { BrandLogo } from "@/components/app/BrandLogo";
 import { PrimaryButton } from "@/components/app/WorkspaceUI";
 import { TextField } from "@/components/app/FormFields";
 import { createClient } from "@/lib/supabase/client";
-import { BRAND_INITIAL, BRAND_NAME, BRAND_WORDMARK } from "@/lib/brand";
+import { BRAND_NAME } from "@/lib/brand";
 
 type Role = "TRADER" | "PARTNER";
 
@@ -134,13 +135,8 @@ export default function RegisterPage() {
   };
 
   const brandHeader = (
-    <Link href="/" className="flex w-fit items-center gap-3">
-      <span className="grid h-10 w-10 place-items-center rounded-[7px] bg-accent text-sm font-black text-background">
-        {BRAND_INITIAL}
-      </span>
-      <span className="text-[20px] font-semibold tracking-[-0.015em] text-foreground">
-        {BRAND_WORDMARK}
-      </span>
+    <Link href="/" className="block w-fit">
+      <BrandLogo className="h-14 w-auto max-w-[190px]" priority />
     </Link>
   );
 

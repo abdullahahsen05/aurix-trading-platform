@@ -18,7 +18,7 @@ export function RiskStatusPanel({
           <p className="text-sm text-muted">No active risk events.</p>
         ) : (
           events.map((event) => (
-            <div key={event.id} className="rounded-md border border-line bg-background p-3">
+            <div key={event.id} className="rounded-[4px] border border-line bg-background p-3">
               <p className="text-sm font-medium text-accent-2">{event.ruleName}</p>
               <p className="mt-1 text-xs leading-5 text-muted">{event.message}</p>
             </div>

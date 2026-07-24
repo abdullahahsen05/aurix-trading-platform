@@ -1,3 +1,4 @@
+import { BrandLogo } from "@/components/app/BrandLogo";
 import type { PublicCertificateDto } from "@/lib/services/certificateService";
 import { verifyCertificateByVerificationId } from "@/lib/services/certificateService";
 
@@ -21,9 +22,8 @@ export default async function PublicCertificateVerifyPage({
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-16">
       <div className="w-full max-w-lg">
-        {/* WSA Global branding */}
-        <div className="mb-8 text-center">
-          <span className="text-xl font-bold tracking-tight text-foreground">WSA GLOBAL</span>
+        <div className="mb-8 flex flex-col items-center text-center">
+          <BrandLogo className="h-14 w-auto max-w-[190px]" priority />
           <p className="mt-1 text-xs text-muted-foreground">Certificate Verification</p>
         </div>
 

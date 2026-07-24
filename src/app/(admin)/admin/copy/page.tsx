@@ -106,7 +106,7 @@ export default function AdminCopyPage() {
       title="Live Copy Trading"
       description="Connect master accounts, publish monthly strategies, and control their WSA engine lifecycle."
       action={
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap justify-end gap-3">
           <GhostButton type="button" onClick={() => setMasterOpen(true)}><Copy className="mr-2 inline h-4 w-4" />New master account</GhostButton>
           <PrimaryButton type="button" onClick={() => setStrategyOpen(true)}><Plus className="mr-2 inline h-4 w-4" />New strategy</PrimaryButton>
         </div>
@@ -132,12 +132,12 @@ export default function AdminCopyPage() {
           <div><h2 className="text-lg font-semibold text-foreground">Master accounts</h2><p className="mt-1 text-sm text-muted">Only dedicated admin-owned master accounts can publish strategies.</p></div>
           <Link href="/admin/accounts" className="inline-flex items-center gap-2 text-sm font-semibold text-accent">Manage credentials <ExternalLink className="h-4 w-4" /></Link>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
           {accounts.map((account) => (
-            <div key={account.accountId} className="rounded-[4px] border border-line bg-background p-4">
+            <div key={account.accountId} className="flex h-full flex-col rounded-[4px] border border-line bg-background p-4">
               <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-foreground">{account.accountName}</p><p className="mt-1 text-xs text-muted">{account.brokerName}{account.serverName ? ` · ${account.serverName}` : ""}</p></div><StatusPill tone={account.status === "CONNECTED" ? "lime" : "accent"}>{account.status}</StatusPill></div>
               {!account.providerAccountId ? <p className="mt-3 text-xs text-accent">Credentials/provider connection required before publishing.</p> : null}
-              <GhostButton type="button" className="mt-4 w-full" onClick={() => setConnectionAccountId(account.accountId)}>
+              <GhostButton type="button" className="mt-auto w-full" onClick={() => setConnectionAccountId(account.accountId)}>
                 {account.providerAccountId ? "Manage MT4 / MT5 connection" : "Connect MT4 / MT5"}
               </GhostButton>
             </div>
@@ -153,7 +153,7 @@ export default function AdminCopyPage() {
             <div key={strategy.id} className="grid gap-4 rounded-[4px] border border-line bg-background p-4 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
               <div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold text-foreground">{strategy.name}</p><StatusPill tone={strategy.engineStatus === "LIVE" ? "lime" : strategy.engineStatus === "ERROR" ? "danger" : "accent"}>{strategy.engineStatus}</StatusPill></div><p className="mt-1 text-sm text-muted">Master: {strategy.masterAccountName ?? "Unknown"} · {strategy.followerCount} follower(s)</p>{strategy.engineError ? <p className="mt-2 text-xs text-danger">{strategy.engineError}</p> : null}</div>
               <p className="font-semibold text-foreground">{formatMoney({ amount: strategy.monthlyPrice, currency: strategy.currency })}<span className="text-xs font-normal text-muted"> / month</span></p>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-3">
                 {strategy.engineStatus !== "LIVE" && strategy.status !== "ARCHIVED" ? <PrimaryButton type="button" disabled={strategyAction.isPending} onClick={() => strategyAction.mutate({ id: strategy.id, action: "publish" })}><Repeat className="mr-2 inline h-4 w-4" />Publish live</PrimaryButton> : null}
                 {strategy.engineStatus === "LIVE" ? <GhostButton type="button" disabled={strategyAction.isPending} onClick={() => window.confirm("Archive this strategy and close its copied follower positions?") && strategyAction.mutate({ id: strategy.id, action: "archive" })}>Archive & close</GhostButton> : null}
               </div>

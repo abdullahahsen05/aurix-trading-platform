@@ -200,6 +200,8 @@ function RiskContent() {
             <div className="invisible-scrollbar mt-4 min-h-0 flex-1 overflow-auto">
               <DataTable
                 headers={["Rule", "Scope", "Metric", "Threshold", "Severity", "Action", "State"]}
+                paginated
+                initialPageSize={10}
                 rows={riskRules.map((rule) => [
                   <span key="name" className="font-semibold text-foreground">
                     {rule.name}
@@ -288,6 +290,8 @@ function RiskContent() {
             <div className="mt-4">
               <DataTable
                 headers={["Account", "Broker", "Status", "Balance", "Equity", "Drawdown", "Risk"]}
+                paginated
+                initialPageSize={10}
                 rows={tradingAccounts.map((account) => [
                   <span key="account" className="font-semibold text-foreground">
                     {account.accountName}

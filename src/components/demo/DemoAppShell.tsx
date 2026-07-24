@@ -5,9 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Menu, X } from "lucide-react";
+import { BrandLogo } from "@/components/app/BrandLogo";
 import { demoAccounts } from "@/lib/demo/demoData";
 import { getDemoSectionFromPathname, listDemoSections } from "@/lib/demo/config";
-import { BRAND_INITIAL, BRAND_WORDMARK } from "@/lib/brand";
 
 function DemoNav({
   currentPathname,
@@ -68,15 +68,8 @@ export function DemoAppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen">
         <aside className="hidden h-screen w-[240px] self-start overflow-hidden border-r border-line bg-panel px-4 py-4 lg:sticky lg:top-0 lg:flex lg:flex-col">
           <div className="mb-7 px-2">
-            <div className="flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-[4px] bg-accent text-sm font-black text-background">
-                {BRAND_INITIAL}
-              </span>
-              <div>
-                <h1 className="text-xl font-black tracking-tight text-foreground">{BRAND_WORDMARK}</h1>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Demo mode</p>
-              </div>
-            </div>
+            <BrandLogo priority />
+            <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Demo mode</p>
           </div>
           <div className="mt-2 flex min-h-0 flex-1 flex-col">
             <div className="invisible-scrollbar flex-1 overflow-y-auto">
@@ -102,14 +95,9 @@ export function DemoAppShell({ children }: { children: React.ReactNode }) {
             <Dialog.Content className="fixed left-0 top-0 z-50 flex h-full w-[88vw] max-w-sm flex-col border-r border-line bg-panel px-5 py-5 focus:outline-none lg:hidden">
               <Dialog.Title className="sr-only">Demo navigation</Dialog.Title>
               <div className="mb-7 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="grid h-8 w-8 place-items-center rounded-[4px] bg-accent text-sm font-black text-background">
-                    {BRAND_INITIAL}
-                  </span>
-                  <div>
-                    <h2 className="text-xl font-black tracking-tight text-foreground">{BRAND_WORDMARK}</h2>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Demo mode</p>
-                  </div>
+                <div>
+                  <BrandLogo priority />
+                  <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">Demo mode</p>
                 </div>
                 <Dialog.Close asChild>
                   <button className="grid h-10 w-10 place-items-center rounded-[4px] border border-[rgba(255,255,255,0.08)] bg-panel-strong text-muted">

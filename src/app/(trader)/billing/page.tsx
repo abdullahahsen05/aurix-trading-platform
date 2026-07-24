@@ -238,6 +238,8 @@ export default function BillingPage() {
         ) : (
           <DataTable
             headers={["Product", "Amount", "Status", "Date"]}
+            paginated
+            initialPageSize={10}
             rows={filteredHistory.map((h) => [
               <span key="n" className="text-sm font-medium text-foreground">
                 {h.productName}

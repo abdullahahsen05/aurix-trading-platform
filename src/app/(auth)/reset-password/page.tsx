@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Key, ShieldCheck } from "lucide-react";
+import { BrandLogo } from "@/components/app/BrandLogo";
 import { PrimaryButton } from "@/components/app/WorkspaceUI";
 import { TextField } from "@/components/app/FormFields";
 import { createClient } from "@/lib/supabase/client";
-import { BRAND_INITIAL, BRAND_WORDMARK } from "@/lib/brand";
 
 export default function ResetPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -50,11 +50,8 @@ export default function ResetPasswordPage() {
       <div className="grid min-h-screen md:grid-cols-2">
         <aside className="relative hidden min-h-screen overflow-hidden border-r border-line bg-[#060808] px-10 py-8 md:flex md:flex-col lg:px-14">
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.038)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:112px_112px] opacity-75" />
-          <Link href="/" className="relative z-10 flex w-fit items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-[7px] bg-accent text-sm font-black text-background">
-              {BRAND_INITIAL}
-            </span>
-            <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
+          <Link href="/" className="relative z-10 block w-fit">
+            <BrandLogo className="h-14 w-auto max-w-[190px]" priority />
           </Link>
           <div className="relative z-10 my-auto max-w-lg">
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-accent">Account security</p>
@@ -77,12 +74,7 @@ export default function ResetPasswordPage() {
 
         <section className="flex min-h-screen items-start justify-center bg-[#060808] px-5 py-7 sm:px-8 md:items-center md:px-10 md:py-10 lg:px-14 xl:px-[72px]">
           <div className="w-full max-w-xl">
-            <div className="mb-10 flex items-center gap-3 md:hidden">
-              <span className="grid h-10 w-10 place-items-center rounded-[7px] bg-accent text-sm font-black text-background">
-                {BRAND_INITIAL}
-              </span>
-              <span className="text-lg font-semibold">{BRAND_WORDMARK}</span>
-            </div>
+            <BrandLogo className="mb-10 h-14 w-auto max-w-[190px] md:hidden" priority />
             <Link href="/login" className="mb-6 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted transition-colors hover:text-foreground">
               <ArrowLeft className="h-4 w-4" />
               Back to login

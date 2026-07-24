@@ -254,7 +254,7 @@ function AnalyticsContent() {
             ))}
           </select>
         </label>
-        <div className="flex flex-wrap gap-px rounded-[4px] border border-line bg-background p-1">
+        <div className="flex flex-wrap gap-2 rounded-[4px] border border-line bg-background p-2">
           {periods.map((item) => (
             <button
               key={item}

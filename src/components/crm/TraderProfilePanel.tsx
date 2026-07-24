@@ -11,7 +11,7 @@ export function TraderProfilePanel({ traders }: { traders: TraderProfileDto[] })
               <p className="font-medium text-foreground">{trader.name}</p>
               <p className="mt-1 text-sm text-muted">{trader.email}</p>
             </div>
-            <span className="rounded-md bg-panel-strong px-2 py-1 text-xs text-accent">
+            <span className="rounded-[4px] bg-panel-strong px-2 py-1 text-xs text-accent">
               {trader.segment}
             </span>
           </div>

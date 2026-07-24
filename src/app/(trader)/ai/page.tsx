@@ -269,18 +269,18 @@ function AiAssistantContent() {
 
           <div className="invisible-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto py-4">
             {messages.length === 0 ? (
-              <div className="py-6">
+              <div className="py-2">
                 <EmptyState
                   title="Ask your first question"
                   description="The assistant reads your live WSA Global account data to answer. Try one of these:"
                 />
-                <div className="mx-auto mt-5 flex max-w-xl flex-wrap justify-center gap-2">
+                <div className="mt-5 grid gap-2 md:grid-cols-2">
                   {SUGGESTED_PROMPTS.map((p) => (
                     <button
                       key={p}
                       type="button"
                       onClick={() => sendMessage(p)}
-                      className="btn-dark text-left"
+                      className="btn-dark justify-start text-left"
                     >
                       {p}
                     </button>

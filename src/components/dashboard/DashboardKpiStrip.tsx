@@ -51,6 +51,10 @@ function CompactStatus({ children, tone }: { children: string; tone: KpiTone }) 
 }
 
 function MiniSparkline({ points, tone }: { points: number[]; tone: KpiTone }) {
+  if (points.length < 2) {
+    return <div className="h-[52px] w-[120px] border-b border-line" aria-hidden="true" />;
+  }
+
   const width = 120;
   const height = 44;
   const min = Math.min(...points);
@@ -96,7 +100,7 @@ function KpiCard({ item }: { item: DashboardKpiItem }) {
           <p className="mt-3 text-[30px] font-semibold leading-none text-foreground">{item.value}</p>
           <p className="mt-2 max-w-[20rem] text-sm leading-6 text-muted">{item.helper}</p>
         </div>
-        <div className="shrink-0 pt-0.5">
+        <div className="hidden shrink-0 pt-0.5 sm:block">
           <MiniSparkline points={item.sparkline} tone={item.tone} />
         </div>
       </div>
@@ -138,17 +142,17 @@ export function MarketSentimentStrip({ items }: { items: SentimentItem[] }) {
               <p className="mt-1 text-sm font-semibold text-foreground">{item.value}</p>
               <p className="mt-1 text-xs text-muted">{item.helper}</p>
             </div>
-            <span
-              className={`status-pill shrink-0 ${
-                item.tone === "lime"
-                  ? "status-pill-green"
-                  : item.tone === "danger"
-                    ? "border-danger/20 bg-danger/10 text-danger"
-                    : ""
-              }`}
-            >
-              {item.label}
-            </span>
+        <span
+          className={`status-pill shrink-0 ${
+            item.tone === "lime"
+              ? "status-pill-green"
+              : item.tone === "danger"
+                ? "border-danger/20 bg-danger/10 text-danger"
+                : ""
+          }`}
+        >
+          {item.value}
+        </span>
           </div>
         ))}
       </div>

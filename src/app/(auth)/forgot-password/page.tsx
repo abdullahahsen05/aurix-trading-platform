@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, Mail } from "lucide-react";
+import { BrandLogo } from "@/components/app/BrandLogo";
 import { TextField } from "@/components/app/FormFields";
 import { createClient } from "@/lib/supabase/client";
-import { BRAND_INITIAL, BRAND_WORDMARK } from "@/lib/brand";
 
 export default function ForgotPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -116,13 +116,8 @@ export default function ForgotPasswordPage() {
           </div>
 
           <header className="relative z-10 px-8 pt-8 lg:px-12 lg:pt-10 xl:px-[60px] xl:pt-[44px]">
-            <Link href="/" className="flex w-fit items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-[7px] bg-accent text-sm font-black text-background">
-                {BRAND_INITIAL}
-              </span>
-              <span className="text-[20px] font-semibold tracking-[-0.015em] text-foreground">
-                {BRAND_WORDMARK}
-              </span>
+            <Link href="/" className="block w-fit">
+              <BrandLogo className="h-14 w-auto max-w-[190px]" priority />
             </Link>
           </header>
 
@@ -189,13 +184,8 @@ export default function ForgotPasswordPage() {
         <section className="flex min-h-screen items-start justify-center bg-[#060808] px-5 py-7 sm:px-8 md:items-center md:px-10 md:py-10 lg:px-14 xl:px-[72px]">
           <div className="w-full max-w-[560px] md:-translate-y-[18px]">
             <div className="mb-10 md:hidden">
-              <Link href="/" className="flex w-fit items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-[7px] bg-accent text-sm font-black text-background">
-                  {BRAND_INITIAL}
-                </span>
-                <span className="text-lg font-semibold text-foreground">
-                  {BRAND_WORDMARK}
-                </span>
+              <Link href="/" className="block w-fit">
+                <BrandLogo className="h-14 w-auto max-w-[190px]" priority />
               </Link>
             </div>
 

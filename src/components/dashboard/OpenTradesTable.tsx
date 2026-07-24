@@ -36,7 +36,7 @@ export function OpenTradesTable({
                 <td className="px-4 py-3 font-medium text-foreground">{trade.symbol}</td>
                 <td className="px-4 py-3">
                   <span
-                    className={`rounded-md px-2 py-1 text-xs ${
+                    className={`rounded-[4px] px-2 py-1 text-xs ${
                       trade.side === "BUY"
                         ? "bg-accent/12 text-accent"
                         : "bg-danger/12 text-danger"

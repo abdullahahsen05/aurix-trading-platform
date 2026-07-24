@@ -304,6 +304,8 @@ function ReportsContent() {
       <div className="mt-5">
         <DataTable
           headers={["Report", "Period", "Status", "Trades", "Net P&L", "Format", ""]}
+          paginated
+          initialPageSize={10}
           rows={reports.map((report) => [
             <span key="name" className="font-semibold text-foreground">{report.name}</span>,
             report.period,

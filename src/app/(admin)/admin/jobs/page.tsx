@@ -123,7 +123,7 @@ export default function AdminJobsPage() {
         </div>
       ) : null}
 
-      <div className="mt-5 rounded-[4px] border border-line bg-panel p-4">
+      <div className="mt-5">
         <FilterChipRow
           chips={(["ALL", "PENDING", "RUNNING", "SUCCESS", "FAILED", "SKIPPED", "CANCELLED"] as StatusFilter[]).map((s) => ({
             label: s === "ALL" ? "All" : s.charAt(0) + s.slice(1).toLowerCase(),
@@ -147,7 +147,7 @@ export default function AdminJobsPage() {
         ) : jobs.length === 0 ? (
           <EmptyState title="No jobs yet" description="Queue a sync or monitor job, then run the worker to process it." />
         ) : (
-          <Panel className="min-w-0">
+          <Panel className="min-w-0 overflow-hidden">
             <DataTable
               headers={["Type", "Status", "Attempts", "Created", "Last error", ""]}
               rows={jobs.map((j) => [
@@ -156,7 +156,7 @@ export default function AdminJobsPage() {
                 <span key="a">{j.attempts}/{j.maxAttempts}</span>,
                 <span key="c">{new Date(j.createdAt).toLocaleString()}</span>,
                 <span key="e" className="text-xs text-muted">{j.lastErrorCode ? `${j.lastErrorCode}` : "—"}</span>,
-                <div key="x" className="flex flex-wrap gap-2">
+                <div key="x" className="flex flex-wrap justify-end gap-3">
                   <GhostButton type="button" onClick={() => setDetail(j)}>View</GhostButton>
                   {["FAILED", "CANCELLED", "SKIPPED"].includes(j.status) ? (
                     <GhostButton type="button" disabled={action.isPending} onClick={() => action.mutate({ url: `/api/admin/jobs/${j.id}/retry`, label: "retried" })}>

@@ -5,10 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { LogOut, X } from "lucide-react";
+import { BrandLogo } from "@/components/app/BrandLogo";
 import { navItems } from "@/components/app/navigation";
 import type { UserRole } from "@/lib/domain/types";
 import { createClient } from "@/lib/supabase/client";
-import { BRAND_INITIAL, BRAND_WORDMARK } from "@/lib/brand";
 
 export function Sidebar({
   role,
@@ -60,12 +60,7 @@ export function Sidebar({
     <>
     <aside className="hidden h-screen w-[240px] self-start overflow-hidden border-r border-line bg-panel px-4 py-4 lg:sticky lg:top-0 lg:flex lg:flex-col">
         <div className="mb-7 px-2">
-          <div className="flex items-center gap-2">
-            <span className="grid h-8 w-8 place-items-center rounded-[4px] bg-accent text-sm font-black text-background">
-              {BRAND_INITIAL}
-            </span>
-            <h1 className="text-xl font-black tracking-tight text-foreground">{BRAND_WORDMARK}</h1>
-          </div>
+          <BrandLogo priority />
         </div>
         <div className="mb-3 px-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted">Workspace</p>
@@ -93,12 +88,7 @@ export function Sidebar({
         <Dialog.Content className="fixed left-0 top-0 z-50 flex h-full w-[88vw] max-w-sm flex-col border-r border-line bg-panel px-5 py-5 focus:outline-none lg:hidden">
           <Dialog.Title className="sr-only">Navigation menu</Dialog.Title>
           <div className="mb-7 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-[4px] bg-accent text-sm font-black text-background">
-                {BRAND_INITIAL}
-                </span>
-                <h2 className="text-xl font-black tracking-tight text-foreground">{BRAND_WORDMARK}</h2>
-              </div>
+            <BrandLogo priority />
               <Dialog.Close asChild>
                 <button className="grid h-9 w-9 place-items-center rounded-[4px] border border-line bg-panel-strong text-muted">
                   <X className="h-4 w-4" />

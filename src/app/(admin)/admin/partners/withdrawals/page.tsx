@@ -241,7 +241,7 @@ export default function AdminPartnerWithdrawalsPage() {
               {(selected.status === "PENDING_REVIEW" || selected.status === "APPROVED") ? (
                 <textarea value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} maxLength={1000} rows={2} placeholder="Rejection reason (required only to reject)" className="w-full rounded-[4px] border border-line bg-background px-3 py-2 text-sm text-foreground" />
               ) : null}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-3 border-t border-line pt-4">
                 {selected.status === "PENDING_REVIEW" ? <PrimaryButton type="button" disabled={action.isPending} onClick={() => action.mutate("approve")}>Approve</PrimaryButton> : null}
                 {selected.status === "APPROVED" ? <PrimaryButton type="button" disabled={action.isPending} onClick={() => action.mutate("mark-paid")}>Mark paid</PrimaryButton> : null}
                 {(selected.status === "PENDING_REVIEW" || selected.status === "APPROVED") ? (
@@ -253,7 +253,7 @@ export default function AdminPartnerWithdrawalsPage() {
         </Panel>
       </div>
 
-      <Panel className="mt-5">
+      <Panel className="mt-5 overflow-hidden">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-foreground">Partner commission and rebate ledger</h2>
@@ -306,7 +306,7 @@ export default function AdminPartnerWithdrawalsPage() {
                   />
                 )}
               </div>
-              <form onSubmit={createRebate} className="invisible-scrollbar min-h-0 w-full space-y-4 overflow-y-auto rounded-[4px] border border-line bg-background p-4 xl:h-full">
+              <form onSubmit={createRebate} className="invisible-scrollbar flex min-h-0 w-full flex-col gap-4 overflow-y-auto rounded-[4px] border border-line bg-background p-4 xl:h-full">
                 <h3 className="font-semibold text-foreground">Add rebate entry</h3>
                 <TextField label={`Amount (${selectedLedger.currency})`} type="number" min="0.01" step="0.01" required value={rebateAmount} onChange={(event) => setRebateAmount(event.target.value)} />
                 <SelectField label="Initial status" value={rebateStatus} onChange={(event) => setRebateStatus(event.target.value as typeof rebateStatus)}>
@@ -314,7 +314,7 @@ export default function AdminPartnerWithdrawalsPage() {
                   <option value="APPROVED">Approved and withdrawable</option>
                 </SelectField>
                 <TextField label="Description" maxLength={500} value={rebateDescription} onChange={(event) => setRebateDescription(event.target.value)} placeholder="Reason or payment context" />
-                <PrimaryButton type="submit" disabled={rebate.isPending || !rebateAmount}>
+                <PrimaryButton type="submit" disabled={rebate.isPending || !rebateAmount} className="mt-auto w-full">
                   {rebate.isPending ? "Creating…" : "Create rebate"}
                 </PrimaryButton>
               </form>

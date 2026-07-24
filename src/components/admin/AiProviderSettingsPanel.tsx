@@ -135,7 +135,7 @@ export function AiProviderSettingsPanel() {
         ) : (
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             {(data?.providers ?? []).map((provider) => (
-              <div key={provider.provider} className="rounded-[4px] border border-line bg-background p-4">
+              <div key={provider.provider} className="flex h-full flex-col rounded-[4px] border border-line bg-background p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -175,7 +175,7 @@ export function AiProviderSettingsPanel() {
                   </p>
                 ) : null}
 
-                <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
+                <div className="mt-auto flex flex-wrap gap-3 border-t border-line pt-4">
                   <PrimaryButton
                     type="button"
                     disabled={!data?.canManageSecrets || busy}
@@ -250,7 +250,7 @@ export function AiProviderSettingsPanel() {
                 placeholder="Paste provider key"
               />
             </div>
-            <div className="mt-5 flex justify-end gap-3 border-t border-line pt-4">
+            <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-line pt-4">
               <Dialog.Close asChild>
                 <GhostButton type="button" disabled={save.isPending}>Cancel</GhostButton>
               </Dialog.Close>

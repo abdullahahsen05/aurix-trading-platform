@@ -12,7 +12,7 @@ export function RiskRuleEditor({ rules }: { rules: RiskRuleDto[] }) {
                 {rule.metric} threshold: {rule.threshold}
               </p>
             </div>
-            <span className="rounded-md border border-line px-2 py-1 text-xs text-muted">
+            <span className="rounded-[4px] border border-line px-2 py-1 text-xs text-muted">
               {rule.severity}
             </span>
           </div>
