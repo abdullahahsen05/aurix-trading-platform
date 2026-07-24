@@ -70,7 +70,7 @@ export default function MyCertificatesPage() {
               <Link
                 href={`/certificates/verify/${cert.verificationId}`}
                 target="_blank"
-                className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+                className="rounded-[4px] border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
               >
                 View Certificate
               </Link>

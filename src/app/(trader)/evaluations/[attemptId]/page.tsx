@@ -233,7 +233,7 @@ export default function AttemptDetailPage({
             <button
               onClick={() => certMutation.mutate()}
               disabled={certMutation.isPending || certMutation.isSuccess}
-              className="rounded-md bg-lime-500 px-4 py-1.5 text-xs font-semibold text-black hover:bg-lime-400 disabled:opacity-60"
+              className="rounded-[4px] bg-lime-500 px-4 py-1.5 text-xs font-semibold text-black hover:bg-lime-400 disabled:opacity-60"
             >
               {certMutation.isPending
                 ? "Issuing…"
@@ -243,7 +243,7 @@ export default function AttemptDetailPage({
             </button>
             <Link
               href="/evaluations/certificates"
-              className="rounded-md border border-lime-400/30 px-4 py-1.5 text-xs font-medium text-lime-400 hover:bg-lime-400/10"
+              className="rounded-[4px] border border-lime-400/30 px-4 py-1.5 text-xs font-medium text-lime-400 hover:bg-lime-400/10"
             >
               My Certificates
             </Link>
