@@ -29,19 +29,23 @@ const toneColor: Record<KpiTone, string> = {
   muted: "#8f8e83",
 };
 
-function CompactPill({ children, tone }: { children: string; tone: KpiTone }) {
-  const pillClass =
-    tone === "lime"
-      ? "status-pill status-pill-green"
-      : tone === "danger"
-        ? "status-pill border-danger/20 bg-danger/10 text-danger"
-        : tone === "muted"
-          ? "status-pill border-line bg-panel-strong text-muted"
-          : "status-pill";
-
+function CompactStatus({ children, tone }: { children: string; tone: KpiTone }) {
   return (
-    <span className={pillClass}>
-      {children}
+    <span className="inline-flex items-center gap-2 text-xs font-medium">
+      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: toneColor[tone] }} />
+      <span
+        className={
+          tone === "lime"
+            ? "text-accent-2"
+            : tone === "danger"
+              ? "text-danger"
+              : tone === "muted"
+                ? "text-muted"
+                : "text-accent"
+        }
+      >
+        {children}
+      </span>
     </span>
   );
 }
@@ -85,10 +89,7 @@ function MiniSparkline({ points, tone }: { points: number[]; tone: KpiTone }) {
 
 function KpiCard({ item }: { item: DashboardKpiItem }) {
   return (
-    <motion.article
-      variants={itemMotion}
-      className="card-surface min-h-[116px] px-5 py-4"
-    >
+    <article className="min-w-0 border-b border-line px-5 py-4 last:border-b-0 xl:border-b-0 xl:border-r xl:last:border-r-0">
       <div className="flex items-start justify-between gap-5">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted">{item.label}</p>
@@ -100,17 +101,17 @@ function KpiCard({ item }: { item: DashboardKpiItem }) {
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-4">
-        <CompactPill tone={item.statusTone}>{item.status}</CompactPill>
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
+        <CompactStatus tone={item.statusTone}>{item.status}</CompactStatus>
         <span className="text-xs font-medium uppercase tracking-[0.18em] text-muted">Live</span>
       </div>
-    </motion.article>
+    </article>
   );
 }
 
 export function DashboardKpiStrip({ items }: { items: DashboardKpiItem[] }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
+    <div className="grid overflow-hidden rounded-[4px] border border-line bg-panel xl:grid-cols-3">
       {items.map((item) => (
         <KpiCard key={item.label} item={item} />
       ))}
